@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from bot.domain.messages import MessageId, OutgoingMessage
-from bot.domain.updates import MaxChatId, MaxUserId, UpdateBatch, UpdateId
+from bot.domain.updates import MaxChatId, MaxUserId, UpdateBatch, UpdateId, VoiceRef
+from bot.domain.voice import AudioFile, Transcript
 from contracts.reply import ActionRequest, ArgValue, MessageRequest, Reply
 
 
@@ -19,6 +20,18 @@ class MaxGateway(Protocol):
 
     # Примечание: «печатает…» в чате (POST /chats/{chat_id}/actions, typing_on)
     async def sendTyping(self, chatId: MaxChatId) -> None: ...
+
+
+# Примечание: скачать голосовое сразу — ссылка MAX живёт около суток; ошибка — VoiceFailureError
+class AudioDownloader(Protocol):
+    # Примечание: байты голосового в пределах лимита размера
+    async def download(self, voice: VoiceRef) -> AudioFile: ...
+
+
+# Примечание: распознавание речи (J1); ошибка — VoiceFailureError с причиной для ответа бота
+class AsrGateway(Protocol):
+    # Примечание: аудио → текст
+    async def transcribe(self, audio: AudioFile) -> Transcript: ...
 
 
 # Примечание: агент (API агента из contracts/reply.py); сбой — AppError с кодом стандарта

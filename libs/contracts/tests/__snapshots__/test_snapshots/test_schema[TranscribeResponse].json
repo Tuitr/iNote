@@ -1,0 +1,37 @@
+{
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "duration_ms": {
+      "minimum": 0,
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "low_confidence": {
+      "default": false,
+      "title": "Low Confidence",
+      "type": "boolean"
+    },
+    "raw_text": {
+      "title": "Raw Text",
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "raw_text",
+    "confidence",
+    "duration_ms"
+  ],
+  "title": "TranscribeResponse",
+  "type": "object"
+}

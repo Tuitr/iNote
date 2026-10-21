@@ -24,4 +24,17 @@ class BotSettings(BaseServiceSettings):
     )
     # Имя бота в MAX: web_app у open_app и адрес deep link; выдают после модерации
     username: str = Field(default="", validation_alias="BOT_USERNAME")
+    # ASR (J1): 15 с и до 2 повторов (стандарт); голосовое скачиваем сразу, лимит — по байтам
+    asrUrl: str = Field(default="http://asr:8000", validation_alias="BOT_ASR_URL")
+    asrTimeoutS: float = Field(default=15.0, gt=0, le=30, validation_alias="BOT_ASR_TIMEOUT_S")
+    voiceMaxBytes: int = Field(
+        default=2 * 1024 * 1024, gt=0, validation_alias="BOT_VOICE_MAX_BYTES"
+    )
+    voiceDownloadTimeoutS: float = Field(
+        default=10.0, gt=0, validation_alias="BOT_VOICE_DOWNLOAD_TIMEOUT_S"
+    )
+    # Откуда бот скачивает голосовые фейкового MAX (/dev/max/files) — сам у себя
+    fakeFilesUrl: str = Field(
+        default="http://127.0.0.1:8000", validation_alias="BOT_FAKE_FILES_URL"
+    )
     typingIntervalS: float = Field(default=4.0, gt=0, validation_alias="BOT_TYPING_INTERVAL_S")

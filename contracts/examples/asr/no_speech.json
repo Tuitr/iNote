@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "no_speech",
+    "message": "Речь не распознана",
+    "details": {},
+    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+  }
+}

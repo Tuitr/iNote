@@ -146,6 +146,17 @@ async def test_agentDown(running: httpx.AsyncClient, agentHttp: FakeAgentHttp) -
     assert message.attachments == []
 
 
+# Примечание: голосовое через /dev/max/voice: файл OggS + текст по ссылке, апдейт с вложением audio
+async def test_devVoice(running: httpx.AsyncClient) -> None:
+    pushed = await running.post(
+        "/dev/max/voice", json={"max_user_id": 7, "max_chat_id": 8, "text": "привет"}
+    )
+    assert pushed.status_code == 200
+    missing = await running.get("/dev/max/files/nope")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+
+
 # Примечание: один и тот же апдейт дважды — одно приветствие (дедуп через Redis)
 async def test_duplicatePushHandledOnce(running: httpx.AsyncClient) -> None:
     raw = loadMaxUpdate("bot_started")

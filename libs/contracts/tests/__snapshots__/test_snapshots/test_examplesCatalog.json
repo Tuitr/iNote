@@ -16,6 +16,21 @@
     "source": "text",
     "text": "Напомни завтра в 10 позвонить Ивану"
   },
+  "asr/no_speech.json": {
+    "error": {
+      "code": "no_speech",
+      "details": {},
+      "message": "Речь не распознана",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    }
+  },
+  "asr/transcribe_response.json": {
+    "confidence": 0.93,
+    "duration_ms": 2400,
+    "low_confidence": false,
+    "raw_text": "напомни завтра в десять позвонить ивану",
+    "text": "Напомни завтра в 10 позвонить Ивану"
+  },
   "brain/tool_result_error.json": {
     "data": null,
     "error": {

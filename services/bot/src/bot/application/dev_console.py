@@ -14,6 +14,13 @@ class SentMessageRecord:
     attachments: list[dict[str, object]] = field(default_factory=list)
 
 
+# Примечание: фейковое голосовое: байты и content-type для скачивания по ссылке
+@dataclass(frozen=True)
+class VoiceFileRecord:
+    content: bytes
+    mime: str = "audio/ogg"
+
+
 # Примечание: запись журнала ответа на нажатие кнопки
 @dataclass(frozen=True)
 class CallbackAnswerRecord:
@@ -34,3 +41,9 @@ class DevMaxConsole(Protocol):
 
     # Примечание: чаты, куда уходило «печатает…», по порядку
     def typingActions(self) -> tuple[int, ...]: ...
+
+    # Примечание: голосовое от пользователя — файл в памяти и апдейт со ссылкой на него
+    async def pushVoice(self, maxUserId: int, maxChatId: int, text: str) -> int: ...
+
+    # Примечание: файл голосового для скачивания ботом
+    def voiceFile(self, fileId: str) -> VoiceFileRecord | None: ...

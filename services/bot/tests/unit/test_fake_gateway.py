@@ -1,7 +1,7 @@
 import asyncio
 
 from bot.domain.messages import OutgoingMessage
-from bot.infrastructure.fake_max import FakeMaxGateway
+from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
 from services.bot.tests.fakes import loadMaxUpdate
 
 
@@ -48,3 +48,18 @@ async def test_sentJournal(gateway: FakeMaxGateway) -> None:
     await gateway.answerCallback("cb-1", "ок")
     assert gateway.sentMessages()[0].messageId == messageId
     assert gateway.callbackAnswers()[0].notification == "ок"
+
+
+# Примечание: голосовое фейка: апдейт VOICE со ссылкой на /dev/max/files/{id}, файл = OggS + текст
+async def test_pushVoice() -> None:
+    gateway = FakeMaxGateway(FakeMaxOptions(filesBaseUrl="http://bot:8000/"))
+    await gateway.pushVoice(maxUserId=7, maxChatId=8, text="привет")
+    [update] = (await gateway.fetchUpdates(marker=None, timeoutS=0)).updates
+    assert (update.kind.value, update.maxUserId, update.maxChatId) == ("voice", 7, 8)
+    assert update.voice is not None
+    assert update.voice.url.startswith("http://bot:8000/dev/max/files/")
+    fileId = update.voice.url.rsplit("/", 1)[1]
+    voice = gateway.voiceFile(fileId)
+    assert voice is not None
+    assert (voice.content, voice.mime) == (b"OggS" + "привет".encode(), "audio/ogg")
+    assert gateway.voiceFile("nope") is None

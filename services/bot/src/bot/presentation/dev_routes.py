@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
+from pydantic import Field
 
 from bot.application.dev_console import DevMaxConsole
+from common.errors import AppError, ErrorCode
 from common.wire import WireModel
 
 
@@ -8,6 +10,13 @@ from common.wire import WireModel
 class PushedUpdate(WireModel):
     accepted: bool
     position: int
+
+
+# Примечание: голосовое «от пользователя»: текст станет фейковым аудио OggS + текст
+class PushVoice(WireModel):
+    maxUserId: int = Field(gt=0)
+    maxChatId: int
+    text: str = Field(max_length=4000)
 
 
 # Примечание: одно отправленное ботом сообщение
@@ -47,6 +56,20 @@ def buildDevRouter() -> APIRouter:
     async def pushUpdate(request: Request, raw: dict[str, object]) -> PushedUpdate:
         position = await _console(request).pushRaw(raw)
         return PushedUpdate(accepted=True, position=position)
+
+    # Примечание: голосовое: файл в памяти фейка + апдейт со ссылкой на /dev/max/files/{id}
+    @router.post("/voice")
+    async def pushVoice(request: Request, body: PushVoice) -> PushedUpdate:
+        position = await _console(request).pushVoice(body.maxUserId, body.maxChatId, body.text)
+        return PushedUpdate(accepted=True, position=position)
+
+    # Примечание: скачивание голосового по ссылке из апдейта — как CDN MAX
+    @router.get("/files/{fileId}")
+    async def voiceFile(request: Request, fileId: str) -> Response:
+        voice = _console(request).voiceFile(fileId)
+        if voice is None:
+            raise AppError(ErrorCode.NOT_FOUND, "файла нет")
+        return Response(content=voice.content, media_type=voice.mime)
 
     # Примечание: что бот отправил — сообщения и ответы на кнопки
     @router.get("/sent")
