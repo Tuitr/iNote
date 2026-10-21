@@ -1,6 +1,8 @@
+from collections.abc import Callable
+
 import pytest
 
-from libs.core.config import ConfigError, load_settings
+from libs.core.config import ConfigError, load_default_tz, load_service_token, load_settings
 
 
 @pytest.fixture
@@ -36,3 +38,23 @@ def test_unknown_log_level_raises(required_env: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ConfigError, match="LOG_LEVEL"):
         load_settings()
+
+
+def test_default_tz_is_checked_against_tz_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEFAULT_TZ", "Europe/Moscow")
+    assert load_default_tz() == "Europe/Moscow"
+
+    monkeypatch.setenv("DEFAULT_TZ", "Mars/Olympus")
+    with pytest.raises(ConfigError, match="DEFAULT_TZ"):
+        load_default_tz()
+
+
+@pytest.mark.parametrize("load", [load_default_tz, load_service_token])
+def test_missing_service_var_raises(
+    monkeypatch: pytest.MonkeyPatch, load: Callable[[], str]
+) -> None:
+    monkeypatch.delenv("DEFAULT_TZ", raising=False)
+    monkeypatch.delenv("SERVICE_TOKEN", raising=False)
+
+    with pytest.raises(ConfigError, match="не задана"):
+        load()

@@ -2,7 +2,12 @@
 
 from redis.asyncio import Redis
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 _ASYNC_DRIVER = "postgresql+asyncpg"
 
@@ -14,6 +19,12 @@ def create_db_engine(database_url: str) -> AsyncEngine:
     # pre_ping отбрасывает соединения из пула, порванные перезапуском PostgreSQL,
     # иначе первый запрос после перезапуска падает.
     return create_async_engine(url, pool_pre_ping=True)
+
+
+def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    # Сервис собирает ответ из строк уже после коммита. По умолчанию коммит «забывает»
+    # загруженные поля, и обращение к ним в асинхронном коде падает (MissingGreenlet).
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 def create_redis_client(redis_url: str) -> Redis:

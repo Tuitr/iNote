@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -31,9 +32,29 @@ def _log_level() -> str:
     return value
 
 
+def load_database_url() -> str:
+    """Только адрес БД: миграциям не нужны Redis и остальные настройки."""
+    return _require("DATABASE_URL")
+
+
+def load_default_tz() -> str:
+    """Пояс нового пользователя, пока он не выбрал свой (черновик D, UserSettings.tz)."""
+    value = _require("DEFAULT_TZ")
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ConfigError(f"DEFAULT_TZ={value!r}: неизвестный часовой пояс") from error
+    return value
+
+
+def load_service_token() -> str:
+    """Токен, с которым другие сервисы ходят в mcp (КиП: Authorization: Bearer <SERVICE_TOKEN>)."""
+    return _require("SERVICE_TOKEN")
+
+
 def load_settings() -> Settings:
     return Settings(
-        database_url=_require("DATABASE_URL"),
+        database_url=load_database_url(),
         redis_url=_require("REDIS_URL"),
         log_level=_log_level(),
     )
