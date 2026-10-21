@@ -5,7 +5,14 @@ UV ?= uv
 
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
-        test-integration test-lifecycle cov check
+        test-integration test-lifecycle cov check up down logs ps smoke seed eval deploy
+
+# Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
+PROFILE ?= mock
+COMPOSE ?= docker compose -f deploy/docker-compose.yml --env-file .env --profile $(PROFILE)
+UP_FLAGS ?= --build
+SERVICE ?=
+TRACE ?=
 
 help: ## список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -49,4 +56,37 @@ cov: ## покрытие сервисов зоны C (порог 60%)
 
 check: ## всё, что гоняет pre-commit, по всем файлам
 	$(UV) run pre-commit run --all-files
+
+.env:
+	cp .env.example .env
+	@echo "создан .env из .env.example — поменяйте SERVICE_TOKEN"
+
+up: .env ## поднять стенд (PROFILE=mock|full) и дождаться healthy всех сервисов
+	$(COMPOSE) up -d $(UP_FLAGS) --wait
+	@$(COMPOSE) ps --format 'table {{.Service}}\t{{.Status}}\t{{.Ports}}'
+
+down: ## остановить стенд (данные Postgres в volume сохраняются)
+	$(COMPOSE) down
+
+ps: ## статус контейнеров
+	$(COMPOSE) ps
+
+logs: ## логи: SERVICE=bot — один сервис; TRACE=<trace_id или первые 6> — путь запроса
+ifeq ($(TRACE),)
+	$(COMPOSE) logs -f --tail=200 $(SERVICE)
+else
+	$(COMPOSE) logs --no-color $(SERVICE) | grep -- "$(TRACE)"
+endif
+
+smoke: ## апдейт фейковому MAX → эхо (нужен make up)
+	./deploy/smoke.sh
+
+seed: ## тестовые данные — появится в S1 (владелец D)
+	@echo "seed появится в S1 у владельца D"
+
+eval: ## LLM eval — платно, только по прямой просьбе (владелец B)
+	@echo "eval появится в S1 у владельца B (tests/eval)"
+
+deploy: ## деплой на стенд — появится в S1 (C)
+	@echo "deploy появится в S1: стенд, Caddy, GitHub Actions"
 # --- конец зоны C ---

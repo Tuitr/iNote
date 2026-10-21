@@ -1,0 +1,13 @@
+# Контекст сборки — корень репо; в образ идёт только нужное для uv sync и рантайма
+**
+!pyproject.toml
+!uv.lock
+!libs/
+!services/
+!contracts/
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/tests/
