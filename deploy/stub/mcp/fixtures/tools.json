@@ -1,0 +1,65 @@
+[
+  {
+    "name": "create_task",
+    "description": "Создать задачу или напоминание. Примеры: «напомни завтра в 10 позвонить Ивану», «создай задачу купить хлеб».",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "kind": {"type": "string", "enum": ["task", "reminder"]},
+        "due_at": {"type": "string", "format": "date-time"},
+        "all_day": {"type": "boolean"},
+        "remind_at": {"type": "string", "format": "date-time"},
+        "rrule": {"type": "string"}
+      },
+      "required": ["title", "kind"]
+    }
+  },
+  {
+    "name": "create_event",
+    "description": "Создать встречу. Пример: «встреча с Петром в пятницу в 15:00 на час».",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "starts_at": {"type": "string", "format": "date-time"},
+        "ends_at": {"type": "string", "format": "date-time"},
+        "participants": {"type": "array", "items": {"type": "string"}},
+        "remind_before_min": {"type": "integer", "minimum": 0},
+        "rrule": {"type": "string"},
+        "force": {"type": "boolean"}
+      },
+      "required": ["title", "starts_at"]
+    }
+  },
+  {
+    "name": "list_items",
+    "description": "Записи за период [from, to). Пример: «что у меня завтра».",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "from": {"type": "string", "format": "date-time"},
+        "to": {"type": "string", "format": "date-time"},
+        "kinds": {"type": "array", "items": {"type": "string", "enum": ["task", "reminder", "event"]}},
+        "status": {"type": "string", "enum": ["open", "done"]}
+      },
+      "required": ["from", "to"]
+    }
+  },
+  {
+    "name": "search_items",
+    "description": "Найти записи по смыслу. Пример: «найди встречу про договор».",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "minLength": 1},
+        "kinds": {"type": "array", "items": {"type": "string", "enum": ["task", "reminder", "event"]}},
+        "from": {"type": "string", "format": "date-time"},
+        "to": {"type": "string", "format": "date-time"},
+        "include_done": {"type": "boolean", "default": true},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5}
+      },
+      "required": ["query"]
+    }
+  }
+]

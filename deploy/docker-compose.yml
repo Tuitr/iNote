@@ -102,8 +102,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       # mock — ScriptedBrain; llm (Brain B) после мержа с libs/brain
       AGENT_BRAIN: ${AGENT_BRAIN:-scripted}
+      AGENT_MCP_URL: http://mcp:8000/mcp
     depends_on:
       redis: { condition: service_healthy }
+      mcp: { condition: service_healthy }
 
   # --- заглушки чужих зон: одна мини-картинка deploy/stub; владелец — в STUB_OWNER ---
   asr:
@@ -112,9 +114,13 @@ services:
     environment: { STUB_NAME: asr, STUB_OWNER: A }
 
   mcp:
-    # Владелец D. После мержа заменить на build: services/mcp
-    <<: *stub
-    environment: { STUB_NAME: mcp, STUB_OWNER: D }
+    # ВРЕМЕННО (S1, C): MCP-заглушка с инструментами из deploy/stub/mcp/fixtures.
+    # После мержа заменить на заглушку D, затем на build: services/mcp (владелец D)
+    <<: *python-service
+    build:
+      context: stub/mcp
+    image: va/stub-mcp:local
+    restart: "no"
     depends_on:
       postgres: { condition: service_healthy }
       migrate: { condition: service_healthy }
