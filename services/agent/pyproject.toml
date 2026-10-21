@@ -3,7 +3,17 @@ name = "va-agent"
 version = "0.0.0"
 description = "Agent Back: /v1/messages, /v1/actions, контекст, caller, шаблоны"
 requires-python = ">=3.12,<3.13"
-dependencies = ["va-common", "va-contracts", "fastapi>=0.115", "uvicorn>=0.32", "pydantic>=2.11", "redis>=5.2"]
+dependencies = [
+  "va-common",
+  "va-contracts",
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "pydantic>=2.11",
+  "redis>=5.2",
+  # Официальный SDK MCP v2 (API 1.x несовместим: нет mcp.server.fastmcp); httpx2 — его транспорт
+  "mcp>=2.3,<3",
+  "httpx2>=2.10,<3",
+]
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.13"]
