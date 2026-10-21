@@ -20,6 +20,7 @@ main.py          composition root: createApp() и lifespan
 истёкший или чужой payload — «Кнопка устарела». `/today`, `/tomorrow`, `/week` → `/v1/actions`, `/start`
 и `/help` — справка. Голосовое — заглушка до J1. Агент не ответил (45 с, без повторов) — «Не получилось
 связаться с ассистентом… Код: <6 символов trace_id>».
+Health: `/health/live` — 200; `/health/ready` — Redis и `/health/live` агента (без агента бот не готов).
 `ReplyToMaxMapper`: `Reply` агента → сообщение MAX: `action` → callback-кнопка, `open_app` → кнопка open_app
 (`web_app = BOT_USERNAME`, `payload = start_param`) или ссылка `https://max.ru/<бот>?startapp=…`
 (`BOT_OPEN_APP_MODE=link`); ряды режутся по лимитам MAX (7 кнопок, 3 ссылки или open_app, 30 рядов).
