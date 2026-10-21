@@ -12,6 +12,7 @@ from libs.core.services.items import ItemService
 from libs.core.services.search import RRF_K, SearchService, rrf_scores
 from libs.core.services.time import local_today
 from libs.core.services.users import UserService
+from libs.core.tests.fakes import FakeRedis
 
 TOMORROW = local_today("Europe/Moscow") + timedelta(days=1)
 
@@ -111,7 +112,9 @@ class TestSearch:
         user_id: int,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
-        other = await UserService(session_factory, "Europe/Moscow").resolve(2, None, None)
+        other = await UserService(session_factory, "Europe/Moscow", FakeRedis()).resolve(
+            2, None, None
+        )
         await _task(item_service, other.user_id, "Позвонить Ивану")
         await _task(item_service, user_id, "Удалённый звонок Ивану")
         async with session_factory() as session, session.begin():

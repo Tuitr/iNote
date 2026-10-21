@@ -108,7 +108,9 @@ def item_service(
 @pytest.fixture
 async def user_id(session_factory: async_sessionmaker[AsyncSession]) -> int:
     """Пользователь из Москвы, от имени которого тесты создают записи."""
-    resolved = await UserService(session_factory, "Europe/Moscow").resolve(123456789, None, None)
+    resolved = await UserService(session_factory, "Europe/Moscow", FakeRedis()).resolve(
+        123456789, None, None
+    )
     return resolved.user_id
 
 

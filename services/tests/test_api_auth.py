@@ -1,21 +1,17 @@
 """Вход мини-приложения: проверка initData (без базы) и POST /v1/auth/max (с базой)."""
 
-import secrets
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qsl, urlencode
 
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.engine import URL
 
 from services.api.app import create_app
 from services.api.auth import AuthError, issue_token, read_init_data
-from services.tests.init_data import BOT_TOKEN, signed_init_data
+from services.tests.init_data import BOT_TOKEN, JWT_SECRET, signed_init_data
 
 NOW = datetime(2026, 10, 21, 9, 0, tzinfo=UTC)
-JWT_SECRET = secrets.token_urlsafe(32)
 
 
 def _tampered(init_data: str) -> str:
@@ -78,29 +74,14 @@ class TestInitData:
         assert payload["exp"] == int(expires_at.timestamp())
 
 
-@pytest.fixture
-def api_env(clean_database_url: URL, monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    monkeypatch.setenv("DATABASE_URL", clean_database_url.render_as_string(hide_password=False))
-    monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:1/0")
-    monkeypatch.setenv("DEFAULT_TZ", "Europe/Moscow")
-    monkeypatch.setenv("API_MAX_BOT_TOKEN", BOT_TOKEN)
-    monkeypatch.setenv("API_JWT_SECRET", JWT_SECRET)
-    monkeypatch.delenv("API_DEV_AUTH", raising=False)
-    return monkeypatch
-
-
-@pytest.fixture
-def client(api_env: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    with TestClient(create_app()) as test_client:
-        yield test_client
-
-
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def test_valid_init_data_gives_token_me_and_start_param(client: TestClient) -> None:
-    response = client.post("/v1/auth/max", json={"init_data": signed_init_data(123456789, _now())})
+def test_valid_init_data_gives_token_me_and_start_param(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/v1/auth/max", json={"init_data": signed_init_data(123456789, _now())}
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -127,15 +108,15 @@ def test_valid_init_data_gives_token_me_and_start_param(client: TestClient) -> N
     ],
     ids=["подделанная подпись", "старый auth_date"],
 )
-def test_bad_init_data_is_unauthorized(client: TestClient, init_data: str) -> None:
-    response = client.post("/v1/auth/max", json={"init_data": init_data})
+def test_bad_init_data_is_unauthorized(api_client: TestClient, init_data: str) -> None:
+    response = api_client.post("/v1/auth/max", json={"init_data": init_data})
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthorized"
 
 
-def test_without_init_data_is_validation_error(client: TestClient) -> None:
-    response = client.post("/v1/auth/max", json={})
+def test_without_init_data_is_validation_error(api_client: TestClient) -> None:
+    response = api_client.post("/v1/auth/max", json={})
 
     assert response.status_code == 400
     assert response.json()["error"]["details"] == {"missing": ["body.init_data"]}

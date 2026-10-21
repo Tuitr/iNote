@@ -19,7 +19,7 @@ COPY services/mcp ./services/mcp
 # Миграции: их накатывает контейнер migrate (alembic upgrade head).
 COPY alembic.ini ./
 COPY migrations ./migrations
-# Примеры J5: на них пока отвечает заглушка API (/v1).
+# Примеры J5: из них api строит примеры ответов в OpenAPI.
 COPY contracts/examples ./contracts/examples
 # Установка в режиме -e оставляет код в /app, поэтому пути к contracts/examples
 # считаются от исходников одинаково локально и в образе.

@@ -1,6 +1,8 @@
 """Запросы к таблице users."""
 
-from sqlalchemy import select
+from typing import Any
+
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,5 +29,18 @@ class UserRepo:
             .values(max_user_id=max_user_id, max_chat_id=max_chat_id, name=name, tz=tz)
             .on_conflict_do_nothing(index_elements=[UserRow.max_user_id])
             .returning(UserRow)
+        )
+        return await self._session.scalar(statement)
+
+    async def update_settings(self, user_id: int, values: dict[str, Any]) -> UserRow | None:
+        """Меняет поля настроек; без изменений просто читает строку. None — пользователя нет."""
+        if not values:
+            return await self.get(user_id)
+        statement = (
+            update(UserRow)
+            .where(UserRow.id == user_id)
+            .values(**values)
+            .returning(UserRow)
+            .execution_options(synchronize_session=False, populate_existing=True)
         )
         return await self._session.scalar(statement)

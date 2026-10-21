@@ -98,6 +98,15 @@ class ItemRepo:
             raise LookupError("Запись исчезла внутри транзакции")
         return row
 
+    async def find_by_ids(self, user_id: int, item_ids: list[UUID]) -> list[ItemRow]:
+        """Неудалённые записи пользователя с этими id (ссылки на карточки в истории диалога)."""
+        if not item_ids:
+            return []
+        statement = select(ItemRow).where(
+            ItemRow.user_id == user_id, ItemRow.deleted_at.is_(None), ItemRow.id.in_(item_ids)
+        )
+        return list(await self._session.scalars(statement))
+
     async def find_events_overlapping(
         self, user_id: int, start: datetime, end: datetime, exclude_id: UUID | None
     ) -> list[ItemRow]:

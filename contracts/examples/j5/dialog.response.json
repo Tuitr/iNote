@@ -1,0 +1,30 @@
+{
+  "turns": [
+    {
+      "id": "1042",
+      "role": "assistant",
+      "text": "Напомню завтра в 10:00 позвонить Ивану.",
+      "input_type": null,
+      "created_at": "2026-10-20T14:05:03+03:00",
+      "items": [
+        {
+          "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+          "kind": "reminder",
+          "title": "Позвонить Ивану",
+          "starts_at": null,
+          "all_day": false,
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "1041",
+      "role": "user",
+      "text": "Напомни завтра в 10 позвонить Ивану",
+      "input_type": "voice",
+      "created_at": "2026-10-20T14:05:00+03:00",
+      "items": []
+    }
+  ],
+  "next_cursor": "1041"
+}

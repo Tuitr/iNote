@@ -7,6 +7,7 @@ from datetime import datetime
 from urllib.parse import urlencode
 
 BOT_TOKEN = "123456:test-bot-token"  # noqa: S105 — токен только для тестов
+JWT_SECRET = "test-jwt-secret-for-api-tests-only-0123456789"  # noqa: S105
 
 
 def signed_init_data(

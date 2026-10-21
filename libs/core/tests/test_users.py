@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from libs.contracts.settings import UserSettings
 from libs.core.services.users import UserService
+from libs.core.tests.fakes import FakeRedis
 
 pytestmark = pytest.mark.anyio
 
@@ -13,7 +14,7 @@ MAX_USER_ID = 123456789
 
 @pytest.fixture
 def user_service(session_factory: async_sessionmaker[AsyncSession]) -> UserService:
-    return UserService(session_factory, default_tz="Europe/Moscow")
+    return UserService(session_factory, "Europe/Moscow", FakeRedis())
 
 
 async def test_new_user_is_created_with_default_settings(user_service: UserService) -> None:

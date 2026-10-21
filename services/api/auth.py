@@ -59,6 +59,24 @@ def issue_token(max_user_id: int, secret: str, now: datetime) -> tuple[str, date
     return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM), expires_at
 
 
+def read_token(token: str, secret: str, now: datetime) -> int:
+    """max_user_id из действующего токена; подделанный или истёкший → AuthError."""
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["sub", "exp"], "verify_exp": False},
+        )
+        max_user_id = int(payload["sub"])
+    except (jwt.InvalidTokenError, ValueError) as error:
+        raise AuthError("Токен не прошёл проверку") from error
+    # Срок проверяем сами, по переданному «сейчас»: так время в тестах можно заморозить.
+    if datetime.fromtimestamp(payload["exp"], UTC) <= now:
+        raise AuthError("Токен истёк")
+    return max_user_id
+
+
 def _check_signature(fields: dict[str, str], bot_token: str) -> None:
     received = fields.get("hash", "")
     pairs = sorted((key, value) for key, value in fields.items() if key != "hash")

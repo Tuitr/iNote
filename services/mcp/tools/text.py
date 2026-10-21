@@ -9,31 +9,12 @@ from uuid import UUID
 
 from libs.contracts.items import Item, ItemBrief
 from libs.contracts.tools import TimeSlot
-
-_WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
-_MONTHS = (
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
-)
+from libs.core.services.time import day_label
 
 
 def short_id(item_id: UUID) -> str:
     """Первые 8 символов id: инструменты принимают их вместо полного UUID (J3)."""
     return str(item_id)[:8]
-
-
-def day_label(day: date) -> str:
-    return f"{_WEEKDAYS[day.weekday()]}, {day.day} {_MONTHS[day.month - 1]}"
 
 
 def created_text(item: Item) -> str:

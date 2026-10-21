@@ -23,3 +23,9 @@ async def bump_version(redis: Redis, user_id: int) -> None:
             await redis.incr(f"va:v1:mcp:ver:{user_id}")
     except (RedisError, OSError, TimeoutError) as error:
         logger.error("Версия данных user_id=%s не увеличена: %s", user_id, type(error).__name__)
+
+
+async def read_version(redis: Redis, user_id: int) -> int:
+    """Текущая версия данных пользователя; 0 — данных ещё не меняли. Ошибка Redis пробрасывается."""
+    value = await redis.get(f"va:v1:mcp:ver:{user_id}")
+    return 0 if value is None else int(value)

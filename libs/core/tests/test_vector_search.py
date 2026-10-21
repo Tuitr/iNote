@@ -81,7 +81,7 @@ async def test_deleted_and_foreign_records_are_not_found_by_meaning(
     user_id: int,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    other = await UserService(session_factory, "Europe/Moscow").resolve(2, None, None)
+    other = await UserService(session_factory, "Europe/Moscow", FakeRedis()).resolve(2, None, None)
     await _task(item_service, other.user_id, "Позвонить стоматологу")
     await _task(item_service, user_id, "Записаться к стоматологу")
     async with session_factory() as session, session.begin():

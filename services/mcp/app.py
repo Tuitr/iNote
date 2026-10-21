@@ -41,7 +41,9 @@ def create_app() -> FastAPI:
         async with common_lifespan(app), mcp_server.session_manager.run():
             app.state.service_token = load_service_token()
             session_factory = create_session_factory(app.state.db_engine)
-            app.state.user_service = UserService(session_factory, load_default_tz())
+            app.state.user_service = UserService(
+                session_factory, load_default_tz(), app.state.redis_client
+            )
             # Эмбеддера нет, пока роль A не выложила libs/embed: векторы не считаются,
             # поиск идёт по словам и буквам.
             app.state.tool_services = ToolServices(

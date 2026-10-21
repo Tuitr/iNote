@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,3 +37,13 @@ class DialogRepo:
             .on_conflict_do_nothing(index_elements=[DialogLogRow.trace_id, DialogLogRow.turn_no])
         )
         await self._session.execute(statement)
+
+    async def list_before(
+        self, user_id: int, before_id: int | None, limit: int
+    ) -> list[DialogLogRow]:
+        """Реплики пользователя от новых к старым; before_id — продолжить с более старых."""
+        statement = select(DialogLogRow).where(DialogLogRow.user_id == user_id)
+        if before_id is not None:
+            statement = statement.where(DialogLogRow.id < before_id)
+        statement = statement.order_by(DialogLogRow.id.desc()).limit(limit)
+        return list(await self._session.scalars(statement))

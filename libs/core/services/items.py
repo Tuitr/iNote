@@ -229,20 +229,54 @@ class ItemService:
             raise InvalidArgumentsError(
                 "Конец периода должен быть позже начала", {"invalid": ["to"]}
             )
-        start, end = days_range_utc(args.from_, args.to, caller.tz)
-        kinds = [kind.value for kind in args.kind] if args.kind else None
-        statuses = None if args.status == "all" else [args.status]
-        async with self._session_factory() as session, session.begin():
-            await require_user(session, caller.user_id)
-            # На одну запись больше лимита: так видно, что записей больше, чем отдаём.
-            rows = await ItemRepo(session).list_in_range(
-                caller.user_id, start, end, kinds, statuses, MAX_LIST_ITEMS + 1
-            )
-        return ListItemsResult(
-            items=[to_item(row, caller.tz) for row in rows[:MAX_LIST_ITEMS]],
-            range=DateRange(from_=args.from_, to=args.to),
-            truncated=len(rows) > MAX_LIST_ITEMS,
+        # На одну запись больше лимита: так видно, что записей больше, чем отдаём.
+        items = await self.list_period(
+            caller.user_id,
+            caller.tz,
+            args.from_,
+            args.to,
+            [kind.value for kind in args.kind] if args.kind else None,
+            args.status,
+            MAX_LIST_ITEMS + 1,
         )
+        return ListItemsResult(
+            items=items[:MAX_LIST_ITEMS],
+            range=DateRange(from_=args.from_, to=args.to),
+            truncated=len(items) > MAX_LIST_ITEMS,
+        )
+
+    async def list_period(
+        self,
+        user_id: int,
+        tz: str,
+        start: date,
+        end: date,
+        kinds: list[str] | None,
+        status: str,
+        limit: int,
+    ) -> list[Item]:
+        """Записи за даты [start, end) в поясе пользователя: «весь день» первыми, потом по времени.
+
+        status: open, done или all (все, включая отменённые).
+        """
+        start_utc, end_utc = days_range_utc(start, end, tz)
+        statuses = None if status == "all" else [status]
+        async with self._session_factory() as session, session.begin():
+            await require_user(session, user_id)
+            rows = await ItemRepo(session).list_in_range(
+                user_id, start_utc, end_utc, kinds, statuses, limit
+            )
+        return [to_item(row, tz) for row in rows]
+
+    async def get_item(self, user_id: int, tz: str, item_id: UUID) -> Item:
+        """Карточка записи. Удалённая, чужая и несуществующая — одинаково not_found (КиП)."""
+        async with self._session_factory() as session:
+            rows = await ItemRepo(session).find_by_ref(
+                user_id, str(item_id), deleted=False, limit=1
+            )
+        if not rows:
+            raise NotFoundError("Запись не найдена", {"id": str(item_id)})
+        return to_item(rows[0], tz)
 
     async def _embed(
         self, title: str, notes: str | None, participants: list[str], source_text: str | None
@@ -451,7 +485,7 @@ async def _conflict(
     return MutationResult(
         status="conflict",
         item=None,
-        conflicts=[_to_brief(row, caller.tz) for row in conflicts],
+        conflicts=[to_brief(row, caller.tz) for row in conflicts],
         free_slots=[
             TimeSlot(starts_at=to_user_tz(start, caller.tz), ends_at=to_user_tz(end, caller.tz))
             for start, end in slots
@@ -473,7 +507,7 @@ async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | N
         raise NotFoundError("Запись не найдена", {"id": ref})
     if len(rows) > 1:
         # Черновик D: validation_error со списком записей, чтобы агент показал кнопки выбора.
-        candidates = [_to_brief(row, caller.tz).model_dump(mode="json") for row in rows]
+        candidates = [to_brief(row, caller.tz).model_dump(mode="json") for row in rows]
         raise InvalidArgumentsError(
             "Под короткий id подходят несколько записей",
             {"invalid": ["id"], "candidates": candidates},
@@ -544,7 +578,7 @@ def _local(value: datetime | None, tz: str) -> datetime | None:
     return None if value is None else to_user_tz(value, tz)
 
 
-def _to_brief(row: ItemRow, tz: str) -> ItemBrief:
+def to_brief(row: ItemRow, tz: str) -> ItemBrief:
     return ItemBrief(
         id=row.id,
         kind=row.kind,

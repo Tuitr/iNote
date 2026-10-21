@@ -270,7 +270,7 @@ async def test_delete_and_restore(
 async def test_foreign_id_is_not_found_everywhere(
     service: ItemService, user_id: int, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    other = await UserService(session_factory, "Europe/Moscow").resolve(2, None, None)
+    other = await UserService(session_factory, "Europe/Moscow", FakeRedis()).resolve(2, None, None)
     foreign_id = await _reminder(service, other.user_id)
     caller = _caller(user_id)
 

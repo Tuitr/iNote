@@ -49,3 +49,25 @@ def days_range_utc(start: date, end: date, tz: str) -> tuple[datetime, datetime]
 def _require_aware(value: datetime) -> None:
     if value.utcoffset() is None:
         raise ValueError("Время без часового пояса")
+
+
+_WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+_MONTHS = (
+    "января",
+    "февраля",
+    "марта",
+    "апреля",
+    "мая",
+    "июня",
+    "июля",
+    "августа",
+    "сентября",
+    "октября",
+    "ноября",
+    "декабря",
+)
+
+
+def day_label(day: date) -> str:
+    """«пн, 19 октября»: так день подписан в строках для модели и (с большой буквы) в API."""
+    return f"{_WEEKDAYS[day.weekday()]}, {day.day} {_MONTHS[day.month - 1]}"
