@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Final
 
+import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
@@ -15,9 +16,9 @@ from agent.application.handle_message import HandleMessage, TurnDeps
 from agent.application.ports import Clock, ReplyRenderer, ToolExecutorFactory, UserResolver
 from agent.application.use_cases import HandleAction
 from agent.infrastructure.brains import buildBrain
+from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutorFactory
-from agent.infrastructure.placeholders import DevUserResolver
 from agent.infrastructure.redis_context import RedisDialogContextStore
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
@@ -27,6 +28,7 @@ from agent.presentation.basic_renderer import BasicReplyRenderer
 from agent.presentation.routes import buildAgentRouter
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
+from common.http import RetryPolicy, ServiceHttpClient
 from common.lifecycle import managedTasks
 from common.logging import configureLogging, getLogger
 from common.middleware import INTERNAL_PREFIXES, installMiddleware
@@ -51,6 +53,8 @@ class AgentOverrides:
     tools: ToolExecutorFactory | None = None
     clock: Clock | None = None
     renderer: ReplyRenderer | None = None
+    # транспорт к служебному REST mcp-контейнера (J8, health) — httpx.MockTransport в тестах
+    mcpTransport: httpx.AsyncBaseTransport | None = None
 
 
 # Примечание: фабрика приложения; зависимости собираются один раз в lifespan (правило 9)
@@ -69,6 +73,15 @@ def createApp(
         async with managedTasks() as tasks:
             redis = (custom.redisFactory or createRedis)(config.redisUrl)
             store = KeyedRedis(redis)
+            # J8 идемпотентен по max_user_id: таймаут и 1 повтор — как у MCP
+            mcpHttp = ServiceHttpClient(
+                baseUrl=config.mcpInternalUrl,
+                timeoutS=config.mcpTimeoutS,
+                serviceToken=config.serviceToken,
+                retry=RetryPolicy(retries=1),
+                upstreamName="mcp",
+                transport=custom.mcpTransport,
+            )
             mcp: McpConnection | None = None
             tools = custom.tools
             if tools is None:
@@ -76,7 +89,7 @@ def createApp(
                 mcp.start(tasks)
                 tools = McpToolExecutorFactory(mcp, timeoutS=config.mcpTimeoutS)
             deps = TurnDeps(
-                resolver=custom.resolver or DevUserResolver(config.defaultTz),
+                resolver=custom.resolver or HttpUserResolver(mcpHttp, store),
                 lock=RedisUserLock(store),
                 contextStore=RedisDialogContextStore(store),
                 clock=custom.clock or SystemClock(),
@@ -85,6 +98,7 @@ def createApp(
                 renderer=custom.renderer or BasicReplyRenderer(),
             )
             app.state.redis = redis
+            app.state.mcpHttp = mcpHttp
             app.state.handleMessage = HandleMessage(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
@@ -97,14 +111,15 @@ def createApp(
                 # MCP-сессию закрываем до остановки реестра: её хозяин — фоновая задача в нём
                 if mcp is not None:
                     await mcp.close()
+                await mcpHttp.aclose()
                 await redis.aclose()
                 _log.info("agent_stopped")
 
     app = FastAPI(title="va-agent", lifespan=lifespan)
     installErrorHandlers(app)
     installMiddleware(app, serviceToken=config.serviceToken, protectedPrefixes=PROTECTED_PREFIXES)
-    # LLM и ASR в readiness не дёргаем (правило 9); пинг MCP-контейнера — шаг 4
-    app.include_router(buildHealthRouter({"redis": _redisCheck(app)}))
+    # LLM и ASR в readiness не дёргаем (правило 9); MCP-контейнер — пинг /health/live
+    app.include_router(buildHealthRouter({"redis": _redisCheck(app), "mcp": _mcpCheck(app)}))
     app.include_router(buildAgentRouter())
     return app
 
@@ -115,5 +130,15 @@ def _redisCheck(app: FastAPI) -> HealthCheck:
     async def probe() -> object:
         redis: Redis = app.state.redis
         return await redis.ping()
+
+    return HealthCheck(probe=probe)
+
+
+# Примечание: живой ли mcp-контейнер; без повторов — readiness должна отвечать быстро
+def _mcpCheck(app: FastAPI) -> HealthCheck:
+    # Примечание: GET /health/live; не-2xx и сетевой сбой — AppError, то есть «не готов»
+    async def probe() -> object:
+        http: ServiceHttpClient = app.state.mcpHttp
+        return await http.get("/health/live", retry=False)
 
     return HealthCheck(probe=probe)

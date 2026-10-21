@@ -13,15 +13,20 @@ from pathlib import Path
 from typing import Final
 from zoneinfo import ZoneInfo
 
+import fakeredis
 import httpx
 import pytest
 import structlog
 from pydantic import SecretStr
 
 from agent.domain.user import Caller
+from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutor
+from common.errors import AppError
+from common.http import ServiceHttpClient
 from common.lifecycle import managedTasks
+from common.redis import KeyedRedis
 from services.agent.tests.conftest import REPO_ROOT, SERVICE_TOKEN
 
 pytestmark = pytest.mark.integration
@@ -42,14 +47,19 @@ class StubProcess:
     # Примечание: URL MCP-эндпоинта
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.port}/mcp"
+        return f"{self.root}/mcp"
+
+    # Примечание: корень контейнера — служебный REST J8 и health
+    @property
+    def root(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
 
     # Примечание: запуск и ожидание /health/live
     def start(self) -> None:
         with self.logPath.open("ab") as log:
             self.process = subprocess.Popen(  # noqa: S603 — свой скрипт из репо
                 [sys.executable, str(STUB)],
-                env={"STUB_PORT": str(self.port), "PATH": ""},
+                env={"STUB_PORT": str(self.port), "SERVICE_TOKEN": SERVICE_TOKEN, "PATH": ""},
                 stdout=log,
                 stderr=subprocess.STDOUT,
             )
@@ -199,3 +209,31 @@ async def test_reconnectAfterOutage(stub: StubProcess, uniqueId: str) -> None:
     assert {"mcp_session_lost", "mcp_call_failed"} & set(events)
     keys = {e["idempotency_key"] for e in stub.events("tool_called")}
     assert f"{uniqueId}:2" in keys
+
+
+# Примечание: J8 по HTTP: первый resolve создаёт пользователя, повтор — тот же user_id без created
+async def test_resolveUserOverHttp(stub: StubProcess, uniqueId: str) -> None:
+    maxUserId = int(uniqueId[:12], 16)
+    async with ServiceHttpClient(
+        baseUrl=stub.root, timeoutS=5, serviceToken=SecretStr(SERVICE_TOKEN), upstreamName="mcp"
+    ) as http:
+        first = await HttpUserResolver(http, KeyedRedis(fakeredis.FakeAsyncRedis())).resolve(
+            maxUserId, 5, "Иван"
+        )
+        # Свежий кеш — второй вызов снова идёт в J8 и проверяет идемпотентность на стороне сервера
+        again = await HttpUserResolver(http, KeyedRedis(fakeredis.FakeAsyncRedis())).resolve(
+            maxUserId, 5, None
+        )
+    assert first.userId == again.userId
+    assert first.tz == "Europe/Moscow"
+    created = [e["created"] for e in stub.events("user_resolved")]
+    assert created == [True, False]
+
+
+# Примечание: J8 без сервисного токена — 401 unauthorized в конверте стандарта
+async def test_resolveRequiresToken(stub: StubProcess) -> None:
+    async with ServiceHttpClient(baseUrl=stub.root, timeoutS=5, upstreamName="mcp") as http:
+        resolver = HttpUserResolver(http, KeyedRedis(fakeredis.FakeAsyncRedis()))
+        with pytest.raises(AppError) as caught:
+            await resolver.resolve(1, 1, None)
+    assert caught.value.code == "unauthorized"

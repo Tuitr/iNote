@@ -103,6 +103,7 @@ services:
       # mock — ScriptedBrain; llm (Brain B) после мержа с libs/brain
       AGENT_BRAIN: ${AGENT_BRAIN:-scripted}
       AGENT_MCP_URL: http://mcp:8000/mcp
+      AGENT_MCP_INTERNAL_URL: http://mcp:8000
     depends_on:
       redis: { condition: service_healthy }
       mcp: { condition: service_healthy }

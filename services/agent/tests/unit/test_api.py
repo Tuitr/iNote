@@ -15,6 +15,7 @@ from agent.infrastructure.scripted_brain import HELP
 from agent.infrastructure.settings import AgentSettings
 from agent.main import AgentOverrides, createApp
 from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
+from services.agent.tests.fakes import FakeMcpHttp
 
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
 AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
@@ -28,10 +29,17 @@ def agentEnv(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     return monkeypatch
 
 
-# Примечание: приложение агента
+# Примечание: служебный REST mcp-контейнера (J8 resolve и health) — фейк
 @pytest.fixture
-def app(agentEnv: pytest.MonkeyPatch) -> FastAPI:
-    return createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
+def mcpHttp() -> FakeMcpHttp:
+    return FakeMcpHttp(userId=17)
+
+
+# Примечание: приложение агента: fakeredis, фейковый J8; MCP-сессия поднимается в фоне и не нужна
+@pytest.fixture
+def app(agentEnv: pytest.MonkeyPatch, mcpHttp: FakeMcpHttp) -> FastAPI:
+    overrides = AgentOverrides(redisFactory=fakeRedis, mcpTransport=mcpHttp.transport)
+    return createApp(AgentSettings(), overrides)
 
 
 # Примечание: fakeredis вместо настоящего Redis
@@ -77,6 +85,34 @@ async def test_messageRunsTurn(client: httpx.AsyncClient) -> None:
     assert body["text"] == HELP
 
 
+# Примечание: пользователь определяется через J8 (trace цепочки уходит дальше), второй ход — из кеша
+async def test_userResolvedViaJ8(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) -> None:
+    request = example("message_request.json")
+    assert isinstance(request, dict)
+    for _ in range(2):
+        response = await client.post(
+            "/v1/messages",
+            json={**request, "text": "привет"},
+            headers={**AUTH, "X-Trace-Id": TRACE},
+        )
+        assert response.status_code == 200
+    [resolve] = mcpHttp.resolves
+    assert resolve.headers["X-Trace-Id"] == TRACE
+    assert json.loads(resolve.content)["max_user_id"] == request["max_user_id"]
+
+
+# Примечание: J8 недоступен — пользователь получает ответ с ошибкой и кодом, а не 5xx
+async def test_userResolveDown(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) -> None:
+    mcpHttp.down = True
+    response = await client.post(
+        "/v1/messages", json=example("message_request.json"), headers={**AUTH, "X-Trace-Id": TRACE}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "error"
+    assert TRACE[:6] in body["text"]
+
+
 # Примечание: /v1/actions → свой фиксированный Reply
 async def test_actionReturnsStubReply(client: httpx.AsyncClient) -> None:
     response = await client.post("/v1/actions", json=example("action_request.json"), headers=AUTH)
@@ -108,11 +144,19 @@ async def test_invalidRequest(client: httpx.AsyncClient) -> None:
     assert {tuple(f["loc"]) for f in error["details"]["fields"]} >= {("body", "text")}
 
 
-# Примечание: health: live и ready (Redis) без токена
+# Примечание: health: live и ready (Redis и mcp-контейнер) без токена
 async def test_health(client: httpx.AsyncClient) -> None:
     assert (await client.get("/health/live")).status_code == 200
     ready = await client.get("/health/ready")
-    assert ready.json() == {"status": "ok", "checks": {"redis": "ok"}}
+    assert ready.json() == {"status": "ok", "checks": {"redis": "ok", "mcp": "ok"}}
+
+
+# Примечание: mcp-контейнер не отвечает — агент не готов (503), Redis при этом ok
+async def test_notReadyWithoutMcp(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) -> None:
+    mcpHttp.healthy = False
+    ready = await client.get("/health/ready")
+    assert ready.status_code == 503
+    assert ready.json()["checks"] == {"redis": "ok", "mcp": "fail"}
 
 
 # Примечание: пример ответа не по контракту — агент не стартует

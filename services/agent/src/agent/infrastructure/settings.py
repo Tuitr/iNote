@@ -17,6 +17,10 @@ class AgentSettings(BaseServiceSettings):
     lockWaitS: float = Field(default=10.0, ge=0, validation_alias="AGENT_LOCK_WAIT_S")
     # Одна MCP-сессия на процесс (J3); внутри compose — http://mcp:8000/mcp
     mcpUrl: str = Field(default="http://mcp:8000/mcp", validation_alias="AGENT_MCP_URL")
+    # Служебный REST того же контейнера (J8): /internal/v1/users/resolve, /health/live
+    mcpInternalUrl: str = Field(
+        default="http://mcp:8000", validation_alias="AGENT_MCP_INTERNAL_URL"
+    )
     # Стандарт: 5 с на вызов и 1 повтор (только с ключом идемпотентности)
     mcpTimeoutS: float = Field(default=5.0, gt=0, le=10, validation_alias="AGENT_MCP_TIMEOUT_S")
     # /v1/actions — заглушка до S2; путь относительно рабочего каталога (корень репо, /app)

@@ -5,6 +5,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Final
 
+import httpx
+
 from agent.application.ports import DialogContext
 from agent.domain.user import Caller, UserContext, UserId
 from common.errors import AppError
@@ -168,3 +170,50 @@ class ScenarioBrain:
     # Примечание: уточнения — S2
     async def resume(self, turn: TurnInput, choice: str, tools: ToolExecutor) -> TurnResult:
         raise NotImplementedError
+
+
+# Примечание: служебный REST mcp-контейнера (J8 и health) для httpx.MockTransport; requests — журнал
+class FakeMcpHttp:
+    # Примечание: down — resolve всегда 503; failures — первые n ответов 503; body — свой ответ
+    def __init__(
+        self,
+        userId: int = 17,
+        tz: str = "Europe/Moscow",
+        *,
+        down: bool = False,
+        failures: int = 0,
+        body: dict[str, object] | None = None,
+    ) -> None:
+        self.userId = userId
+        self.tz = tz
+        self.down = down
+        self.failures = failures
+        self.body = body
+        self.healthy = True
+        self.requests: list[httpx.Request] = []
+
+    # Примечание: транспорт для ServiceHttpClient / AgentOverrides.mcpTransport
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._handle)
+
+    # Примечание: запросы resolve
+    @property
+    def resolves(self) -> list[httpx.Request]:
+        return [r for r in self.requests if r.url.path == "/internal/v1/users/resolve"]
+
+    # Примечание: /health/live и /internal/v1/users/resolve; остальное — 404
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if request.url.path == "/health/live":
+            return httpx.Response(200 if self.healthy else 503, json={"status": "ok"})
+        if request.url.path != "/internal/v1/users/resolve":
+            return httpx.Response(404, json={"error": {"code": "not_found", "message": "-"}})
+        if self.down or self.failures > 0:
+            self.failures -= 1
+            error = {"code": "upstream_unavailable", "message": "down", "details": {}}
+            return httpx.Response(503, json={"error": error})
+        if self.body is not None:
+            return httpx.Response(200, json=self.body)
+        user = {"user_id": self.userId, "tz": self.tz, "settings": {}, "created": True}
+        return httpx.Response(200, json=user)

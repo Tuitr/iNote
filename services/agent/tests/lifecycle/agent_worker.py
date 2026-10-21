@@ -1,8 +1,10 @@
 """Процесс для lifecycle-теста: агент с медленным Brain под uvicorn, SIGTERM посреди хода."""
 
 import asyncio
+import json
 import sys
 
+import httpx
 import uvicorn
 
 from agent.infrastructure.settings import AgentSettings
@@ -27,9 +29,20 @@ class SlowBrain:
         raise NotImplementedError
 
 
+# Примечание: служебный REST mcp-контейнера без сети: user_id = max_user_id, health → 200
+def fakeMcpHttp(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/internal/v1/users/resolve":
+        userId = json.loads(request.content)["max_user_id"]
+        return httpx.Response(200, json={"user_id": userId, "tz": "Europe/Moscow"})
+    return httpx.Response(200, json={"status": "ok"})
+
+
 # Примечание: аргументы — порт и длительность хода; окружение (Redis, токен) задаёт тест
 def main(port: int, delayS: float) -> None:
-    app = createApp(AgentSettings(), AgentOverrides(brain=SlowBrain(delayS)))
+    app = createApp(
+        AgentSettings(),
+        AgentOverrides(brain=SlowBrain(delayS), mcpTransport=httpx.MockTransport(fakeMcpHttp)),
+    )
     # log_config=None: логи уже настроены createApp (JSON); иначе uvicorn перенастроит их на текст
     config = uvicorn.Config(
         app, host="127.0.0.1", port=port, timeout_graceful_shutdown=15, log_config=None

@@ -5,6 +5,7 @@ import pytest
 from redis.asyncio import Redis
 
 from agent.application.ports import DialogContext
+from agent.infrastructure.http_user_resolver import USER_CACHE_TTL_S, HttpUserResolver
 from agent.infrastructure.redis_context import (
     CONTEXT_TTL_S,
     FOCUS_TTL_S,
@@ -12,9 +13,10 @@ from agent.infrastructure.redis_context import (
     RedisDialogContextStore,
 )
 from agent.infrastructure.redis_lock import LOCK_TTL_S, RedisUserLock
+from common.http import ServiceHttpClient
 from common.redis import KeyedRedis
 from contracts.agent_side import ItemBrief, Turn
-from services.agent.tests.fakes import ITEM
+from services.agent.tests.fakes import ITEM, FakeMcpHttp
 
 pytestmark = pytest.mark.integration
 
@@ -57,3 +59,19 @@ async def test_contextKeysAndTtl(redisClient: Redis, uniqueId: str) -> None:
         actual = await redisClient.ttl(f"va:v1:agent:{entity}:{userId}")
         assert ttl - 2 < actual <= ttl, entity
     assert (await store.load(userId)).pending == {"step": 1}
+
+
+# Примечание: кеш J8 на настоящем Redis: ключ по max_user_id, TTL 1 ч, второй ход без J8
+async def test_userCacheKeyAndTtl(redisClient: Redis, uniqueId: str) -> None:
+    maxUserId = userIdFrom(uniqueId)
+    mcp = FakeMcpHttp(userId=maxUserId + 7)
+    async with ServiceHttpClient(
+        baseUrl="http://mcp:8000", timeoutS=1, transport=mcp.transport
+    ) as http:
+        resolver = HttpUserResolver(http, KeyedRedis(redisClient))
+        await resolver.resolve(maxUserId, 1, None)
+        user = await resolver.resolve(maxUserId, 2, None)
+    key = f"va:v1:agent:user:{maxUserId}"
+    assert USER_CACHE_TTL_S - 2 < await redisClient.ttl(key) <= USER_CACHE_TTL_S
+    assert (user.userId, user.maxChatId) == (maxUserId + 7, 2)
+    assert len(mcp.resolves) == 1

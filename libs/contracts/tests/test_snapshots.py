@@ -13,6 +13,7 @@ from syrupy.extensions.json import JSONSnapshotExtension
 from contracts.agent_side import TurnInput, TurnResult
 from contracts.notify import NotifyDelivered, NotifyRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
+from contracts.users import ResolveUserRequest, ResolveUserResponse
 from libs.contracts.tests.examples import EXAMPLES_DIR, loadExample
 
 pytestmark = pytest.mark.contract
@@ -25,6 +26,8 @@ MODELS: list[type[BaseModel]] = [
     NotifyDelivered,
     TurnInput,
     TurnResult,
+    ResolveUserRequest,
+    ResolveUserResponse,
 ]
 
 
