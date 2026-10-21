@@ -1,10 +1,10 @@
 # services/agent — Agent Back (зона C)
 
-S1 (в работе): `POST /v1/messages` проходит настоящий ход — пользователь → лок → контекст в Redis →
-Brain → инструменты MCP → ответ. `POST /v1/actions` пока отдаёт фиксированный `Reply` из
-`contracts/examples/reply/list.json` (кнопки без LLM — S2).
+S2 (в работе): `POST /v1/messages` проходит настоящий ход — пользователь → лок → контекст в Redis →
+Brain → инструменты MCP → ответ. `POST /v1/actions` настоящий для уточнений (`pick_option`, `cancel`),
+остальные действия пока отдают фиксированный `Reply` из `contracts/examples/reply/list.json`.
 
-- **Ход** (`application/handle_message.py`): лок на пользователя `va:v1:agent:lock:{user_id}` (60 с), бюджет
+- **Ход** (`application/turn_pipeline.py`, шаги — `handle_message.py` и `handle_action.py`): лок на пользователя `va:v1:agent:lock:{user_id}` (60 с), бюджет
   хода 40 с вместе с ожиданием лока, любой сбой → `Reply` с кодом и `trace_id`. Brain получает `TurnInput`
   без `user_id`; «готово» без успешного изменяющего вызова → `llm_no_action` (правило 3). История (10 реплик),
   фокус и `pending` — в Redis с TTL (`docs/redis-keys.md`).
@@ -23,8 +23,13 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` пока
   markdown; текст ≤ 4000 символов, хвост списка — «…и ещё N». Свободные ответы и вопросы — текстом модели,
   без разметки. Голосовое (`source=voice`) — первой строкой «Распознал: «…»» (экранировано в markdown). У каждого кода ошибки свой текст + «Код: <6 символов trace_id>». Шаблоны проверяются
   при старте: пропущенный текст ошибки или лишний ключ — агент не стартует.
-- Кнопки ответа (`undo`, `reschedule`, `list_period`, `clarify`) обрабатывает `/v1/actions` — с S2; сейчас там
-  заглушка. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
+- **Уточнения**: `outcome=clarify` → вопрос, варианты кнопками `pick_option` (`args.choice` — номер, по 3 в ряд)
+  и «Отмена» (`cancel`). В `va:v1:agent:pending:{user_id}` (10 мин) — pending Brain как есть и подписи
+  вариантов. `pick_option` → подпись варианта становится текстом хода → `Brain.resume` под тем же локом;
+  нет вопроса или номер вне списка — «Вопрос устарел»; `cancel` стирает pending. Ответ на вопрос текстом —
+  обычный `/v1/messages`, pending уходит в `TurnInput`. `ScriptedBrain` уточняет время у «напомни …» без
+  времени, слот при конфликте встреч и «правильно понял?» при `asr_low_confidence`.
+- Кнопки `undo`, `reschedule`, `list_period` — шаг 4 S2, пока заглушка. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
 - Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).
 - Слои: `domain` ← `application` (порты, ход) ← `infrastructure` (Redis, MCP, ScriptedBrain, настройки),
   `presentation` (роуты, рендер); `main.py` — composition root, всё создаётся в `lifespan`.
