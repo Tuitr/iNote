@@ -10,6 +10,8 @@ import pytest_asyncio
 from fastapi import FastAPI
 from pydantic import ValidationError
 
+from agent.infrastructure.brains import BrainNotConnectedError
+from agent.infrastructure.scripted_brain import HELP
 from agent.infrastructure.settings import AgentSettings
 from agent.main import AgentOverrides, createApp
 from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
@@ -61,16 +63,18 @@ def expectedReply(name: str) -> dict[str, object]:
 
 # Примечание: /v1/messages идёт через ход агента; trace_id цепочки сохраняется в Reply
 async def test_messageRunsTurn(client: httpx.AsyncClient) -> None:
+    request = example("message_request.json")
+    assert isinstance(request, dict)
     response = await client.post(
         "/v1/messages",
-        json=example("message_request.json"),
+        json={**request, "text": "привет"},
         headers={**AUTH, "X-Trace-Id": TRACE},
     )
     assert response.status_code == 200
     body = response.json()
     assert body["trace_id"] == TRACE == response.headers["X-Trace-Id"]
     assert body["state"] == "answer"
-    assert body["text"]
+    assert body["text"] == HELP
 
 
 # Примечание: /v1/actions → свой фиксированный Reply
@@ -118,5 +122,14 @@ async def test_invalidStubFailsStartup(agentEnv: pytest.MonkeyPatch, tmp_path: P
     agentEnv.setenv("AGENT_STUB_ACTION_REPLY", str(broken))
     app = createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
     with pytest.raises(ValidationError):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+# Примечание: AGENT_BRAIN=llm до мержа с B — агент не стартует, причина в ошибке
+async def test_llmBrainFailsStartup(agentEnv: pytest.MonkeyPatch) -> None:
+    agentEnv.setenv("AGENT_BRAIN", "llm")
+    app = createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
+    with pytest.raises(BrainNotConnectedError, match="libs/brain"):
         async with app.router.lifespan_context(app):
             pass

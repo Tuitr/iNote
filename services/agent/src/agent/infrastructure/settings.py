@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import Field
 
@@ -10,6 +10,8 @@ from common.config import BaseServiceSettings
 class AgentSettings(BaseServiceSettings):
     envPrefix: ClassVar[str] = "AGENT_"
 
+    # scripted — правила вместо LLM (моки, e2e); llm — Brain участника B после мержа
+    brain: Literal["scripted", "llm"] = Field(default="scripted", validation_alias="AGENT_BRAIN")
     # Бюджет хода вместе с ожиданием лока: бот ждёт агента 45 с (docs/standards.md)
     turnTimeoutS: float = Field(default=40.0, gt=0, le=44, validation_alias="AGENT_TURN_TIMEOUT_S")
     lockWaitS: float = Field(default=10.0, ge=0, validation_alias="AGENT_LOCK_WAIT_S")

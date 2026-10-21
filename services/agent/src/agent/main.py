@@ -14,11 +14,8 @@ from redis.asyncio import Redis
 from agent.application.handle_message import HandleMessage, TurnDeps
 from agent.application.ports import Clock, ReplyRenderer, ToolExecutorFactory, UserResolver
 from agent.application.use_cases import HandleAction
-from agent.infrastructure.placeholders import (
-    DevUserResolver,
-    NoToolsExecutorFactory,
-    PlaceholderBrain,
-)
+from agent.infrastructure.brains import buildBrain
+from agent.infrastructure.placeholders import DevUserResolver, NoToolsExecutorFactory
 from agent.infrastructure.redis_context import RedisDialogContextStore
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
@@ -64,6 +61,7 @@ def createApp(
     # Примечание: Redis, ход агента и заглушка /v1/actions; клиенты закрываются при остановке
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        brain = custom.brain or buildBrain(config.brain)
         actionSource = ExampleReplySource(loadReplyExample(config.stubActionReply))
         redis = (custom.redisFactory or createRedis)(config.redisUrl)
         store = KeyedRedis(redis)
@@ -72,7 +70,7 @@ def createApp(
             lock=RedisUserLock(store),
             contextStore=RedisDialogContextStore(store),
             clock=custom.clock or SystemClock(),
-            brain=custom.brain or PlaceholderBrain(),
+            brain=brain,
             tools=custom.tools or NoToolsExecutorFactory(),
             renderer=custom.renderer or BasicReplyRenderer(),
         )
@@ -81,7 +79,7 @@ def createApp(
             deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
         )
         app.state.handleAction = HandleAction(actionSource)
-        _log.info("agent_started")
+        _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
         try:
             yield
         finally:
