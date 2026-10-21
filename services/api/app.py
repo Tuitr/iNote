@@ -2,9 +2,9 @@
 
 from fastapi import FastAPI
 
-from services.api.errors import install_error_handlers
 from services.api.routes.stub import router as stub_router
 from services.http_common import health_router, lifespan
+from services.http_errors import install_error_handlers
 
 app = FastAPI(title="iNote API", version="0.1.0", lifespan=lifespan)
 install_error_handlers(app)

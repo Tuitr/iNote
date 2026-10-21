@@ -24,7 +24,7 @@ from libs.contracts.api import (
 from libs.contracts.errors import ErrorCode, HttpErrorResponse
 from libs.contracts.items import Item, ItemKind
 from libs.contracts.tools import DateOnly, SearchItemsResult
-from services.api.errors import ApiError
+from services.http_errors import HttpError
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "examples" / "j5"
 
@@ -61,7 +61,7 @@ def require_token(
     # Заглушка принимает любой токен: важно только, что он передан, чтобы фронт
     # с первого дня ходил с заголовком Authorization и обрабатывал 401.
     if credentials is None:
-        raise ApiError(ErrorCode.UNAUTHORIZED, "Нужна авторизация")
+        raise HttpError(ErrorCode.UNAUTHORIZED, "Нужна авторизация")
 
 
 router = APIRouter(prefix="/v1")
@@ -155,7 +155,7 @@ async def search_items(
 async def get_item(item_id: UUID) -> dict[str, Any]:
     item = _example("item.response")
     if str(item_id) != item["id"]:
-        raise ApiError(ErrorCode.NOT_FOUND, "Запись не найдена", {"id": str(item_id)})
+        raise HttpError(ErrorCode.NOT_FOUND, "Запись не найдена", {"id": str(item_id)})
     return item
 
 
