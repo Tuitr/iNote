@@ -1,0 +1,17 @@
+[project]
+name = "va-agent"
+version = "0.0.0"
+description = "Agent Back: /v1/messages, /v1/actions, контекст, caller, шаблоны"
+requires-python = ">=3.12,<3.13"
+dependencies = ["va-common", "va-contracts"]
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agent"
+
+[tool.uv.sources]
+va-common = { workspace = true }
+va-contracts = { workspace = true }

@@ -1,0 +1,191 @@
+# Корень монорепо: виртуальный uv workspace (сам корень не пакет).
+# Каждая зона добавляет свой блок с маркерами; при мерже блоки склеиваются.
+
+[tool.uv.workspace]
+members = [
+  # --- зона C ---
+  "libs/common",
+  "libs/contracts",
+  "services/bot",
+  "services/agent",
+  # --- конец зоны C ---
+]
+
+[dependency-groups]
+dev = [
+  # --- зона C ---
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=5.0",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "pre-commit>=4.0",
+  "import-linter>=2.1",
+  # --- конец зоны C ---
+]
+
+# ---------------------------------------------------------------------------
+# Общие настройки инструментов — в корне, чтобы команды из CLAUDE.md
+# (`uv run ruff check .`, `uv run mypy libs services`, `uv run pytest -m ...`)
+# работали из корня одинаково для всех пакетов. Решение C, см. docs/decisions.md.
+# ---------------------------------------------------------------------------
+
+# --- зона C ---
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = [
+  "libs/common/src",
+  "libs/contracts/src",
+  "services/bot/src",
+  "services/agent/src",
+]
+extend-exclude = ["**/__snapshots__"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "N",        # pep8-naming (часть отключена ниже)
+  "UP",       # pyupgrade: синтаксис 3.12
+  "B",        # bugbear
+  "A",        # затенение builtins
+  "C4",       # comprehensions
+  "SIM",      # упрощения
+  "RET",      # return
+  "PIE",
+  "PT",       # pytest-стиль
+  "ASYNC",    # ошибки в async-коде
+  "S",        # bandit: безопасность
+  "BLE",      # голый except Exception
+  "T20",      # print в коде
+  "DTZ",      # datetime без пояса — у нас время всегда со смещением
+  "TID",      # tidy imports
+  "TC",       # импорты только для типов
+  "PTH",      # pathlib
+  "ERA",      # закомментированный код
+  "PL",       # pylint
+  "PERF",
+  "FURB",
+  "RUF",
+  "ANN401",   # запрет Any в аннотациях
+]
+ignore = [
+  # Решение C, на подтверждение G0: camelCase в Python-коде, snake_case на проводах.
+  "N802",  # имя функции не snake_case
+  "N803",  # имя аргумента не snake_case
+  "N806",  # переменная в функции не snake_case
+  "N815",  # mixedCase в теле класса
+  "N816",  # mixedCase в глобальной области
+  # Комментарии и тексты по-русски: кириллица «похожа» на латиницу — это не ошибка.
+  "RUF001", "RUF002", "RUF003",
+  "PLR0913",  # число аргументов: конструкторы с DI их законно много
+  "PLC0415",  # import внутри функции — нужен для ленивых импортов в composition root
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = [
+  "S101",    # assert в тестах
+  "S105", "S106",  # «пароли» в фикстурах — тестовые значения
+  "PLR2004", # магические числа в проверках
+  "ANN401",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common", "contracts", "bot", "agent"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["pydantic.field_validator", "pydantic.model_validator"]
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_any_explicit = true
+disallow_any_unimported = true
+extra_checks = true
+enable_error_code = [
+  "ignore-without-code",
+  "redundant-expr",
+  "redundant-self",
+  "truthy-bool",
+  "truthy-iterable",
+  "possibly-undefined",
+  "unused-awaitable",
+  "explicit-override",
+  "mutable-override",
+]
+# Монорепо: модули src/ получают имя от своего src-корня (common.config),
+# тесты — от корня репо (libs.common.tests.conftest), чтобы conftest не конфликтовали.
+explicit_package_bases = true
+mypy_path = [
+  "libs/common/src",
+  "libs/contracts/src",
+  "services/bot/src",
+  "services/agent/src",
+  "$MYPY_CONFIG_FILE_DIR",
+]
+exclude = ['(^|/)\.venv/', '(^|/)build/', '(^|/)__snapshots__/']
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+testpaths = ["libs", "services"]
+# importlib: одноимённые test_*.py и conftest.py в разных пакетах не конфликтуют;
+# pythonpath ".": хелперы тестов импортируются полным путём (services.bot.tests.fakes).
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "contract: снапшоты схем и примеры contracts/examples",
+  "integration: нужен Docker (testcontainers: Redis, PostgreSQL)",
+  "lifecycle: старт и остановка процесса, SIGTERM",
+  "e2e: compose с фейковыми MAX и ASR",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["common", "contracts", "bot", "agent"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
+
+# Слои и границы пакетов проверяет import-linter (`uv run lint-imports`).
+[tool.importlinter]
+root_packages = ["common", "contracts", "bot", "agent"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Пакеты: сервисы над contracts над common; bot и agent друг друга не знают"
+type = "layers"
+layers = ["bot | agent", "contracts", "common"]
+
+[[tool.importlinter.contracts]]
+name = "bot: presentation | infrastructure → application → domain"
+type = "layers"
+containers = ["bot"]
+layers = ["main", "presentation | infrastructure", "application", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "agent: presentation | infrastructure → application → domain"
+type = "layers"
+containers = ["agent"]
+layers = ["main", "presentation | infrastructure", "application", "domain"]
+
+[[tool.importlinter.contracts]]
+name = "domain и application не знают о фреймворках и вводе-выводе"
+type = "forbidden"
+source_modules = ["bot.domain", "bot.application", "agent.domain", "agent.application"]
+forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn"]
+# --- конец зоны C ---
