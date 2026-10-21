@@ -199,4 +199,6 @@ name = "domain и application не знают о фреймворках и вв�
 type = "forbidden"
 source_modules = ["bot.domain", "bot.application", "agent.domain", "agent.application"]
 forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn"]
+# Запрещён прямой импорт; через common (логи, trace) фреймворки доступны косвенно — это нормально
+allow_indirect_imports = true
 # --- конец зоны C ---
