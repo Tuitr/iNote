@@ -154,6 +154,17 @@ class Usage(WireModel):
 
 type TurnOutcome = Literal["done", "clarify", "answer", "error"]
 type BrainErrorCode = Literal["llm_timeout", "llm_rate_limited", "llm_bad_output", "llm_no_action"]
+# Коды ошибок инструментов (J3, стандарты): ход закончился ошибкой инструмента (добавлено в S1)
+type ToolErrorCode = Literal[
+    "validation_error",
+    "not_found",
+    "past_time",
+    "conflict",
+    "rate_limited",
+    "internal",
+    "upstream_unavailable",
+    "upstream_timeout",
+]
 
 
 # Примечание: (B) итог хода; ошибки LLM не выбрасываются, а приходят как outcome=error
@@ -163,7 +174,7 @@ class TurnResult(WireModel):
     say: str | None = None
     clarify: Clarify | None = None
     focus: list[uuid.UUID] = Field(default_factory=list)
-    errorCode: BrainErrorCode | None = None
+    errorCode: BrainErrorCode | ToolErrorCode | None = None
     usage: Usage
 
     # Примечание: clarify ⇔ outcome=clarify, error_code ⇔ outcome=error

@@ -83,6 +83,19 @@
       "additionalProperties": true,
       "type": "object"
     },
+    "ToolErrorCode": {
+      "enum": [
+        "validation_error",
+        "not_found",
+        "past_time",
+        "conflict",
+        "rate_limited",
+        "internal",
+        "upstream_unavailable",
+        "upstream_timeout"
+      ],
+      "type": "string"
+    },
     "ToolResult": {
       "properties": {
         "data": {
@@ -195,10 +208,14 @@
           "$ref": "#/$defs/BrainErrorCode"
         },
         {
+          "$ref": "#/$defs/ToolErrorCode"
+        },
+        {
           "type": "null"
         }
       ],
-      "default": null
+      "default": null,
+      "title": "Error Code"
     },
     "focus": {
       "items": {
