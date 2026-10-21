@@ -1,0 +1,46 @@
+{
+  "properties": {
+    "locale": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Locale"
+    },
+    "max_chat_id": {
+      "title": "Max Chat Id",
+      "type": "integer"
+    },
+    "max_user_id": {
+      "title": "Max User Id",
+      "type": "integer"
+    },
+    "source": {
+      "default": "text",
+      "enum": [
+        "text",
+        "voice"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "max_user_id",
+    "max_chat_id",
+    "text"
+  ],
+  "title": "MessageRequest",
+  "type": "object"
+}

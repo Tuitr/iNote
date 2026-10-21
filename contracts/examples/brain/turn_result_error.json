@@ -1,0 +1,15 @@
+{
+  "outcome": "error",
+  "actions": [],
+  "say": null,
+  "clarify": null,
+  "focus": [],
+  "error_code": "llm_timeout",
+  "usage": {
+    "model": "fake-llm",
+    "llm_calls": 2,
+    "tokens_in": 812,
+    "tokens_out": 0,
+    "latency_ms": 40000
+  }
+}

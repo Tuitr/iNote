@@ -1,0 +1,337 @@
+{
+  "agent/action_request.json": {
+    "action": "undo",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+    },
+    "callback_id": "cb.synthetic.0001",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "agent/message_request.json": {
+    "locale": "ru",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300,
+    "source": "text",
+    "text": "Напомни завтра в 10 позвонить Ивану"
+  },
+  "brain/tool_result_error.json": {
+    "data": null,
+    "error": {
+      "code": "past_time",
+      "details": {
+        "starts_at": "2026-10-17T09:00:00+03:00"
+      },
+      "message": "Время уже прошло"
+    },
+    "ok": false,
+    "summary": "Ошибка past_time: время уже прошло"
+  },
+  "brain/tool_result_ok.json": {
+    "data": {
+      "item": {
+        "all_day": false,
+        "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+        "kind": "reminder",
+        "starts_at": "2026-10-18T11:00:00+03:00",
+        "status": "open",
+        "title": "Позвонить Ивану"
+      },
+      "status": "updated"
+    },
+    "error": null,
+    "ok": true,
+    "summary": "Перенесено: «Позвонить Ивану» сб 18.10 11:00 (id 7f3a9c2e)"
+  },
+  "brain/turn_input.json": {
+    "asr_low_confidence": false,
+    "focus": [
+      {
+        "all_day": false,
+        "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+        "kind": "reminder",
+        "starts_at": "2026-10-18T10:00:00+03:00",
+        "status": "open",
+        "title": "Позвонить Ивану"
+      }
+    ],
+    "history": [
+      {
+        "at": "2026-10-17T21:29:10+03:00",
+        "role": "user",
+        "text": "напомни завтра в 10 позвонить Ивану"
+      },
+      {
+        "at": "2026-10-17T21:29:12+03:00",
+        "role": "assistant",
+        "text": "Напоминание создано: Позвонить Ивану, завтра, сб 18 октября, 10:00"
+      }
+    ],
+    "input_type": "voice",
+    "now": "2026-10-17T21:30:00+03:00",
+    "pending": null,
+    "settings": {
+      "default_event_min": 60,
+      "tz": "Europe/Moscow",
+      "voice_replies": false
+    },
+    "text": "перенеси её на 11",
+    "tz": "Europe/Moscow"
+  },
+  "brain/turn_result_clarify.json": {
+    "actions": [],
+    "clarify": {
+      "missing": [
+        "starts_at"
+      ],
+      "options": [
+        "10:00",
+        "15:00",
+        "19:00"
+      ],
+      "pending": {
+        "args": {
+          "date": "2026-10-18",
+          "title": "Встреча с Иваном"
+        },
+        "tool": "create_event"
+      }
+    },
+    "error_code": null,
+    "focus": [],
+    "outcome": "clarify",
+    "say": "На какое время поставить встречу с Иваном?",
+    "usage": {
+      "latency_ms": 930,
+      "llm_calls": 1,
+      "model": "fake-llm",
+      "tokens_in": 812,
+      "tokens_out": 40
+    }
+  },
+  "brain/turn_result_done.json": {
+    "actions": [
+      {
+        "args": {
+          "id": "7f3a9c2e",
+          "starts_at": "2026-10-18T11:00:00+03:00"
+        },
+        "name": "update_item",
+        "result": {
+          "data": {
+            "item": {
+              "all_day": false,
+              "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+              "kind": "reminder",
+              "starts_at": "2026-10-18T11:00:00+03:00",
+              "status": "open",
+              "title": "Позвонить Ивану"
+            },
+            "status": "updated"
+          },
+          "error": null,
+          "ok": true,
+          "summary": "Перенесено: «Позвонить Ивану» сб 18.10 11:00 (id 7f3a9c2e)"
+        }
+      }
+    ],
+    "clarify": null,
+    "error_code": null,
+    "focus": [
+      "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+    ],
+    "outcome": "done",
+    "say": null,
+    "usage": {
+      "latency_ms": 930,
+      "llm_calls": 1,
+      "model": "fake-llm",
+      "tokens_in": 812,
+      "tokens_out": 64
+    }
+  },
+  "brain/turn_result_error.json": {
+    "actions": [],
+    "clarify": null,
+    "error_code": "llm_timeout",
+    "focus": [],
+    "outcome": "error",
+    "say": null,
+    "usage": {
+      "latency_ms": 40000,
+      "llm_calls": 2,
+      "model": "fake-llm",
+      "tokens_in": 812,
+      "tokens_out": 0
+    }
+  },
+  "notify/chat_not_found.json": {
+    "error": {
+      "code": "chat_not_found",
+      "details": {
+        "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a"
+      },
+      "message": "чат недоступен: пользователь заблокировал бота",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    }
+  },
+  "notify/delivered.json": {
+    "delivered": true,
+    "duplicate": false,
+    "message_id": "mid.0000000000000001"
+  },
+  "notify/duplicate.json": {
+    "delivered": true,
+    "duplicate": true,
+    "message_id": null
+  },
+  "notify/request.json": {
+    "attempt": 1,
+    "fire_at": "2026-10-18T10:00:00+03:00",
+    "item": {
+      "all_day": false,
+      "ends_at": null,
+      "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder",
+      "notes": null,
+      "remind_at": "2026-10-18T10:00:00+03:00",
+      "starts_at": "2026-10-18T10:00:00+03:00",
+      "status": "open",
+      "title": "Позвонить Ивану"
+    },
+    "kind": "reminder",
+    "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a",
+    "user": {
+      "max_chat_id": 500600700,
+      "max_user_id": 100200300,
+      "tz": "Europe/Moscow"
+    }
+  },
+  "reply/confirm.json": {
+    "buttons": [
+      [
+        {
+          "action": "undo",
+          "args": {
+            "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+          },
+          "kind": "action",
+          "text": "Отменить"
+        },
+        {
+          "action": "reschedule",
+          "args": {
+            "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+          },
+          "kind": "action",
+          "text": "Изменить время"
+        }
+      ],
+      [
+        {
+          "kind": "open_app",
+          "start_param": "item_7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+          "text": "В календаре"
+        }
+      ]
+    ],
+    "format": "markdown",
+    "items": [
+      {
+        "all_day": false,
+        "ends_at": null,
+        "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+        "kind": "reminder",
+        "starts_at": "2026-10-18T10:00:00+03:00",
+        "status": "open",
+        "title": "Позвонить Ивану"
+      }
+    ],
+    "speak": false,
+    "state": "done",
+    "text": "Напоминание создано\nПозвонить Ивану\nЗавтра, вс 18 октября, 10:00",
+    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+  },
+  "reply/error.json": {
+    "buttons": [],
+    "format": "plain",
+    "items": [],
+    "speak": false,
+    "state": "error",
+    "text": "Не получилось сохранить — сервис записей не ответил. Попробуй ещё раз через минуту.\nКод: ab12f0",
+    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+  },
+  "reply/list.json": {
+    "buttons": [
+      [
+        {
+          "action": "list_period",
+          "args": {
+            "period": "tomorrow"
+          },
+          "kind": "action",
+          "text": "Завтра"
+        },
+        {
+          "action": "list_period",
+          "args": {
+            "period": "week"
+          },
+          "kind": "action",
+          "text": "Неделя"
+        }
+      ],
+      [
+        {
+          "kind": "open_app",
+          "start_param": "day_2026-10-21",
+          "text": "Открыть день"
+        }
+      ]
+    ],
+    "format": "markdown",
+    "items": [
+      {
+        "all_day": false,
+        "ends_at": "2026-10-21T11:00:00+03:00",
+        "id": "1b0c2d4e-6f70-4a8b-9c1d-2e3f4a5b6c7d",
+        "kind": "event",
+        "starts_at": "2026-10-21T10:00:00+03:00",
+        "status": "open",
+        "title": "Созвон с командой"
+      },
+      {
+        "all_day": false,
+        "ends_at": null,
+        "id": "9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4",
+        "kind": "task",
+        "starts_at": "2026-10-21T18:00:00+03:00",
+        "status": "open",
+        "title": "Купить продукты"
+      }
+    ],
+    "speak": false,
+    "state": "answer",
+    "text": "Сегодня, ср 21 октября:\n10:00–11:00 Созвон с командой\n18:00 Купить продукты",
+    "trace_id": "0123456789abcdef0123456789abcdef"
+  },
+  "start_param/invalid.json": [
+    "",
+    "Today",
+    "day_2026-02-30",
+    "day_21-10-2026",
+    "week_2026-10-21",
+    "item_7F3A9C2E-5B1D-4C8E-9A21-0D4E5F6A8B90",
+    "item_123",
+    "today!",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "day_2026-10-21 "
+  ],
+  "start_param/valid.json": [
+    "today",
+    "dialog",
+    "day_2026-10-21",
+    "week_2026-10-19",
+    "item_7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+  ]
+}

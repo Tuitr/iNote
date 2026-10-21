@@ -1,0 +1,29 @@
+{
+  "properties": {
+    "delivered": {
+      "const": true,
+      "default": true,
+      "title": "Delivered",
+      "type": "boolean"
+    },
+    "duplicate": {
+      "default": false,
+      "title": "Duplicate",
+      "type": "boolean"
+    },
+    "message_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message Id"
+    }
+  },
+  "title": "NotifyDelivered",
+  "type": "object"
+}

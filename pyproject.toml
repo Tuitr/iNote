@@ -25,6 +25,7 @@ dev = [
   "fakeredis>=2.28",
   "testcontainers[redis]>=4.15",
   "time-machine>=2.16",
+  "syrupy>=4.8",
   # --- конец зоны C ---
 ]
 
@@ -105,7 +106,8 @@ known-first-party = ["common", "contracts", "bot", "agent"]
 ban-relative-imports = "all"
 
 [tool.ruff.lint.pep8-naming]
-classmethod-decorators = ["pydantic.field_validator", "pydantic.model_validator"]
+# model_validator(mode="after") — метод экземпляра, поэтому в списке только field_validator
+classmethod-decorators = ["pydantic.field_validator"]
 
 [tool.ruff.format]
 quote-style = "double"

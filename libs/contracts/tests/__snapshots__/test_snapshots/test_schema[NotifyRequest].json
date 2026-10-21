@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "NotifyItem": {
+      "properties": {
+        "all_day": {
+          "default": false,
+          "title": "All Day",
+          "type": "boolean"
+        },
+        "ends_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends At"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "NotifyItem",
+      "type": "object"
+    },
+    "NotifyUser": {
+      "properties": {
+        "max_chat_id": {
+          "title": "Max Chat Id",
+          "type": "integer"
+        },
+        "max_user_id": {
+          "title": "Max User Id",
+          "type": "integer"
+        },
+        "tz": {
+          "title": "Tz",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_user_id",
+        "max_chat_id",
+        "tz"
+      ],
+      "title": "NotifyUser",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "attempt": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "fire_at": {
+      "format": "date-time",
+      "title": "Fire At",
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/NotifyItem"
+    },
+    "kind": {
+      "enum": [
+        "task",
+        "reminder",
+        "event"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "notification_id": {
+      "format": "uuid",
+      "title": "Notification Id",
+      "type": "string"
+    },
+    "user": {
+      "$ref": "#/$defs/NotifyUser"
+    }
+  },
+  "required": [
+    "notification_id",
+    "kind",
+    "user",
+    "item",
+    "fire_at",
+    "attempt"
+  ],
+  "title": "NotifyRequest",
+  "type": "object"
+}
