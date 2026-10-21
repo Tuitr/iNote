@@ -82,6 +82,7 @@ class SearchTemplates(_Section):
 # Примечание: свободный ответ без текста модели и «ещё обрабатываю»
 class AnswerTemplates(_Section):
     fallback: str
+    recognized: str
     clarify: str
     busy: str
 

@@ -108,6 +108,7 @@ class HandleMessage:
         turn = TurnInput(
             text=request.text,
             inputType=request.source,
+            asrLowConfidence=request.source == "voice" and request.asrLowConfidence,
             now=now,
             tz=user.tz,
             history=list(context.history),
@@ -122,7 +123,8 @@ class HandleMessage:
         result = enforceActionRule(raw)
         if result is not raw:
             _log.warning("llm_no_action", actions=len(raw.actions))
-        reply = self._deps.renderer.render(result, user, traceId)
+        heard = request.text if request.source == "voice" else None
+        reply = self._deps.renderer.render(result, user, traceId, heard=heard)
         await self._saveContext(user, context, turn, result, reply)
         _log.info(
             "turn_finished",

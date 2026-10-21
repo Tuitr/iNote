@@ -59,8 +59,15 @@ class TemplateReplyRenderer:
         self._t = templates
         self._clock = clock
 
+    # Примечание: голос — первой строкой «Распознал: …»: одно сообщение вместо двух
+    def render(
+        self, result: TurnResult, user: UserContext, traceId: str, *, heard: str | None = None
+    ) -> Reply:
+        reply = self._render(result, user, traceId)
+        return reply if heard is None else self._withHeard(reply, heard)
+
     # Примечание: error — ошибка, clarify — вопрос, done — подтверждение, answer — список/текст
-    def render(self, result: TurnResult, user: UserContext, traceId: str) -> Reply:
+    def _render(self, result: TurnResult, user: UserContext, traceId: str) -> Reply:
         if result.outcome == "error":
             return self.failure(result.errorCode or "internal", traceId)
         scope = self._scope(user, traceId)
@@ -73,6 +80,15 @@ class TemplateReplyRenderer:
         if (searched := _lastSuccessful(result.actions, SEARCH_TOOL)) is not None:
             return self._search(searched, scope)
         return _plain(result.say or self._t.answer.fallback, ReplyState.ANSWER, traceId)
+
+    # Примечание: «Распознал: «…»» над ответом; в markdown — с экранированием, в plain — как есть
+    def _withHeard(self, reply: Reply, heard: str) -> Reply:
+        markdown = reply.format is ReplyFormat.MARKDOWN
+        text = escapeMarkdown(heard) if markdown else " ".join(heard.split())
+        line = self._t.answer.recognized.format(text=text)
+        return reply.model_copy(
+            update={"text": _cut(f"{line}\n{reply.text}", REPLY_TEXT_MAX_LENGTH)}
+        )
 
     # Примечание: лок пользователя занят другим ходом
     def busy(self, traceId: str) -> Reply:

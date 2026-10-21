@@ -318,3 +318,25 @@ def test_templatesValidated() -> None:
         ReplyTemplates.model_validate({**raw, "errors": errors})
     with pytest.raises(ValidationError):
         ReplyTemplates.model_validate({**raw, "buttons": {**raw["buttons"], "typo": "x"}})
+
+
+# Примечание: «Распознал: …» — в markdown экранирован, в plain — как есть, одной строкой
+def test_heardLine() -> None:
+    renderer = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW))
+    user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=MSK)
+    confirm = renderer.render(
+        turn("done", created(REMINDER)), user, TRACE, heard="Напомни *срочно*\nИвану"
+    )
+    assert confirm.text.startswith("Распознал: «Напомни \\*срочно\\* Ивану»\nНапоминание создано")
+    plain = renderer.render(turn("answer", say="Привет"), user, TRACE, heard="Привет *там*")
+    assert plain.text == "Распознал: «Привет *там*»\nПривет"
+    failed = renderer.render(turn("error", errorCode="past_time"), user, TRACE, heard="вчера")
+    assert failed.text.startswith("Распознал: «вчера»\nЭто время уже прошло")
+
+
+# Примечание: длинная фраза + длинный список — всё равно ≤ 4000 символов
+def test_heardKeepsLimit() -> None:
+    renderer = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW))
+    user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=MSK)
+    reply = renderer.render(turn("answer", say="я" * 3990), user, TRACE, heard="ы" * 500)
+    assert len(reply.text) <= REPLY_TEXT_MAX_LENGTH

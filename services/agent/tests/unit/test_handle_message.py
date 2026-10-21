@@ -263,3 +263,24 @@ async def test_logsHaveNoUserText() -> None:
     with structlog.testing.capture_logs() as logs:
         await rig.run()
     assert "позвонить" not in str(logs).lower()
+
+
+# Примечание: голос: тип ввода и неуверенность ASR доходят до Brain, ответ начинается с «Распознал»
+async def test_voiceTurn() -> None:
+    rig = Rig(ScenarioBrain(done))
+    voice = REQUEST.model_copy(
+        update={"source": "voice", "asrLowConfidence": True, "asrDurationMs": 2100}
+    )
+    reply = await rig.run(voice)
+    [turn] = rig.brain.turns
+    assert (turn.inputType, turn.asrLowConfidence) == ("voice", True)
+    assert reply.text.startswith("Распознал: «напомни завтра в 10 позвонить Ивану»\n")
+
+
+# Примечание: флаг неуверенности у текста не имеет смысла — до Brain не доходит
+async def test_lowConfidenceIgnoredForText() -> None:
+    rig = Rig(ScenarioBrain(answer))
+    reply = await rig.run(REQUEST.model_copy(update={"asrLowConfidence": True}))
+    [turn] = rig.brain.turns
+    assert turn.asrLowConfidence is False
+    assert not reply.text.startswith("Распознал")

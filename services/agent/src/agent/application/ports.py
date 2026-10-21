@@ -53,8 +53,10 @@ class ToolExecutorFactory(Protocol):
 
 # Примечание: перевод итога хода в Reply; все тексты — в шаблонах presentation
 class ReplyRenderer(Protocol):
-    # Примечание: Reply по итогу хода Brain
-    def render(self, result: TurnResult, user: UserContext, traceId: str) -> Reply: ...
+    # Примечание: Reply по итогу хода Brain; heard — распознанный текст голосового («Распознал: …»)
+    def render(
+        self, result: TurnResult, user: UserContext, traceId: str, *, heard: str | None = None
+    ) -> Reply: ...
 
     # Примечание: Reply, если лок пользователя занят
     def busy(self, traceId: str) -> Reply: ...
