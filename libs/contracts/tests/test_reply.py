@@ -28,7 +28,11 @@ def test_replyExamplesRoundTrip(name: str) -> None:
 # Примечание: примеры запросов бота к агенту
 @pytest.mark.parametrize(
     ("name", "model"),
-    [("agent/message_request.json", MessageRequest), ("agent/action_request.json", ActionRequest)],
+    [
+        ("agent/message_request.json", MessageRequest),
+        ("agent/message_request_voice.json", MessageRequest),
+        ("agent/action_request.json", ActionRequest),
+    ],
 )
 def test_requestExamplesRoundTrip(name: str, model: type[MessageRequest | ActionRequest]) -> None:
     raw = loadExample(name)

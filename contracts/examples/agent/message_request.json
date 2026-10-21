@@ -4,5 +4,7 @@
   "text": "Напомни завтра в 10 позвонить Ивану",
   "source": "text",
   "locale": "ru",
-  "name": "Иван"
+  "name": "Иван",
+  "asr_low_confidence": false,
+  "asr_duration_ms": null
 }

@@ -1,5 +1,23 @@
 {
   "properties": {
+    "asr_duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asr Duration Ms"
+    },
+    "asr_low_confidence": {
+      "default": false,
+      "title": "Asr Low Confidence",
+      "type": "boolean"
+    },
     "locale": {
       "anyOf": [
         {

@@ -9,11 +9,23 @@
     "max_user_id": 100200300
   },
   "agent/message_request.json": {
+    "asr_duration_ms": null,
+    "asr_low_confidence": false,
     "locale": "ru",
     "max_chat_id": 500600700,
     "max_user_id": 100200300,
     "name": "Иван",
     "source": "text",
+    "text": "Напомни завтра в 10 позвонить Ивану"
+  },
+  "agent/message_request_voice.json": {
+    "asr_duration_ms": 2400,
+    "asr_low_confidence": false,
+    "locale": "ru",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300,
+    "name": "Иван",
+    "source": "voice",
     "text": "Напомни завтра в 10 позвонить Ивану"
   },
   "asr/no_speech.json": {

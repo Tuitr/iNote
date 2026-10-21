@@ -103,6 +103,9 @@ class MessageRequest(WireModel):
     locale: str | None = None
     # Имя из профиля MAX — для J8 resolve при первом обращении (добавлено в S1)
     name: str | None = Field(default=None, max_length=256)
+    # Голос (source="voice", добавлено в S2): ASR не уверен — решает Brain; длительность — для логов
+    asrLowConfidence: bool = False
+    asrDurationMs: int | None = Field(default=None, ge=0)
 
 
 # Примечание: нажатие кнопки или команда без LLM → POST /v1/actions
