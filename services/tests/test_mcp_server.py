@@ -9,16 +9,16 @@ from mcp import Client
 from mcp_types import CallToolResult
 
 from libs.contracts.tools import TOOLS
-from libs.core.services.items import ItemService
 from services.mcp.export_tools import TOOLS_PATH, render_tools
 from services.mcp.server import REAL_TOOLS, build_server
+from services.mcp.tools.context import ToolServices
 from services.mcp.tools.stub import EXAMPLES_DIR, load_examples
 
 CALLER = {"user_id": 17, "tz": "Europe/Moscow", "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"}
 STUB_TOOLS = sorted(set(TOOLS) - set(REAL_TOOLS))
 
 
-def _no_service() -> ItemService:
+def _no_service() -> ToolServices:
     pytest.fail("Этот вызов не должен доходить до базы")
 
 

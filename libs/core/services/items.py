@@ -70,7 +70,7 @@ class ItemService:
         )
         created = False
         async with self._session_factory() as session, session.begin():
-            await _require_user(session, caller.user_id)
+            await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
@@ -78,14 +78,14 @@ class ItemService:
                 row, created = await _insert(session, items, caller, task)
         if created:
             await bump_version(self._redis, caller.user_id)
-        return MutationResult(status="created", item=_to_item(row, caller.tz))
+        return MutationResult(status="created", item=to_item(row, caller.tz))
 
     async def create_event(self, args: CreateEventArgs) -> MutationResult:
         caller = args.caller
         _check_event_end(args)
         created = False
         async with self._session_factory() as session, session.begin():
-            user = await _require_user(session, caller.user_id)
+            user = await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
@@ -98,7 +98,7 @@ class ItemService:
                 row, created = await _insert(session, items, caller, event)
         if created:
             await bump_version(self._redis, caller.user_id)
-        return MutationResult(status="created", item=_to_item(row, caller.tz))
+        return MutationResult(status="created", item=to_item(row, caller.tz))
 
     async def list_items(self, args: ListItemsArgs) -> ListItemsResult:
         caller = args.caller
@@ -111,13 +111,13 @@ class ItemService:
         kinds = [kind.value for kind in args.kind] if args.kind else None
         statuses = None if args.status == "all" else [args.status]
         async with self._session_factory() as session, session.begin():
-            await _require_user(session, caller.user_id)
+            await require_user(session, caller.user_id)
             # На одну запись больше лимита: так видно, что записей больше, чем отдаём.
             rows = await ItemRepo(session).list_in_range(
                 caller.user_id, start, end, kinds, statuses, MAX_LIST_ITEMS + 1
             )
         return ListItemsResult(
-            items=[_to_item(row, caller.tz) for row in rows[:MAX_LIST_ITEMS]],
+            items=[to_item(row, caller.tz) for row in rows[:MAX_LIST_ITEMS]],
             range=DateRange(from_=args.from_, to=args.to),
             truncated=len(rows) > MAX_LIST_ITEMS,
         )
@@ -229,7 +229,7 @@ async def _conflict(
     )
 
 
-async def _require_user(session: AsyncSession, user_id: int) -> UserRow:
+async def require_user(session: AsyncSession, user_id: int) -> UserRow:
     user = await UserRepo(session).get(user_id)
     if user is None:
         raise NotFoundError("Пользователь не найден")
@@ -299,7 +299,7 @@ def _to_brief(row: ItemRow, tz: str) -> ItemBrief:
     )
 
 
-def _to_item(row: ItemRow, tz: str) -> Item:
+def to_item(row: ItemRow, tz: str) -> Item:
     return Item(
         id=row.id,
         kind=row.kind,

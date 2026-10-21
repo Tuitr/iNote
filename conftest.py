@@ -1,36 +1,45 @@
 """Общие фикстуры тестов D."""
 
 import asyncio
-import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from docker.errors import DockerException
 from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from testcontainers.community.postgres import PostgresContainer
 
 from libs.core.resources import create_db_engine, create_session_factory
 from libs.core.services.items import ItemService
+from libs.core.services.search import SearchService
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
+from services.mcp.tools.context import ToolServices
 
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
+POSTGRES_IMAGE = "pgvector/pgvector:pg16"
 _TRUNCATE_ALL = text("TRUNCATE dialog_log, notifications, items, users RESTART IDENTITY")
 
 
 @pytest.fixture(scope="session")
-def test_database_url() -> URL:
-    """Адрес отдельной тестовой базы: тесты удаляют в ней все таблицы, рабочую базу сюда не ставить.
+def test_database_url() -> Iterator[URL]:
+    """PostgreSQL 16 с pgvector в Docker на время прогона — тот же образ, что в compose.
 
     URL, а не строка: pytest печатает аргументы упавшего теста, а URL показывает пароль как ***.
     """
-    url = os.environ.get("TEST_DATABASE_URL", "").strip()
-    if not url:
-        pytest.skip("TEST_DATABASE_URL не задан: тест с базой пропущен")
-    return make_url(url)
+    container = PostgresContainer(POSTGRES_IMAGE, driver=None)
+    try:
+        container.start()
+    except DockerException as error:
+        pytest.skip(f"Docker недоступен, тесты с базой пропущены: {type(error).__name__}")
+    try:
+        yield make_url(container.get_connection_url())
+    finally:
+        container.stop()
 
 
 @pytest.fixture(scope="session")
@@ -94,3 +103,13 @@ async def user_id(session_factory: async_sessionmaker[AsyncSession]) -> int:
     """Пользователь из Москвы, от имени которого тесты создают записи."""
     resolved = await UserService(session_factory, "Europe/Moscow").resolve(123456789, None, None)
     return resolved.user_id
+
+
+@pytest.fixture
+def search_service(session_factory: async_sessionmaker[AsyncSession]) -> SearchService:
+    return SearchService(session_factory)
+
+
+@pytest.fixture
+def tool_services(item_service: ItemService, search_service: SearchService) -> ToolServices:
+    return ToolServices(items=item_service, search=search_service)

@@ -37,8 +37,7 @@ def day_label(day: date) -> str:
 
 
 def created_text(item: Item) -> str:
-    when = _when(item)
-    return f"Создано: [{short_id(item.id)}] {when + ' ' if when else ''}{item.title}"
+    return f"Создано: [{short_id(item.id)}] {_with_when(item)}"
 
 
 def list_text(items: list[Item], truncated: bool) -> str:
@@ -92,3 +91,18 @@ def conflict_text(conflicts: list[ItemBrief], free_slots: list[TimeSlot]) -> str
 
 def _clock(moment: datetime | None) -> str:
     return "" if moment is None else f"{moment:%H:%M}"
+
+
+def search_text(items: list[Item]) -> str:
+    """«Найдено: [7f3a9c2e] вс, 18 октября 15:00–16:00 Встреча с Иваном»; несколько — по строке."""
+    lines = [f"[{short_id(item.id)}] {_with_when(item)}" for item in items]
+    if not lines:
+        return "Ничего не найдено"
+    if len(lines) == 1:
+        return f"Найдено: {lines[0]}"
+    return "Найдено:\n" + "\n".join(lines)
+
+
+def _with_when(item: Item) -> str:
+    when = _when(item)
+    return f"{when} {item.title}" if when else item.title

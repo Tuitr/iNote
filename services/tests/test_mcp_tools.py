@@ -11,9 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from libs.core.db.models import ItemRow
-from libs.core.services.items import ItemService
 from libs.core.services.time import now_utc
 from services.mcp.server import build_server
+from services.mcp.tools.context import ToolServices
 from services.mcp.tools.stub import EXAMPLES_DIR, load_examples
 
 pytestmark = pytest.mark.anyio
@@ -30,21 +30,21 @@ def _caller(user_id: int) -> dict[str, Any]:
     }
 
 
-async def _call(service: ItemService, name: str, arguments: dict[str, Any]) -> CallToolResult:
-    server = build_server(lambda: service, load_examples(EXAMPLES_DIR))
+async def _call(services: ToolServices, name: str, arguments: dict[str, Any]) -> CallToolResult:
+    server = build_server(lambda: services, load_examples(EXAMPLES_DIR))
     async with Client(server) as client:
         return await client.call_tool(name, arguments)
 
 
 async def test_remind_tomorrow_at_ten_creates_row_in_database(
-    item_service: ItemService, user_id: int, session_factory: async_sessionmaker[AsyncSession]
+    tool_services: ToolServices, user_id: int, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     # «Напомни завтра в 10 позвонить Ивану»
     tomorrow = (now_utc() + timedelta(days=1)).astimezone(MOSCOW).date()
     remind_at = f"{tomorrow.isoformat()}T10:00:00+03:00"
 
     result = await _call(
-        item_service,
+        tool_services,
         "create_task",
         {
             "caller": _caller(user_id),
@@ -72,11 +72,11 @@ async def test_remind_tomorrow_at_ten_creates_row_in_database(
     )
 
 
-async def test_service_error_becomes_tool_error(item_service: ItemService, user_id: int) -> None:
+async def test_service_error_becomes_tool_error(tool_services: ToolServices, user_id: int) -> None:
     past = (now_utc() - timedelta(hours=1)).astimezone(MOSCOW).replace(microsecond=0)
 
     result = await _call(
-        item_service,
+        tool_services,
         "create_task",
         {
             "caller": _caller(user_id),
@@ -98,10 +98,10 @@ async def test_service_error_becomes_tool_error(item_service: ItemService, user_
 
 
 async def test_reminder_without_time_asks_model_for_it(
-    item_service: ItemService, user_id: int
+    tool_services: ToolServices, user_id: int
 ) -> None:
     result = await _call(
-        item_service,
+        tool_services,
         "create_task",
         {"caller": _caller(user_id), "title": "Позвонить Ивану", "kind": "reminder"},
     )
@@ -112,20 +112,20 @@ async def test_reminder_without_time_asks_model_for_it(
 
 
 async def test_second_meeting_at_same_time_is_a_conflict(
-    item_service: ItemService, user_id: int
+    tool_services: ToolServices, user_id: int
 ) -> None:
     # «Поставь встречу с Иваном завтра в три», а в три уже встреча с дизайнером.
     tomorrow = (now_utc() + timedelta(days=1)).astimezone(MOSCOW).date()
     starts_at = f"{tomorrow.isoformat()}T15:00:00+03:00"
     caller = {**_caller(user_id), "idempotency_key": None}
     first = await _call(
-        item_service,
+        tool_services,
         "create_event",
         {"caller": caller, "title": "Встреча с дизайнером", "starts_at": starts_at},
     )
 
     second = await _call(
-        item_service,
+        tool_services,
         "create_event",
         {"caller": caller, "title": "Встреча с Иваном", "starts_at": starts_at},
     )
@@ -147,13 +147,13 @@ async def test_second_meeting_at_same_time_is_a_conflict(
 
 
 async def test_what_do_i_have_tomorrow_lists_by_day(
-    item_service: ItemService, user_id: int
+    tool_services: ToolServices, user_id: int
 ) -> None:
     tomorrow = (now_utc() + timedelta(days=1)).astimezone(MOSCOW).date()
     day_after = tomorrow + timedelta(days=1)
     caller = {**_caller(user_id), "idempotency_key": None}
     created = await _call(
-        item_service,
+        tool_services,
         "create_event",
         {
             "caller": caller,
@@ -164,7 +164,7 @@ async def test_what_do_i_have_tomorrow_lists_by_day(
 
     # «Что у меня завтра?»
     result = await _call(
-        item_service,
+        tool_services,
         "list_items",
         {"caller": caller, "from": tomorrow.isoformat(), "to": day_after.isoformat()},
     )
@@ -179,3 +179,18 @@ async def test_what_do_i_have_tomorrow_lists_by_day(
     ]
     short = created.structured_content["item"]["id"][:8]
     assert result.content[0].text.endswith(f"\n[{short}] 15:00–16:00 Встреча с Иваном")
+
+
+async def test_find_what_i_wrote_about_ivan(tool_services: ToolServices, user_id: int) -> None:
+    caller = {**_caller(user_id), "idempotency_key": None}
+    created = await _call(
+        tool_services, "create_task", {"caller": caller, "title": "Позвонить Ивану"}
+    )
+
+    result = await _call(tool_services, "search_items", {"caller": caller, "query": "Иван"})
+
+    item_id = created.structured_content["item"]["id"]
+    assert result.is_error is False
+    assert [hit["item"]["id"] for hit in result.structured_content["results"]] == [item_id]
+    assert result.structured_content["best_match_confident"] is True
+    assert result.content[0].text == f"Найдено: [{item_id[:8]}] Позвонить Ивану"

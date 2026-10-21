@@ -35,10 +35,13 @@ _NAMING_CONVENTION = {
     "ck": "ck_%(table_name)s_%(constraint_name)s",
 }
 _EMPTY_ARRAY = text("'{}'")
-# Копия выражения из миграции 0001: миграция не импортирует модели, чтобы не меняться вместе с ними.
-_SEARCH_TEXT = (
+# Копии выражений из миграции 0002: миграция не импортирует модели, чтобы не меняться вместе с ними.
+# items_participants_text — IMMUTABLE-обёртка над array_to_string из той же миграции.
+_SEARCH_TEXT = "title || ' ' || coalesce(notes, '') || ' ' || items_participants_text(participants)"
+_SEARCH_TSV = (
     "to_tsvector('russian', "
-    "coalesce(title, '') || ' ' || coalesce(notes, '') || ' ' || coalesce(source_text, ''))"
+    "title || ' ' || coalesce(notes, '') || ' ' || items_participants_text(participants)"
+    " || ' ' || coalesce(source_text, ''))"
 )
 
 
@@ -78,10 +81,10 @@ class ItemRow(Base):
         ),
         Index("ix_items_search_tsv", "search_tsv", postgresql_using="gin"),
         Index(
-            "ix_items_title_trgm",
-            "title",
+            "ix_items_search_text_trgm",
+            "search_text",
             postgresql_using="gin",
-            postgresql_ops={"title": "gin_trgm_ops"},
+            postgresql_ops={"search_text": "gin_trgm_ops"},
         ),
     )
 
@@ -99,9 +102,12 @@ class ItemRow(Base):
     participants: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=_EMPTY_ARRAY)
     source_text: Mapped[str | None]
     idempotency_key: Mapped[str | None]
-    # Считает сама база; deferred — не читать при каждом запросе, нужна только поиску (S2).
+    # Обе колонки считает база; deferred — не читать при каждом запросе, они нужны только поиску.
     search_tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR, Computed(_SEARCH_TEXT, persisted=True), deferred=True
+        TSVECTOR, Computed(_SEARCH_TSV, persisted=True), deferred=True
+    )
+    search_text: Mapped[str | None] = mapped_column(
+        Computed(_SEARCH_TEXT, persisted=True), deferred=True
     )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())

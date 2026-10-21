@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 
 from libs.contracts.items import Item
-from libs.contracts.tools import ListItemsResult, MutationResult
+from libs.contracts.tools import ListItemsResult, MutationResult, SearchItemsResult
 from services.mcp.tools.stub import EXAMPLES_DIR
 from services.mcp.tools.text import (
     conflict_text,
@@ -13,6 +13,7 @@ from services.mcp.tools.text import (
     day_label,
     error_text,
     list_text,
+    search_text,
 )
 
 MOSCOW = timezone(timedelta(hours=3))
@@ -125,3 +126,17 @@ def test_list_text_groups_by_day_and_marks_truncation() -> None:
 
 def test_empty_list_text() -> None:
     assert list_text([], truncated=False) == "Записей нет"
+
+
+def test_search_items_example_text_is_what_the_tool_writes() -> None:
+    example = _example("search_items")
+    result = SearchItemsResult.model_validate(example["structuredContent"])
+
+    assert search_text([hit.item for hit in result.results]) == example["text"]
+
+
+def test_search_text_lists_several_and_says_when_nothing_found() -> None:
+    assert search_text([]) == "Ничего не найдено"
+    assert search_text([ITEM, ITEM]) == (
+        "Найдено:\n[3c9e1a7b] Купить молоко\n[3c9e1a7b] Купить молоко"
+    )
