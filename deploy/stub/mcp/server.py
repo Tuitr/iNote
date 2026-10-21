@@ -5,8 +5,10 @@ Streamable HTTP на /mcp, четыре обязательных инструм�
 list → {items, range, truncated}, search → {results: [{item, score}], best_match_confident},
 ошибка → isError + конверт {"error": {code, message, details}}.
 Повтор с тем же (user_id, idempotency_key) возвращает тот же ответ. В лог — caller, без текста.
+J8: POST /internal/v1/users/resolve — user_id по max_user_id (в памяти, с 17), под SERVICE_TOKEN.
 """
 
+import hmac
 import json
 import os
 import sys
@@ -28,6 +30,9 @@ from starlette.routing import Route
 NAME: Final = "mcp"
 OWNER: Final = "C (временно, вместо заглушки D)"
 PORT: Final = int(os.environ.get("STUB_PORT", "8000"))
+# Пустой токен — проверка выключена (запуск руками); в compose берётся из .env, как у всех
+SERVICE_TOKEN: Final = os.environ.get("SERVICE_TOKEN", "")
+FIRST_USER_ID: Final = 17
 FIXTURES: Final = Path(__file__).with_name("fixtures")
 WEEKDAYS: Final = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 DEFAULT_EVENT_MIN: Final = 60
@@ -325,6 +330,73 @@ def buildServer(stub: StubTools | None = None) -> Server[object]:
     return Server(NAME, version="stub-s1", on_list_tools=onListTools, on_call_tool=onCallTool)
 
 
+# Примечание: пользователи J8 в памяти: max_user_id → user_id; пояс и настройки — по умолчанию
+class StubUsers:
+    # Примечание: id выдаются по порядку с 17 — как в contracts/examples/users
+    def __init__(self) -> None:
+        self._ids: dict[int, int] = {}
+
+    # Примечание: идемпотентно по max_user_id: повтор возвращает того же пользователя
+    def resolve(self, maxUserId: int) -> Json:
+        created = maxUserId not in self._ids
+        if created:
+            self._ids[maxUserId] = FIRST_USER_ID + len(self._ids)
+        return {
+            "user_id": self._ids[maxUserId],
+            "tz": "Europe/Moscow",
+            "settings": {"default_event_min": DEFAULT_EVENT_MIN, "voice_replies": False},
+            "created": created,
+        }
+
+
+# Примечание: конверт ошибки стандарта с trace_id запроса
+def _errorResponse(request: Request, status: int, code: str, message: str) -> JSONResponse:
+    error = {
+        "code": code,
+        "message": message,
+        "details": {},
+        "trace_id": request.headers.get("X-Trace-Id"),
+    }
+    return JSONResponse({"error": error}, status_code=status)
+
+
+# Примечание: сервисный токен, как в middleware libs/common: нет — 401, чужой — 403
+def _authError(request: Request) -> JSONResponse | None:
+    if not SERVICE_TOKEN:
+        return None
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return _errorResponse(request, 401, "unauthorized", "нужен сервисный токен")
+    if not hmac.compare_digest(header.removeprefix("Bearer "), SERVICE_TOKEN):
+        return _errorResponse(request, 403, "forbidden", "неверный сервисный токен")
+    return None
+
+
+# Примечание: POST /internal/v1/users/resolve (J8) поверх StubUsers
+def buildResolveRoute(users: StubUsers) -> Route:
+    # Примечание: разбор тела, проверка токена, ответ по contracts/examples/users
+    async def resolveUser(request: Request) -> JSONResponse:
+        if (denied := _authError(request)) is not None:
+            return denied
+        try:
+            body = await request.json()
+        except ValueError:
+            return _errorResponse(request, 400, "validation_error", "тело не JSON")
+        maxUserId = body.get("max_user_id") if isinstance(body, dict) else None
+        if not isinstance(maxUserId, int) or isinstance(maxUserId, bool) or maxUserId <= 0:
+            return _errorResponse(request, 400, "validation_error", "нужен max_user_id > 0")
+        user = users.resolve(maxUserId)
+        log(
+            "user_resolved",
+            user_id=user["user_id"],
+            created=user["created"],
+            trace_id=request.headers.get("X-Trace-Id"),
+        )
+        return JSONResponse(user)
+
+    return Route("/internal/v1/users/resolve", resolveUser, methods=["POST"])
+
+
 # Примечание: health для compose; ready = live — данных у заглушки нет
 async def _health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "checks": {}, "stub": NAME, "owner": OWNER})
@@ -339,6 +411,7 @@ def main() -> None:
         custom_starlette_routes=[
             Route("/health/live", _health, methods=["GET"]),
             Route("/health/ready", _health, methods=["GET"]),
+            buildResolveRoute(StubUsers()),
         ],
     )
     log("stub_started", port=PORT)
