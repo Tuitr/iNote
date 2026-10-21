@@ -39,8 +39,8 @@ class HandleUpdate:
         started = time.perf_counter()
         if not await self._dedup.isFirstSeen(update.updateId):
             outcome = HandleOutcome.DUPLICATE
-        elif not await self._limiter.allow(update.maxUserId):
-            outcome = await self._replyTooOften(update)
+        elif not (decision := await self._limiter.check(update.maxUserId)).allowed:
+            outcome = await self._replyTooOften(update, notify=decision.notify)
         else:
             outcome = await self._dispatch(update)
         _log.info(
@@ -75,11 +75,12 @@ class HandleUpdate:
             case _:
                 assert_never(update.kind)
 
-    # Примечание: на превышение лимита — короткий ответ тем же каналом, что и запрос
-    async def _replyTooOften(self, update: IncomingUpdate) -> HandleOutcome:
+    # Примечание: «Слишком часто» — сообщением один раз за окно; на кнопку отвечаем всегда,
+    # иначе в клиенте MAX продолжит крутиться индикатор нажатия
+    async def _replyTooOften(self, update: IncomingUpdate, *, notify: bool) -> HandleOutcome:
         if update.kind is UpdateKind.CALLBACK:
             await self._answerCallback(update, self._texts.tooOften())
-        else:
+        elif notify:
             await self._send(update, self._texts.tooOften())
         return HandleOutcome.RATE_LIMITED
 

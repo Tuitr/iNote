@@ -56,15 +56,20 @@ async def test_duplicateSkipped(handler: HandleUpdate, gateway: FakeMaxGateway) 
     assert len(gateway.sentMessages()) == 1
 
 
-# Примечание: сверх лимита — короткий ответ «Слишком часто»; на кнопку — в уведомлении
+# Примечание: сверх лимита «Слишком часто» — один раз за окно; на кнопку — каждый раз
 async def test_rateLimited(handler: HandleUpdate, gateway: FakeMaxGateway) -> None:
     base = loadIncoming("text")
-    outcomes = [await handler(dataclasses.replace(base, updateId=f"msg-{i}")) for i in range(4)]
-    assert outcomes[-1] is HandleOutcome.RATE_LIMITED
-    assert gateway.sentMessages()[-1].text == templates.TOO_OFTEN
-    callback = dataclasses.replace(loadIncoming("callback"), maxUserId=base.maxUserId)
-    assert await handler(callback) is HandleOutcome.RATE_LIMITED
-    assert gateway.callbackAnswers()[-1].notification == templates.TOO_OFTEN
+    outcomes = [await handler(dataclasses.replace(base, updateId=f"msg-{i}")) for i in range(6)]
+    assert outcomes[3:] == [HandleOutcome.RATE_LIMITED] * 3
+    texts = [m.text for m in gateway.sentMessages()]
+    assert texts.count(templates.TOO_OFTEN) == 1
+    assert len(texts) == 4
+    for i in range(2):
+        callback = dataclasses.replace(
+            loadIncoming("callback"), maxUserId=base.maxUserId, updateId=f"cb-{i}"
+        )
+        assert await handler(callback) is HandleOutcome.RATE_LIMITED
+    assert [a.notification for a in gateway.callbackAnswers()] == [templates.TOO_OFTEN] * 2
 
 
 # Примечание: длинное эхо обрезается до лимита MAX, а не падает

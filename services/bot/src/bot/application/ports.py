@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Protocol
 
 from bot.domain.messages import MessageId, OutgoingMessage
@@ -22,10 +23,26 @@ class UpdateDeduplicator(Protocol):
     async def isFirstSeen(self, updateId: UpdateId) -> bool: ...
 
 
+# Примечание: решение лимитера; notify — первое превышение в окне («Слишком часто» один раз)
+@dataclass(frozen=True)
+class RateDecision:
+    allowed: bool
+    notify: bool = False
+
+
 # Примечание: ограничение частоты сообщений пользователя (20 в минуту)
 class RateLimiter(Protocol):
-    # Примечание: True — можно обработать, False — превышен лимит окна
-    async def allow(self, maxUserId: MaxUserId) -> bool: ...
+    # Примечание: можно ли обработать апдейт и надо ли предупредить пользователя
+    async def check(self, maxUserId: MaxUserId) -> RateDecision: ...
+
+
+# Примечание: где хранится marker long polling между перезапусками
+class MarkerStore(Protocol):
+    # Примечание: последний зафиксированный marker или None
+    async def load(self) -> int | None: ...
+
+    # Примечание: зафиксировать marker после обработки страницы
+    async def save(self, marker: int) -> None: ...
 
 
 # Примечание: тексты ответов; живут в presentation/templates.py, а не в use case

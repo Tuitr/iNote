@@ -34,8 +34,8 @@ main.py          composition root: createApp() и lifespan
 
 ```bash
 docker run -d --rm -p 6379:6379 redis:7.4-alpine
-SERVICE_TOKEN=dev-token-0123456789 REDIS_URL=redis://localhost:6379/0 \
-  uv run uvicorn bot.main:createApp --factory --port 8001
+export SERVICE_TOKEN=$(openssl rand -hex 16)
+REDIS_URL=redis://localhost:6379/0 uv run uvicorn bot.main:createApp --factory --port 8001
 
 # подложить апдейт (формат MAX) и посмотреть ответ бота
 curl -s -X POST localhost:8001/dev/max/updates \

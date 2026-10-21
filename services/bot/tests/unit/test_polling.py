@@ -6,6 +6,7 @@ from services.bot.tests.fakes import loadIncoming, loadMaxUpdate
 
 from bot.domain.updates import IncomingUpdate, UpdateBatch
 from bot.infrastructure.fake_max import FakeMaxGateway
+from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.presentation.polling import PollingLoop
 from common.trace import currentTraceId, isValidTraceId
 
@@ -38,7 +39,9 @@ async def waitFor(predicate: object, timeoutS: float = 2.0) -> None:
 # Примечание: marker фиксируется после обработки страницы; у каждого апдейта свой trace_id
 async def test_markerCommittedAfterProcessing(gateway: FakeMaxGateway) -> None:
     recorder = Recorder()
-    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1)
+    loop = PollingLoop(
+        gateway=gateway, markerStore=InMemoryMarkerStore(), handler=recorder, pollTimeoutS=1
+    )
     recorder.loop = loop
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
@@ -77,7 +80,9 @@ async def test_perUserOrder() -> None:
             await asyncio.sleep(timeoutS)
             return UpdateBatch(updates=(), marker=marker)
 
-    loop = PollingLoop(gateway=OnePage(), handler=handler, pollTimeoutS=1)
+    loop = PollingLoop(
+        gateway=OnePage(), markerStore=InMemoryMarkerStore(), handler=handler, pollTimeoutS=1
+    )
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
     await waitFor(lambda: len(order) == 3)
@@ -98,7 +103,9 @@ async def test_failingUpdateDoesNotStopLoop(gateway: FakeMaxGateway) -> None:
             raise RuntimeError(msg)
         handled.append(update.kind.value)
 
-    loop = PollingLoop(gateway=gateway, handler=handler, pollTimeoutS=1)
+    loop = PollingLoop(
+        gateway=gateway, markerStore=InMemoryMarkerStore(), handler=handler, pollTimeoutS=1
+    )
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
     for name in ("command", "text"):
@@ -110,7 +117,9 @@ async def test_failingUpdateDoesNotStopLoop(gateway: FakeMaxGateway) -> None:
 
 # Примечание: остановка во время ожидания long polling — сразу, не через 30 секунд
 async def test_stopsWhileWaiting(gateway: FakeMaxGateway) -> None:
-    loop = PollingLoop(gateway=gateway, handler=Recorder(), pollTimeoutS=30)
+    loop = PollingLoop(
+        gateway=gateway, markerStore=InMemoryMarkerStore(), handler=Recorder(), pollTimeoutS=30
+    )
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
     await asyncio.sleep(0.02)
@@ -121,7 +130,9 @@ async def test_stopsWhileWaiting(gateway: FakeMaxGateway) -> None:
 # Примечание: остановка во время обработки — апдейт дорабатывается, новые не берутся
 async def test_stopDuringProcessingFinishesUpdate(gateway: FakeMaxGateway) -> None:
     recorder = Recorder(delayS=0.1)
-    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1)
+    loop = PollingLoop(
+        gateway=gateway, markerStore=InMemoryMarkerStore(), handler=recorder, pollTimeoutS=1
+    )
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
     await gateway.pushRaw(loadMaxUpdate("text"))
@@ -150,7 +161,13 @@ async def test_fetchErrorRetried() -> None:
 
     gateway = Flaky()
     recorder = Recorder()
-    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1, initialBackoffS=0.01)
+    loop = PollingLoop(
+        gateway=gateway,
+        markerStore=InMemoryMarkerStore(),
+        handler=recorder,
+        pollTimeoutS=1,
+        initialBackoffS=0.01,
+    )
     stopping = asyncio.Event()
     task = asyncio.create_task(loop.run(stopping))
     await gateway.pushRaw(loadMaxUpdate("text"))
@@ -158,3 +175,48 @@ async def test_fetchErrorRetried() -> None:
     stopping.set()
     await task
     assert len(calls) >= 2
+
+
+# Примечание: marker берётся из хранилища на старте и сохраняется туда после страницы
+async def test_markerLoadedAndSaved(gateway: FakeMaxGateway) -> None:
+    store = InMemoryMarkerStore()
+    await gateway.pushRaw(loadMaxUpdate("text"))
+    await gateway.pushRaw(loadMaxUpdate("command"))
+    await store.save(1)
+    recorder = Recorder()
+    loop = PollingLoop(gateway=gateway, markerStore=store, handler=recorder, pollTimeoutS=1)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await waitFor(lambda: len(recorder.seen) == 1)
+    await waitFor(lambda: loop.marker == 2)
+    stopping.set()
+    await task
+    # С marker=1 первый апдейт не перечитан — обработан только второй
+    assert recorder.seen[0][0] == loadIncoming("command").updateId
+    assert await store.load() == 2
+
+
+# Примечание: хранилище marker сломано — цикл всё равно работает
+async def test_brokenMarkerStoreDoesNotStopLoop(gateway: FakeMaxGateway) -> None:
+    # Примечание: хранилище, которое всегда падает
+    class Broken(InMemoryMarkerStore):
+        # Примечание: чтение падает
+        @override
+        async def load(self) -> int | None:
+            msg = "redis down"
+            raise ConnectionError(msg)
+
+        # Примечание: запись падает
+        @override
+        async def save(self, marker: int) -> None:
+            msg = "redis down"
+            raise ConnectionError(msg)
+
+    recorder = Recorder()
+    loop = PollingLoop(gateway=gateway, markerStore=Broken(), handler=recorder, pollTimeoutS=1)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await gateway.pushRaw(loadMaxUpdate("text"))
+    await waitFor(lambda: len(recorder.seen) == 1 and loop.marker == 1)
+    stopping.set()
+    await task

@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 
 from bot.application.handle_update import HandleUpdate
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
+from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
 from bot.infrastructure.redis_adapters import RedisRateLimiter, RedisUpdateDeduplicator
 from bot.infrastructure.settings import BotSettings
@@ -54,7 +55,14 @@ def createApp(
             rateLimiter=RedisRateLimiter(store, limit=config.rateLimitPerMin),
             texts=RussianTexts(),
         )
-        loop = PollingLoop(gateway=gateway, handler=handler, pollTimeoutS=config.pollTimeoutS)
+        # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить нельзя;
+        # для real здесь будет RedisMarkerStore(store)
+        loop = PollingLoop(
+            gateway=gateway,
+            handler=handler,
+            markerStore=InMemoryMarkerStore(),
+            pollTimeoutS=config.pollTimeoutS,
+        )
         app.state.devConsole = gateway
         app.state.redis = redis
         try:

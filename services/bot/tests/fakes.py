@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Final
 
+from bot.application.ports import RateDecision
 from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateId
 from bot.infrastructure.max_mapper import mapRawUpdate
 
@@ -45,7 +46,9 @@ class CountingRateLimiter:
         self.limit = limit
         self.counts: dict[MaxUserId, int] = {}
 
-    # Примечание: True, пока счётчик не превысил лимит
-    async def allow(self, maxUserId: MaxUserId) -> bool:
-        self.counts[maxUserId] = self.counts.get(maxUserId, 0) + 1
-        return self.counts[maxUserId] <= self.limit
+    # Примечание: та же логика, что у Redis: notify только на первом превышении
+    async def check(self, maxUserId: MaxUserId) -> RateDecision:
+        count = self.counts[maxUserId] = self.counts.get(maxUserId, 0) + 1
+        if count <= self.limit:
+            return RateDecision(allowed=True)
+        return RateDecision(allowed=False, notify=count == self.limit + 1)

@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import Final
 
-from bot.application.ports import MaxGateway
+from bot.application.ports import MarkerStore, MaxGateway
 from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateBatch
 from common.logging import getLogger
 from common.trace import newTraceId, traceContext
@@ -24,12 +24,14 @@ class PollingLoop:
         *,
         gateway: MaxGateway,
         handler: UpdateHandler,
+        markerStore: MarkerStore,
         pollTimeoutS: int,
         initialBackoffS: float = INITIAL_BACKOFF_S,
         maxBackoffS: float = MAX_BACKOFF_S,
     ) -> None:
         self._gateway = gateway
         self._handler = handler
+        self._markerStore = markerStore
         self._pollTimeoutS = pollTimeoutS
         self._initialBackoffS = initialBackoffS
         self._maxBackoffS = maxBackoffS
@@ -43,7 +45,8 @@ class PollingLoop:
     # Примечание: работает до stopping; начатую страницу дорабатывает, новую не берёт
     async def run(self, stopping: asyncio.Event) -> None:
         backoffS = self._initialBackoffS
-        _log.info("polling_started", timeout_s=self._pollTimeoutS)
+        self._marker = await self._loadMarker()
+        _log.info("polling_started", timeout_s=self._pollTimeoutS, marker=self._marker)
         while not stopping.is_set():
             try:
                 batch = await self._fetchOrStop(stopping)
@@ -56,8 +59,26 @@ class PollingLoop:
                 break
             backoffS = self._initialBackoffS
             await self._processBatch(batch)
-            self._marker = batch.marker
+            await self._commitMarker(batch.marker)
         _log.info("polling_stopped", marker=self._marker)
+
+    # Примечание: хранилище недоступно — начинаем с «ещё не полученных», дубли отсечёт дедуп
+    async def _loadMarker(self) -> int | None:
+        try:
+            return await self._markerStore.load()
+        except Exception:  # noqa: BLE001
+            _log.exception("polling_marker_load_failed")
+            return None
+
+    # Примечание: фиксация после обработки; сбой записи не останавливает цикл
+    async def _commitMarker(self, marker: int | None) -> None:
+        self._marker = marker
+        if marker is None:
+            return
+        try:
+            await self._markerStore.save(marker)
+        except Exception:  # noqa: BLE001
+            _log.exception("polling_marker_save_failed", marker=marker)
 
     # Примечание: ждём апдейты или сигнал остановки — что раньше; отменённый fetch безопасен
     async def _fetchOrStop(self, stopping: asyncio.Event) -> UpdateBatch | None:
