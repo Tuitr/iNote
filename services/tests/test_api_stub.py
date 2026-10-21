@@ -26,23 +26,6 @@ def test_committed_openapi_is_up_to_date() -> None:
     assert OPENAPI_PATH.read_text(encoding="utf-8") == render_openapi()
 
 
-def test_auth_returns_example(client: TestClient) -> None:
-    response = client.post("/v1/auth/max", json=_example("auth_max.request"))
-
-    assert response.status_code == 200
-    assert response.json() == _example("auth_max.response")
-
-
-def test_auth_without_init_data_is_validation_error(client: TestClient) -> None:
-    response = client.post("/v1/auth/max", json={})
-
-    assert response.status_code == 400
-    error = response.json()["error"]
-    assert error["code"] == "validation_error"
-    assert error["details"] == {"missing": ["body.init_data"]}
-    assert len(error["trace_id"]) == 32
-
-
 @pytest.mark.parametrize(
     ("method", "path"),
     [("get", "/v1/me"), ("get", "/v1/items?from=2026-10-19&to=2026-10-22")],

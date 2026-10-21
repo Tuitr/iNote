@@ -2,7 +2,13 @@ from collections.abc import Callable
 
 import pytest
 
-from libs.core.config import ConfigError, load_default_tz, load_service_token, load_settings
+from libs.core.config import (
+    ConfigError,
+    load_api_auth_settings,
+    load_default_tz,
+    load_service_token,
+    load_settings,
+)
 
 
 @pytest.fixture
@@ -58,3 +64,22 @@ def test_missing_service_var_raises(
 
     with pytest.raises(ConfigError, match="не задана"):
         load()
+
+
+def test_api_auth_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("API_MAX_BOT_TOKEN", "123:token")
+    monkeypatch.setenv("API_JWT_SECRET", "x" * 32)
+    monkeypatch.delenv("API_DEV_AUTH", raising=False)
+    assert load_api_auth_settings().dev_auth is False
+
+    monkeypatch.setenv("API_DEV_AUTH", "TRUE")
+    assert load_api_auth_settings().dev_auth is True
+
+    monkeypatch.setenv("API_DEV_AUTH", "yes")
+    with pytest.raises(ConfigError, match="API_DEV_AUTH"):
+        load_api_auth_settings()
+
+    monkeypatch.setenv("API_DEV_AUTH", "false")
+    monkeypatch.setenv("API_JWT_SECRET", "short")
+    with pytest.raises(ConfigError, match="API_JWT_SECRET"):
+        load_api_auth_settings()

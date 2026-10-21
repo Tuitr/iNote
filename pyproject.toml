@@ -12,6 +12,8 @@ dependencies = [
     "alembic>=1.20,<2",
     # Тип vector и расстояния pgvector в SQLAlchemy (поиск по смыслу).
     "pgvector>=0.5,<1",
+    # JWT для мини-приложения: /v1/auth/max выдаёт токен на 1 час (J5).
+    "pyjwt>=2.15,<3",
     "redis>=8.1,<9",
     "mcp>=2.3,<3",
     # База часовых поясов для zoneinfo: на Windows и в slim-образах системной базы может не быть.

@@ -58,3 +58,34 @@ def load_settings() -> Settings:
         redis_url=_require("REDIS_URL"),
         log_level=_log_level(),
     )
+
+
+# HS256 с коротким ключом подбирается перебором: требуем не меньше 32 символов.
+MIN_JWT_SECRET_LENGTH = 32
+
+
+@dataclass(frozen=True)
+class ApiAuthSettings:
+    """Настройки авторизации мини-приложения (J5): нужны только сервису api."""
+
+    bot_token: str
+    jwt_secret: str
+    dev_auth: bool
+
+
+def load_api_auth_settings() -> ApiAuthSettings:
+    jwt_secret = _require("API_JWT_SECRET")
+    if len(jwt_secret) < MIN_JWT_SECRET_LENGTH:
+        raise ConfigError(f"API_JWT_SECRET короче {MIN_JWT_SECRET_LENGTH} символов")
+    return ApiAuthSettings(
+        bot_token=_require("API_MAX_BOT_TOKEN"),
+        jwt_secret=jwt_secret,
+        dev_auth=_flag("API_DEV_AUTH"),
+    )
+
+
+def _flag(name: str) -> bool:
+    value = os.environ.get(name, "false").strip().lower()
+    if value not in ("true", "false"):
+        raise ConfigError(f"{name}={value!r}, допустимо: true или false")
+    return value == "true"
