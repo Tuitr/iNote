@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Final, Self, override
 
 from redis.asyncio import Redis
+from redis.exceptions import WatchError
 
 KEY_NAMESPACE: Final = "va"
 KEY_VERSION: Final = "v1"
@@ -123,3 +124,19 @@ class KeyedRedis:
     # Примечание: удаление ключа; True — ключ был
     async def delete(self, key: RedisKey) -> bool:
         return bool(await self._client.delete(str(key)))
+
+    # Примечание: DEL, только если значение совпало (WATCH/MULTI) — чужой лок так не снять
+    async def deleteIfEquals(self, key: RedisKey, expected: str) -> bool:
+        async with self._client.pipeline(transaction=True) as pipe:
+            while True:
+                try:
+                    await pipe.watch(str(key))
+                    if await pipe.get(str(key)) != expected:
+                        # WATCH снимется при выходе из pipeline (reset)
+                        return False
+                    pipe.multi()  # type: ignore[no-untyped-call]  # redis-py без аннотации
+                    _ = pipe.delete(str(key))
+                    await pipe.execute()
+                except WatchError:
+                    continue
+                return True

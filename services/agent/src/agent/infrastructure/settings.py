@@ -10,11 +10,10 @@ from common.config import BaseServiceSettings
 class AgentSettings(BaseServiceSettings):
     envPrefix: ClassVar[str] = "AGENT_"
 
-    # Пути относительно рабочего каталога (корень репо локально, /app в контейнере)
-    stubMessageReply: Path = Field(
-        default=Path("contracts/examples/reply/confirm.json"),
-        validation_alias="AGENT_STUB_MESSAGE_REPLY",
-    )
+    # Бюджет хода вместе с ожиданием лока: бот ждёт агента 45 с (docs/standards.md)
+    turnTimeoutS: float = Field(default=40.0, gt=0, le=44, validation_alias="AGENT_TURN_TIMEOUT_S")
+    lockWaitS: float = Field(default=10.0, ge=0, validation_alias="AGENT_LOCK_WAIT_S")
+    # /v1/actions — заглушка до S2; путь относительно рабочего каталога (корень репо, /app)
     stubActionReply: Path = Field(
         default=Path("contracts/examples/reply/list.json"),
         validation_alias="AGENT_STUB_ACTION_REPLY",

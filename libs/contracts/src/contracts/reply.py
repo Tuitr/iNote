@@ -101,6 +101,8 @@ class MessageRequest(WireModel):
     text: str = Field(min_length=1, max_length=REPLY_TEXT_MAX_LENGTH)
     source: Literal["text", "voice"] = "text"
     locale: str | None = None
+    # Имя из профиля MAX — для J8 resolve при первом обращении (добавлено в S1)
+    name: str | None = Field(default=None, max_length=256)
 
 
 # Примечание: нажатие кнопки или команда без LLM → POST /v1/actions

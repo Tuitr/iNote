@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 
-from agent.application.use_cases import HandleAction, HandleMessage
+from agent.application.handle_message import HandleMessage
+from agent.application.use_cases import HandleAction
 from contracts.reply import ActionRequest, MessageRequest, Reply
 
 
@@ -20,12 +21,12 @@ def _actionHandler(request: Request) -> HandleAction:
 def buildAgentRouter() -> APIRouter:
     router = APIRouter(prefix="/v1", tags=["agent"])
 
-    # Примечание: текст пользователя → Reply
+    # Примечание: текст пользователя → ход агента → Reply
     @router.post("/messages")
     async def messages(request: Request, body: MessageRequest) -> Reply:
         return await _messageHandler(request)(body)
 
-    # Примечание: кнопка или команда → Reply без LLM
+    # Примечание: кнопка или команда → Reply без LLM (заглушка до S2)
     @router.post("/actions")
     async def actions(request: Request, body: ActionRequest) -> Reply:
         return await _actionHandler(request)(body)

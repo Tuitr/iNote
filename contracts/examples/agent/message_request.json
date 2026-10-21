@@ -3,5 +3,6 @@
   "max_chat_id": 500600700,
   "text": "Напомни завтра в 10 позвонить Ивану",
   "source": "text",
-  "locale": "ru"
+  "locale": "ru",
+  "name": "Иван"
 }

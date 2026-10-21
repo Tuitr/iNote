@@ -89,3 +89,14 @@ async def test_getAndDelete(store: KeyedRedis) -> None:
     assert await store.getValue(key) == "{}"
     assert await store.delete(key) is True
     assert await store.delete(key) is False
+
+
+# Примечание: удаление по совпадению значения: своё снимается, чужое — нет
+async def test_deleteIfEquals(store: KeyedRedis) -> None:
+    key = RedisKey("agent", "lock", "17")
+    await store.setValue(key, "token-a", ttlS=60)
+    assert await store.deleteIfEquals(key, "token-b") is False
+    assert await store.getValue(key) == "token-a"
+    assert await store.deleteIfEquals(key, "token-a") is True
+    assert await store.getValue(key) is None
+    assert await store.deleteIfEquals(key, "token-a") is False

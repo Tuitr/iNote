@@ -3,15 +3,16 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Final
 
+import fakeredis
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from pydantic import ValidationError
-from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
 
 from agent.infrastructure.settings import AgentSettings
-from agent.main import createApp
+from agent.main import AgentOverrides, createApp
+from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
 
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
 AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
@@ -21,7 +22,6 @@ AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
 @pytest.fixture
 def agentEnv(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
-    monkeypatch.setenv("AGENT_STUB_MESSAGE_REPLY", str(EXAMPLES / "reply" / "confirm.json"))
     monkeypatch.setenv("AGENT_STUB_ACTION_REPLY", str(EXAMPLES / "reply" / "list.json"))
     return monkeypatch
 
@@ -29,7 +29,12 @@ def agentEnv(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
 # Примечание: приложение агента
 @pytest.fixture
 def app(agentEnv: pytest.MonkeyPatch) -> FastAPI:
-    return createApp(AgentSettings())
+    return createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
+
+
+# Примечание: fakeredis вместо настоящего Redis
+def fakeRedis(url: str) -> fakeredis.FakeAsyncRedis:
+    return fakeredis.FakeAsyncRedis(decode_responses=True)
 
 
 # Примечание: клиент к агенту с запущенным lifespan
@@ -54,8 +59,8 @@ def expectedReply(name: str) -> dict[str, object]:
     return data
 
 
-# Примечание: /v1/messages → фиксированный Reply с trace_id текущей цепочки
-async def test_messageReturnsStubReply(client: httpx.AsyncClient) -> None:
+# Примечание: /v1/messages идёт через ход агента; trace_id цепочки сохраняется в Reply
+async def test_messageRunsTurn(client: httpx.AsyncClient) -> None:
     response = await client.post(
         "/v1/messages",
         json=example("message_request.json"),
@@ -63,8 +68,9 @@ async def test_messageReturnsStubReply(client: httpx.AsyncClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert body.pop("trace_id") == TRACE == response.headers["X-Trace-Id"]
-    assert body == expectedReply("confirm.json")
+    assert body["trace_id"] == TRACE == response.headers["X-Trace-Id"]
+    assert body["state"] == "answer"
+    assert body["text"]
 
 
 # Примечание: /v1/actions → свой фиксированный Reply
@@ -98,19 +104,19 @@ async def test_invalidRequest(client: httpx.AsyncClient) -> None:
     assert {tuple(f["loc"]) for f in error["details"]["fields"]} >= {("body", "text")}
 
 
-# Примечание: health без зависимостей — live и ready 200, токен не нужен
+# Примечание: health: live и ready (Redis) без токена
 async def test_health(client: httpx.AsyncClient) -> None:
     assert (await client.get("/health/live")).status_code == 200
     ready = await client.get("/health/ready")
-    assert ready.json() == {"status": "ok", "checks": {}}
+    assert ready.json() == {"status": "ok", "checks": {"redis": "ok"}}
 
 
 # Примечание: пример ответа не по контракту — агент не стартует
 async def test_invalidStubFailsStartup(agentEnv: pytest.MonkeyPatch, tmp_path: Path) -> None:
     broken = tmp_path / "broken.json"
     broken.write_text(json.dumps({"text": "", "state": "done", "trace_id": TRACE}))
-    agentEnv.setenv("AGENT_STUB_MESSAGE_REPLY", str(broken))
-    app = createApp(AgentSettings())
+    agentEnv.setenv("AGENT_STUB_ACTION_REPLY", str(broken))
+    app = createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
     with pytest.raises(ValidationError):
         async with app.router.lifespan_context(app):
             pass

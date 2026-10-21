@@ -20,6 +20,19 @@
       "title": "Max User Id",
       "type": "integer"
     },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
     "source": {
       "default": "text",
       "enum": [

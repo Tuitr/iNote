@@ -888,6 +888,7 @@ source = { editable = "services/agent" }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
+    { name = "redis" },
     { name = "uvicorn" },
     { name = "va-common" },
     { name = "va-contracts" },
@@ -897,6 +898,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.11" },
+    { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },

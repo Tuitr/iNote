@@ -100,7 +100,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["common", "contracts", "bot", "agent"]
+# services.* и libs.* — хелперы тестов (импорт полным путём); фиксируем, чтобы порядок не зависел от машины
+known-first-party = ["common", "contracts", "bot", "agent", "services", "libs"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -202,7 +203,7 @@ layers = ["main", "presentation | infrastructure", "application", "domain"]
 name = "domain и application не знают о фреймворках и вводе-выводе"
 type = "forbidden"
 source_modules = ["bot.domain", "bot.application", "agent.domain", "agent.application"]
-forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn"]
+forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn", "mcp"]
 # Запрещён прямой импорт; через common (логи, trace) фреймворки доступны косвенно — это нормально
 allow_indirect_imports = true
 # --- конец зоны C ---
