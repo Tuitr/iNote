@@ -25,6 +25,7 @@ REMINDER = NewItem(
     participants=[],
     source_text=None,
     idempotency_key=None,
+    search_hints=None,
 )
 
 
@@ -183,7 +184,7 @@ async def test_notification_is_saved_with_the_item_transaction(
     async with session_factory() as session, session.begin():
         item = await ItemRepo(session).insert_if_absent(alice, REMINDER)
         assert item is not None
-        NotificationRepo(session).add(alice, item.id, REMINDER.remind_at)
+        await NotificationRepo(session).schedule(alice, item.id, REMINDER.remind_at)
 
     async with session_factory() as session:
         notification = await session.scalar(select(NotificationRow))

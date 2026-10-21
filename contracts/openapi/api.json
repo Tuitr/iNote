@@ -111,6 +111,24 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -272,6 +290,7 @@
           "items"
         ],
         "summary": "List Items",
+        "description": "ETag равен версии данных пользователя: с If-None-Match той же версии ответ 304 без тела. Ответы кешируются на 5 минут под версией данных.",
         "operationId": "list_items_v1_items_get",
         "security": [
           {
@@ -770,6 +789,137 @@
           }
         }
       }
+    },
+    "/v1/dialog": {
+      "get": {
+        "tags": [
+          "dialog (черновик до G3)"
+        ],
+        "summary": "Get Dialog",
+        "description": "ЧЕРНОВИК: формат истории диалога утверждается на G3 (КиП). Реплики от новых к старым; next_cursor передать в before, чтобы получить более старые.",
+        "operationId": "get_dialog_v1_dialog_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DialogPage"
+                },
+                "example": {
+                  "turns": [
+                    {
+                      "id": "1042",
+                      "role": "assistant",
+                      "text": "Напомню завтра в 10:00 позвонить Ивану.",
+                      "created_at": "2026-10-20T14:05:03+03:00",
+                      "items": [
+                        {
+                          "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+                          "kind": "reminder",
+                          "title": "Позвонить Ивану",
+                          "all_day": false,
+                          "status": "open"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "1041",
+                      "role": "user",
+                      "text": "Напомни завтра в 10 позвонить Ивану",
+                      "input_type": "voice",
+                      "created_at": "2026-10-20T14:05:00+03:00",
+                      "items": []
+                    }
+                  ],
+                  "next_cursor": "1041"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -822,6 +972,93 @@
           "start_param"
         ],
         "title": "AuthMaxResponse"
+      },
+      "DialogPage": {
+        "properties": {
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/DialogTurnView"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turns",
+          "next_cursor"
+        ],
+        "title": "DialogPage",
+        "description": "Страница истории, от новых реплик к старым. ЧЕРНОВИК D до G3."
+      },
+      "DialogTurnView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "input_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "voice",
+                  "text"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Type"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemBrief"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "text",
+          "input_type",
+          "created_at",
+          "items"
+        ],
+        "title": "DialogTurnView",
+        "description": "Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3 (КиП)."
       },
       "ErrorCode": {
         "type": "string",
@@ -1021,6 +1258,54 @@
           "updated_at"
         ],
         "title": "Item"
+      },
+      "ItemBrief": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "all_day": {
+            "type": "boolean",
+            "title": "All Day"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ItemStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "starts_at",
+          "all_day",
+          "status"
+        ],
+        "title": "ItemBrief",
+        "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории."
       },
       "ItemKind": {
         "type": "string",

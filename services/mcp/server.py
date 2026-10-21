@@ -1,8 +1,4 @@
-"""MCP-сервер (J3): 8 инструментов со схемами из libs/contracts.
-
-Настоящие инструменты работают с базой через ItemService. Остальные до S2 отвечают
-примерами из contracts/examples/j3, чтобы агент C и eval B могли ими пользоваться.
-"""
+"""MCP-сервер (J3): 8 инструментов со схемами из libs/contracts, работают через libs/core."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -22,27 +18,34 @@ from pydantic import ValidationError
 from libs.contracts.errors import ErrorCode, ErrorInfo, ToolErrorResponse
 from libs.contracts.tools import TOOLS
 from libs.core.errors import DomainError
-from libs.core.services.items import ItemService
 from libs.core.validation import validation_error_details
+from services.mcp.tools.check_conflicts import check_conflicts
+from services.mcp.tools.complete_item import complete_item
+from services.mcp.tools.context import ToolServices
 from services.mcp.tools.create_event import create_event
 from services.mcp.tools.create_task import create_task
+from services.mcp.tools.delete_item import delete_item
 from services.mcp.tools.list_items import list_items
-from services.mcp.tools.stub import ToolExample
+from services.mcp.tools.search_items import search_items
 from services.mcp.tools.text import error_text
+from services.mcp.tools.update_item import update_item
 
-ToolHandler = Callable[[ItemService, Any], Awaitable[CallToolResult]]
+ToolHandler = Callable[[ToolServices, Any], Awaitable[CallToolResult]]
 
-REAL_TOOLS: dict[str, ToolHandler] = {
+TOOL_HANDLERS: dict[str, ToolHandler] = {
     "create_task": create_task,
     "create_event": create_event,
     "list_items": list_items,
+    "search_items": search_items,
+    "update_item": update_item,
+    "complete_item": complete_item,
+    "delete_item": delete_item,
+    "check_conflicts": check_conflicts,
 }
 
 
-def build_server(
-    item_service: Callable[[], ItemService], examples: dict[str, ToolExample]
-) -> Server[Any]:
-    """item_service — функция: сервис создаётся при старте приложения, то есть позже сервера."""
+def build_server(services: Callable[[], ToolServices]) -> Server[Any]:
+    """services — функция: сервисы создаются при старте приложения, то есть позже сервера."""
     tool_specs = list_tool_specs()
 
     async def list_tools(
@@ -65,15 +68,9 @@ def build_server(
             return _error_result(
                 ErrorCode.VALIDATION_ERROR, "Неверные аргументы инструмента", details
             )
-        handler = REAL_TOOLS.get(params.name)
-        if handler is None:
-            example = examples[params.name]
-            return CallToolResult(
-                content=[TextContent(text=example.text)],
-                structured_content=example.structured_content,
-            )
+        handler = TOOL_HANDLERS[params.name]
         try:
-            return await handler(item_service(), args)
+            return await handler(services(), args)
         except DomainError as error:
             return _error_result(error.code, error.message, error.details)
 

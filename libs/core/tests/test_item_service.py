@@ -215,3 +215,21 @@ async def test_item_is_created_even_if_redis_is_down(
     assert result.status == "created"
     assert await _count(session_factory, ItemRow) == 1
     assert "не увеличена: ConnectionError" in caplog.text
+
+
+async def test_version_is_bumped_only_after_commit(
+    session_factory: async_sessionmaker[AsyncSession], user_id: int
+) -> None:
+    seen_at_bump: list[int] = []
+
+    class CommitCheckingRedis:
+        async def incr(self, key: str) -> int:
+            # Отдельная сессия видит только закоммиченное: запись уже должна быть там.
+            seen_at_bump.append(await _count(session_factory, ItemRow))
+            return len(seen_at_bump)
+
+    service = ItemService(session_factory, CommitCheckingRedis())
+
+    await service.create_task(_task(user_id))
+
+    assert seen_at_bump == [1]

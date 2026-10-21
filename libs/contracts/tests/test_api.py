@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from libs.contracts.api import (
     AuthMaxRequest,
     AuthMaxResponse,
+    DialogPage,
     ItemsByDayResponse,
     ItemsResponse,
     Me,
@@ -27,6 +28,7 @@ MODEL_BY_EXAMPLE: dict[str, type[BaseModel]] = {
     "items.response": ItemsResponse,
     "items_search.response": SearchItemsResult,
     "item.response": Item,
+    "dialog.response": DialogPage,
 }
 
 

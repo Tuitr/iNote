@@ -5,10 +5,11 @@
 """
 
 from datetime import date
+from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from libs.contracts.items import Item
+from libs.contracts.items import Item, ItemBrief
 from libs.contracts.settings import IanaTimezone, UserSettings
 
 
@@ -65,3 +66,23 @@ class ItemsResponse(BaseModel):
     range: ItemsRange
     version: int
     items: list[Item]
+
+
+class DialogTurnView(BaseModel):
+    """Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3 (КиП)."""
+
+    id: str
+    role: Literal["user", "assistant"]
+    text: str
+    input_type: Literal["voice", "text"] | None
+    created_at: AwareDatetime
+    # У реплик ассистента — записи, о которых он ответил: ссылки на карточки.
+    items: list[ItemBrief]
+
+
+class DialogPage(BaseModel):
+    """Страница истории, от новых реплик к старым. ЧЕРНОВИК D до G3."""
+
+    turns: list[DialogTurnView]
+    # Непрозрачная строка: передать в before, чтобы получить более старые; null — история кончилась.
+    next_cursor: str | None
