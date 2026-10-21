@@ -1,20 +1,28 @@
 # services/bot — бот MAX (зона C)
 
-Единственный, кто разговаривает с MAX. В S0 это эхо-бот на **фейковом MAX**: доступа к API MAX пока нет,
-а реальный адаптер (`maxapi` или своя обёртка над `platform-api.max.ru`) — открытое решение.
+Единственный, кто разговаривает с MAX. С S1 — тонкий клиент агента на **фейковом MAX**: доступа к API MAX
+пока нет, а реальный адаптер (`maxapi` или своя обёртка над `platform-api2.max.ru`) — открытое решение.
 
 ## Слои
 
 ```
-domain/          IncomingUpdate, UpdateKind, VoiceRef, UpdateBatch, OutgoingMessage (лимит 4000)
-application/     порты MaxGateway, UpdateDeduplicator, RateLimiter, BotTexts; use case HandleUpdate
-infrastructure/  FakeMaxGateway, маппер MAX → IncomingUpdate, Redis-дедуп и лимит, BotSettings
+domain/          IncomingUpdate, UpdateKind, VoiceRef, UpdateBatch, OutgoingMessage (4000 символов, клавиатура)
+application/     порты MaxGateway, AgentGateway, CallbackStore, …; HandleUpdate, ReplyToMaxMapper, TypingIndicator
+infrastructure/  FakeMaxGateway, MAX → IncomingUpdate, OutgoingMessage → NewMessageBody, HttpAgentGateway,
+                 Redis: дедуп, лимит, кнопки; BotSettings
 presentation/    PollingLoop (long polling), /dev/max/*, тексты (templates.py)
 main.py          composition root: createApp() и lifespan
 ```
 
-`HandleUpdate`: дубль пропускается, сверх лимита (20 в минуту) — «Слишком часто», текст — эхо,
-команда — эхо имени, голосовое — заглушка до J1, кнопка — ответ на callback, «Начать» — приветствие.
+`HandleUpdate`: дубль пропускается, сверх лимита (20 в минуту) — «Слишком часто». Текст → агент
+`/v1/messages` (с именем и языком из апдейта), пока ждём — «печатает…» (`typing_on` сразу и раз в 4 с).
+Кнопка: payload — ключ `va:v1:bot:cb:{key}` (24 ч), за ним действие → `/v1/actions`; спиннер MAX гасится сразу,
+истёкший или чужой payload — «Кнопка устарела». `/today`, `/tomorrow`, `/week` → `/v1/actions`, `/start`
+и `/help` — справка. Голосовое — заглушка до J1. Агент не ответил (45 с, без повторов) — «Не получилось
+связаться с ассистентом… Код: <6 символов trace_id>».
+`ReplyToMaxMapper`: `Reply` агента → сообщение MAX: `action` → callback-кнопка, `open_app` → кнопка open_app
+(`web_app = BOT_USERNAME`, `payload = start_param`) или ссылка `https://max.ru/<бот>?startapp=…`
+(`BOT_OPEN_APP_MODE=link`); ряды режутся по лимитам MAX (7 кнопок, 3 ссылки или open_app, 30 рядов).
 `PollingLoop` обрабатывает апдейты одного пользователя по порядку, marker фиксирует после обработки,
 по SIGTERM дорабатывает начатую страницу (задача зарегистрирована в `TaskRegistry`).
 
@@ -27,29 +35,37 @@ main.py          composition root: createApp() и lifespan
 | `BOT_RATE_LIMIT_PER_MIN` | `20` | сообщений пользователя в минуту |
 | `BOT_SHUTDOWN_TIMEOUT_S` | `10` | сколько ждать фоновые задачи на SIGTERM |
 | `BOT_FAKE_SEND_DELAY_MS` | `0` | задержка «отправки» в фейковом MAX (lifecycle-тесты) |
+| `BOT_AGENT_URL` / `BOT_AGENT_TIMEOUT_S` | `http://agent:8000` / `45` | агент; повторов нет (стандарт) |
+| `BOT_OPEN_APP_MODE` | `open_app` | кнопка мини-приложения: `open_app` или `link` |
+| `BOT_USERNAME` | — | имя бота в MAX: `web_app` и адрес deep link |
+| `BOT_TYPING_INTERVAL_S` | `4` | как часто повторять «печатает…» |
 
 Плюс общие: `REDIS_URL`, `SERVICE_TOKEN`, `LOG_LEVEL`, `LOG_FORMAT`.
 
-## Запустить локально и увидеть эхо
+## Запустить локально
+
+Проще всего — весь стенд: `make up`, затем `make smoke`. Руками — нужен запущенный агент (см. его README):
 
 ```bash
 docker run -d --rm -p 6379:6379 redis:7.4-alpine
 export SERVICE_TOKEN=$(openssl rand -hex 16)
-REDIS_URL=redis://localhost:6379/0 uv run uvicorn bot.main:createApp --factory --port 8001
+REDIS_URL=redis://localhost:6379/0 BOT_AGENT_URL=http://127.0.0.1:8002 \
+  uv run uvicorn bot.main:createApp --factory --port 8001
 
 # подложить апдейт (формат MAX) и посмотреть ответ бота
 curl -s -X POST localhost:8001/dev/max/updates \
   -H 'content-type: application/json' \
   -d @services/bot/tests/fixtures/max_updates/text.json
 curl -s localhost:8001/dev/max/sent
-# {"messages":[{"message_id":"fake-mid-1","chat_id":500600700,"text":"Вы написали: ...","format":"plain"}],"callback_answers":[]}
+# {"messages":[{"message_id":"fake-mid-1","chat_id":500600700,"text":"Напоминание создано\n…","format":"markdown",
+#   "attachments":[{"type":"inline_keyboard","payload":{"buttons":[[…]]}}]}],"callback_answers":[],"typing":[500600700]}
 ```
 
 ## Тесты
 
 ```bash
 uv run pytest services/bot                    # unit
-uv run pytest services/bot -m integration     # Redis в testcontainers: дедуп, лимит, TTL
+uv run pytest services/bot -m integration     # Redis в testcontainers: дедуп, лимит, кнопки, TTL
 uv run pytest services/bot -m lifecycle       # uvicorn + SIGTERM посреди обработки
 ```
 
