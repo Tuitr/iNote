@@ -17,7 +17,7 @@ from libs.core.resources import create_db_engine, create_session_factory
 from libs.core.services.items import ItemService
 from libs.core.services.search import SearchService
 from libs.core.services.users import UserService
-from libs.core.tests.fakes import FakeEmbedder, FakeRedis
+from libs.core.tests.fakes import FakeRedis
 from services.mcp.tools.context import ToolServices
 
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
@@ -92,17 +92,11 @@ async def session_factory(
 
 
 @pytest.fixture
-def fake_embedder() -> FakeEmbedder:
-    return FakeEmbedder()
-
-
-@pytest.fixture
 def item_service(
     session_factory: async_sessionmaker[AsyncSession],
     fake_redis: FakeRedis,
-    fake_embedder: FakeEmbedder,
 ) -> ItemService:
-    return ItemService(session_factory, fake_redis, fake_embedder)
+    return ItemService(session_factory, fake_redis)
 
 
 @pytest.fixture
@@ -115,10 +109,8 @@ async def user_id(session_factory: async_sessionmaker[AsyncSession]) -> int:
 
 
 @pytest.fixture
-def search_service(
-    session_factory: async_sessionmaker[AsyncSession], fake_embedder: FakeEmbedder
-) -> SearchService:
-    return SearchService(session_factory, fake_embedder)
+def search_service(session_factory: async_sessionmaker[AsyncSession]) -> SearchService:
+    return SearchService(session_factory)
 
 
 @pytest.fixture

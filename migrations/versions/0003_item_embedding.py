@@ -9,9 +9,7 @@ Revises: 0002
 Create Date: 2026-10-21
 """
 
-import sqlalchemy as sa
 from alembic import op
-from pgvector.sqlalchemy import Vector
 
 revision = "0003"
 down_revision = "0002"
@@ -23,7 +21,8 @@ EMBED_DIM = 768
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.add_column("items", sa.Column("embedding", Vector(EMBED_DIM), nullable=True))
+    # Сырым SQL: пакет pgvector убран из зависимостей вместе с эмбеддером (миграция 0004).
+    op.execute(f"ALTER TABLE items ADD COLUMN embedding vector({EMBED_DIM})")
     op.create_index(
         "ix_items_embedding_hnsw",
         "items",

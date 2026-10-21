@@ -169,3 +169,20 @@ class TestSearch:
     ) -> None:
         with pytest.raises(NotFoundError):
             await search_service.search(_query(user_id + 1, "Иван"))
+
+    async def test_search_hints_from_llm_find_by_meaning(
+        self, item_service: ItemService, search_service: SearchService, user_id: int
+    ) -> None:
+        # LLM при создании дописала синонимы: эмбеддер не нужен, хватает полнотекста.
+        await _task(
+            item_service,
+            user_id,
+            "Записаться к стоматологу",
+            search_hints="зубной врач стоматология зубы пломба клиника",
+        )
+        await _task(item_service, user_id, "Купить молоко")
+
+        result = await search_service.search(_query(user_id, "зубной врач"))
+
+        assert _titles(result) == ["Записаться к стоматологу"]
+        assert result.best_match_confident is True

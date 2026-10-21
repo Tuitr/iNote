@@ -259,3 +259,23 @@ async def test_unknown_id_is_a_not_found_tool_error(
         }
     }
     assert result.content[0].text == "Ошибка not_found: запись не найдена"
+
+
+async def test_search_hints_written_on_create_are_used_by_search(
+    tool_services: ToolServices, user_id: int
+) -> None:
+    caller = {**_caller(user_id), "idempotency_key": None}
+    await _call(
+        tool_services,
+        "create_task",
+        {
+            "caller": caller,
+            "title": "Записаться к стоматологу",
+            "search_hints": "зубной врач стоматология зубы пломба",
+        },
+    )
+
+    # «Что я записывал про зубного врача?»
+    result = await _call(tool_services, "search_items", {"caller": caller, "query": "зубной врач"})
+
+    assert result.content[0].text.endswith("] Записаться к стоматологу")

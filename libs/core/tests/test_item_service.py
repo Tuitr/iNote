@@ -207,7 +207,7 @@ async def test_item_is_created_even_if_redis_is_down(
         async def incr(self, key: str) -> int:
             raise RedisConnectionError("нет связи")
 
-    service = ItemService(session_factory, BrokenRedis(), None)
+    service = ItemService(session_factory, BrokenRedis())
 
     with caplog.at_level(logging.ERROR):
         result = await service.create_task(_task(user_id, starts_at=date(2026, 10, 22).isoformat()))
@@ -228,7 +228,7 @@ async def test_version_is_bumped_only_after_commit(
             seen_at_bump.append(await _count(session_factory, ItemRow))
             return len(seen_at_bump)
 
-    service = ItemService(session_factory, CommitCheckingRedis(), None)
+    service = ItemService(session_factory, CommitCheckingRedis())
 
     await service.create_task(_task(user_id))
 

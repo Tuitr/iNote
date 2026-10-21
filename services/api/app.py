@@ -34,9 +34,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         session_factory = create_session_factory(app.state.db_engine)
         redis = app.state.redis_client
         app.state.user_service = UserService(session_factory, load_default_tz(), redis)
-        # Эмбеддера пока нет (libs/embed от A): поиск по словам и буквам, как в mcp.
-        app.state.item_service = ItemService(session_factory, redis, embedder=None)
-        app.state.search_service = SearchService(session_factory, embedder=None)
+        app.state.item_service = ItemService(session_factory, redis)
+        app.state.search_service = SearchService(session_factory)
         app.state.dialog_service = DialogService(session_factory)
         yield
 

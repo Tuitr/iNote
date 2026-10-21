@@ -41,7 +41,7 @@ def _caller(user_id: int) -> dict[str, Any]:
 
 @pytest.fixture
 def items(session_factory: async_sessionmaker[AsyncSession]) -> ItemService:
-    return ItemService(session_factory, FakeRedis(), None, clock=lambda: EARLIER)
+    return ItemService(session_factory, FakeRedis(), clock=lambda: EARLIER)
 
 
 async def _week_like_j5_example(items: ItemService, user_id: int) -> tuple[str, str]:

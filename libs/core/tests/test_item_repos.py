@@ -25,7 +25,7 @@ REMINDER = NewItem(
     participants=[],
     source_text=None,
     idempotency_key=None,
-    embedding=None,
+    search_hints=None,
 )
 
 

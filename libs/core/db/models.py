@@ -8,7 +8,6 @@
 from datetime import datetime
 from uuid import UUID
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
@@ -28,8 +27,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from libs.core.embedding import EMBED_DIM
-
 # Те же имена ограничений, что в миграции 0001: по ним alembic check сверяет модели с базой.
 _NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
@@ -38,14 +35,13 @@ _NAMING_CONVENTION = {
     "ck": "ck_%(table_name)s_%(constraint_name)s",
 }
 _EMPTY_ARRAY = text("'{}'")
-# Копии выражений из миграции 0002: миграция не импортирует модели, чтобы не меняться вместе с ними.
-# items_participants_text — IMMUTABLE-обёртка над array_to_string из той же миграции.
-_SEARCH_TEXT = "title || ' ' || coalesce(notes, '') || ' ' || items_participants_text(participants)"
-_SEARCH_TSV = (
-    "to_tsvector('russian', "
+# Копии выражений из миграции 0004: миграция не импортирует модели, чтобы не меняться вместе с ними.
+# items_participants_text — IMMUTABLE-обёртка над array_to_string из миграции 0002.
+_SEARCH_TEXT = (
     "title || ' ' || coalesce(notes, '') || ' ' || items_participants_text(participants)"
-    " || ' ' || coalesce(source_text, ''))"
+    " || ' ' || coalesce(search_hints, '')"
 )
+_SEARCH_TSV = f"to_tsvector('russian', {_SEARCH_TEXT} || ' ' || coalesce(source_text, ''))"
 
 
 class Base(DeclarativeBase):
@@ -84,12 +80,6 @@ class ItemRow(Base):
         ),
         Index("ix_items_search_tsv", "search_tsv", postgresql_using="gin"),
         Index(
-            "ix_items_embedding_hnsw",
-            "embedding",
-            postgresql_using="hnsw",
-            postgresql_ops={"embedding": "vector_cosine_ops"},
-        ),
-        Index(
             "ix_items_search_text_trgm",
             "search_text",
             postgresql_using="gin",
@@ -110,6 +100,8 @@ class ItemRow(Base):
     rrule: Mapped[str | None]
     participants: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=_EMPTY_ARRAY)
     source_text: Mapped[str | None]
+    # Синонимы и близкие слова от LLM: по ним запись находится по смыслу, без эмбеддера.
+    search_hints: Mapped[str | None]
     idempotency_key: Mapped[str | None]
     # Обе колонки считает база; deferred — не читать при каждом запросе, они нужны только поиску.
     search_tsv: Mapped[str | None] = mapped_column(
@@ -118,8 +110,6 @@ class ItemRow(Base):
     search_text: Mapped[str | None] = mapped_column(
         Computed(_SEARCH_TEXT, persisted=True), deferred=True
     )
-    # Пусто, если эмбеддер был недоступен: такая запись находится только по словам.
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBED_DIM), deferred=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     deleted_at: Mapped[datetime | None]

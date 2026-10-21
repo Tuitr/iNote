@@ -32,6 +32,8 @@ DateOnly = Annotated[date, BeforeValidator(_require_date_only)]
 DateOrDateTime = AwareDatetime | DateOnly
 ItemRef = Annotated[str, Field(pattern=_ITEM_REF.pattern)]
 Title = Annotated[str, Field(min_length=1, max_length=200)]
+# Синонимы и близкие слова от LLM: по ним запись потом находится по смыслу (поиск без эмбеддера).
+SearchHints = Annotated[str, Field(max_length=500)]
 TaskKind = Literal["task", "reminder"]
 
 
@@ -61,6 +63,7 @@ class CreateTaskArgs(_ToolArgs):
     notes: str | None = None
     rrule: str | None = None
     source_text: str | None = None
+    search_hints: SearchHints | None = None
 
 
 class CreateEventArgs(_ToolArgs):
@@ -72,6 +75,7 @@ class CreateEventArgs(_ToolArgs):
     notes: str | None = None
     rrule: str | None = None
     source_text: str | None = None
+    search_hints: SearchHints | None = None
     allow_conflict: bool = False
 
 
@@ -108,6 +112,7 @@ class UpdateItemArgs(_ToolArgs):
     notes: str | None = None
     rrule: str | None = None
     source_text: str | None = None
+    search_hints: SearchHints | None = None
     allow_conflict: bool = False
 
 

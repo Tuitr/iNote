@@ -23,7 +23,7 @@ from libs.core.db.models import ItemRow, NotificationRow
 from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.services.items import ItemService
 from libs.core.services.users import UserService
-from libs.core.tests.fakes import FakeEmbedder, FakeRedis
+from libs.core.tests.fakes import FakeRedis
 
 pytestmark = pytest.mark.anyio
 
@@ -49,9 +49,8 @@ def _caller(user_id: int) -> dict[str, Any]:
 def service(
     session_factory: async_sessionmaker[AsyncSession],
     fake_redis: FakeRedis,
-    fake_embedder: FakeEmbedder,
 ) -> ItemService:
-    return ItemService(session_factory, fake_redis, fake_embedder, clock=lambda: NOW)
+    return ItemService(session_factory, fake_redis, clock=lambda: NOW)
 
 
 async def _reminder(service: ItemService, user_id: int, clock: str = "10:00") -> str:
@@ -197,17 +196,16 @@ async def test_update_rules(service: ItemService, user_id: int) -> None:
     assert end_before_start.value.details == {"invalid": ["ends_at"]}
 
 
-async def test_changed_text_gets_a_new_vector(
+async def test_search_hints_can_be_changed(
     service: ItemService, user_id: int, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     item_id = await _reminder(service, user_id)
 
-    await _update(service, user_id, item_id, title="Записаться к стоматологу")
+    await _update(service, user_id, item_id, search_hints="звонок телефон Иван Петров")
 
     async with session_factory() as session:
-        vector = await session.scalar(select(ItemRow.embedding))
-    assert vector is not None
-    assert vector[0] == pytest.approx(1.0)  # группа «стоматолог» у FakeEmbedder
+        hints = await session.scalar(select(ItemRow.search_hints))
+    assert hints == "звонок телефон Иван Петров"
 
 
 async def test_complete_and_reopen(

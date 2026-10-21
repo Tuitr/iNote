@@ -28,7 +28,6 @@ from libs.contracts.tools import (
     UpdateItemArgs,
 )
 from libs.core.db.models import ItemRow, UserRow
-from libs.core.embedding import Embedder, embed_or_none, item_text
 from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.repositories.items import ItemRepo, NewItem
 from libs.core.repositories.notifications import NotificationRepo
@@ -53,8 +52,6 @@ MAX_FREE_SLOTS = 3
 MAX_LIST_ITEMS = 30
 # Сколько записей с подходящим коротким id показываем агенту на выбор.
 MAX_ID_CANDIDATES = 5
-# Поля, от которых зависит вектор записи: если меняются, вектор пересчитывается.
-_TEXT_FIELDS = {"title", "notes", "participants", "source_text"}
 
 
 class ItemService:
@@ -62,13 +59,10 @@ class ItemService:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         redis: Redis,
-        embedder: Embedder | None,
         clock: Callable[[], datetime] = now_utc,
     ) -> None:
         self._session_factory = session_factory
         self._redis = redis
-        # None — эмбеддера нет (libs/embed от A ещё нет): записи сохраняются без вектора.
-        self._embedder = embedder
         # Часы подменяются в тестах: время в них заморожено.
         self._clock = clock
 
@@ -89,7 +83,7 @@ class ItemService:
             participants=[],
             source_text=args.source_text,
             idempotency_key=caller.idempotency_key,
-            embedding=await self._embed(args.title, args.notes, [], args.source_text),
+            search_hints=args.search_hints,
         )
         now = self._clock()
         created = False
@@ -107,7 +101,6 @@ class ItemService:
     async def create_event(self, args: CreateEventArgs) -> MutationResult:
         caller = args.caller
         _check_event_end(args)
-        embedding = await self._embed(args.title, args.notes, args.participants, args.source_text)
         now = self._clock()
         created = False
         async with self._session_factory() as session, session.begin():
@@ -115,7 +108,7 @@ class ItemService:
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
-                event = _new_event(args, user, embedding, now)
+                event = _new_event(args, user, now)
                 # ends_at нет только у встречи на весь день, а она не конфликтует (решение 10).
                 if not args.allow_conflict and event.starts_at and event.ends_at:
                     conflict = await _conflict(
@@ -149,16 +142,11 @@ class ItemService:
                 conflict = await _conflict(items, caller, starts_at, ends_at, row.id, now)
                 if conflict is not None:
                     return conflict
-            if _TEXT_FIELDS & changed:
-                # Старый вектор описывает старый текст; новый посчитаем после коммита.
-                values["embedding"] = None
             old_remind_at = row.remind_at
             row = await items.update(caller.user_id, row.id, values)
             if row.remind_at != old_remind_at:
                 await _reschedule(session, row, now)
         await bump_version(self._redis, caller.user_id)
-        if _TEXT_FIELDS & changed:
-            await self._refresh_embedding(caller.user_id, row)
         return MutationResult(status="updated", item=to_item(row, caller.tz))
 
     async def complete_item(self, args: CompleteItemArgs) -> MutationResult:
@@ -278,21 +266,6 @@ class ItemService:
             raise NotFoundError("Запись не найдена", {"id": str(item_id)})
         return to_item(rows[0], tz)
 
-    async def _embed(
-        self, title: str, notes: str | None, participants: list[str], source_text: str | None
-    ) -> list[float] | None:
-        # Считаем до транзакции: ожидание эмбеддера не должно держать соединение с базой.
-        text = item_text(title, notes, participants, source_text)
-        return await embed_or_none(self._embedder, text, "document")
-
-    async def _refresh_embedding(self, user_id: int, row: ItemRow) -> None:
-        """Вектор изменённого текста; не вышло — запись остаётся без вектора до досчёта (S3)."""
-        vector = await self._embed(row.title, row.notes, row.participants, row.source_text)
-        if vector is None:
-            return
-        async with self._session_factory() as session, session.begin():
-            await ItemRepo(session).update(user_id, row.id, {"embedding": vector})
-
 
 def free_slots(
     busy: list[tuple[datetime, datetime]],
@@ -330,9 +303,7 @@ def _check_event_end(args: CreateEventArgs) -> None:
         raise InvalidArgumentsError("Конец встречи раньше начала", {"invalid": ["ends_at"]})
 
 
-def _new_event(
-    args: CreateEventArgs, user: UserRow, embedding: list[float] | None, now: datetime
-) -> NewItem:
+def _new_event(args: CreateEventArgs, user: UserRow, now: datetime) -> NewItem:
     """Встреча с временем по умолчанию из настроек. Время в прошлом → PastTimeError."""
     tz = args.caller.tz
     if isinstance(args.starts_at, datetime):
@@ -367,7 +338,7 @@ def _new_event(
         participants=args.participants,
         source_text=args.source_text,
         idempotency_key=args.caller.idempotency_key,
-        embedding=embedding,
+        search_hints=args.search_hints,
     )
 
 
@@ -381,7 +352,7 @@ def _updated_values(
         if args.title is None:
             raise InvalidArgumentsError("Название нельзя очистить", {"invalid": ["title"]})
         values["title"] = args.title
-    for field in ("notes", "rrule", "source_text"):
+    for field in ("notes", "rrule", "source_text", "search_hints"):
         if field in changed:
             values[field] = getattr(args, field)
     if "participants" in changed:
