@@ -13,7 +13,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from agent.application.ports import Clock
+from agent.application.actions import CANCEL, PICK_OPTION
+from agent.application.ports import Clock, Notice
 from agent.application.turn_rules import successfulMutations
 from agent.domain.user import UserContext
 from agent.presentation.dates import DateFormatter
@@ -90,6 +91,14 @@ class TemplateReplyRenderer:
             update={"text": _cut(f"{line}\n{reply.text}", REPLY_TEXT_MAX_LENGTH)}
         )
 
+    # Примечание: короткий ответ действия без LLM по имени шаблона
+    def notice(self, notice: Notice, traceId: str) -> Reply:
+        texts = {
+            Notice.PENDING_EXPIRED: self._t.notices.pendingExpired,
+            Notice.CANCELLED: self._t.notices.cancelled,
+        }
+        return _plain(texts[notice], ReplyState.ANSWER, traceId)
+
     # Примечание: лок пользователя занят другим ходом
     def busy(self, traceId: str) -> Reply:
         return _plain(self._t.answer.busy, ReplyState.ERROR, traceId)
@@ -110,7 +119,9 @@ class TemplateReplyRenderer:
         options = result.clarify.options if result.clarify is not None else []
         buttons: list[ReplyButton] = [
             ActionButton(
-                text=_cut(option, BUTTON_TEXT_MAX_LENGTH), action="clarify", args={"choice": i}
+                text=_cut(option, BUTTON_TEXT_MAX_LENGTH),
+                action=PICK_OPTION,
+                args={"choice": i},
             )
             for i, option in enumerate(options)
             if option.strip()
@@ -118,6 +129,8 @@ class TemplateReplyRenderer:
         rows: Rows = [
             buttons[i : i + OPTIONS_PER_ROW] for i in range(0, len(buttons), OPTIONS_PER_ROW)
         ]
+        # «Отмена» — всегда отдельным рядом: уточнение можно бросить, не отвечая
+        rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
         text = result.say or self._t.answer.clarify
         return _plain(text, ReplyState.CLARIFY, scope.traceId, buttons=rows)
 

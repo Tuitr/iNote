@@ -7,7 +7,14 @@ import pytest
 import time_machine
 
 from agent.infrastructure.brains import LLM_NOT_CONNECTED, BrainNotConnectedError, buildBrain
-from agent.infrastructure.scripted_brain import ASK_TIME, HELP, ScriptedBrain, periodRange
+from agent.infrastructure.scripted_brain import (
+    ASK_TIME,
+    BAD_CHOICE,
+    HELP,
+    WRITE_TEXT,
+    ScriptedBrain,
+    periodRange,
+)
 from contracts.agent_side import (
     ErrorInfo,
     ToolResult,
@@ -176,11 +183,209 @@ async def test_remindWithTime(phrase: str, local: str, tz: str, title: str, mome
     assert [str(i) for i in result.focus] == [ITEM_ID]
 
 
-# Примечание: напоминание без времени не создаём — просим время (уточнение — S2)
-async def test_remindWithoutTimeAsks() -> None:
-    result, tools = await runPhrase("напомни купить хлеб", "2026-10-21T21:30")
+# Примечание: напоминание без времени — вопрос с вариантами 9/13/19 в будущем и свой pending
+@pytest.mark.parametrize(
+    ("phrase", "local", "tz", "labels", "first"),
+    [
+        (
+            "напомни купить хлеб",
+            "2026-10-21T21:30",
+            MSK,
+            ["завтра 9:00", "завтра 13:00", "завтра 19:00"],
+            "2026-10-22T09:00:00+03:00",
+        ),
+        (
+            "напомни купить хлеб",
+            "2026-10-21T10:30",
+            EKB,
+            ["сегодня 13:00", "сегодня 19:00", "завтра 9:00"],
+            "2026-10-21T13:00:00+05:00",
+        ),
+        (
+            "напомни завтра позвонить маме",
+            "2026-10-21T10:30",
+            MSK,
+            ["завтра 9:00", "завтра 13:00", "завтра 19:00"],
+            "2026-10-22T09:00:00+03:00",
+        ),
+    ],
+)
+async def test_remindWithoutTimeAsks(
+    phrase: str, local: str, tz: str, labels: list[str], first: str
+) -> None:
+    result, tools = await runPhrase(phrase, local, tz)
     assert tools.calls == []
-    assert (result.outcome, result.say) == ("answer", ASK_TIME)
+    assert (result.outcome, result.say) == ("clarify", ASK_TIME)
+    assert result.clarify is not None
+    assert result.clarify.options == labels
+    pending = result.clarify.pending
+    assert pending["kind"] == "time"
+    assert pending["field"] == "due_at"
+    options = pending["options"]
+    assert isinstance(options, list)
+    assert options[0] == first
+    assert "завтра" not in str(pending["args"])
+
+
+# Примечание: выбор варианта → create_task на выбранное время, подтверждение — из ответа инструмента
+async def test_resumeTimeCreatesReminder() -> None:
+    asked, _ = await runPhrase("напомни купить хлеб", "2026-10-21T21:30")
+    assert asked.clarify is not None
+    created = ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
+    tools = RecordingTools(created)
+    turn = turnAt("завтра 13:00", "2026-10-21T21:35").model_copy(
+        update={"pending": asked.clarify.pending}
+    )
+    result = await ScriptedBrain().resume(turn, "1", tools)
+    moment = "2026-10-22T13:00:00+03:00"
+    assert tools.calls == [
+        (
+            "create_task",
+            {"title": "Купить хлеб", "kind": "reminder", "due_at": moment, "remind_at": moment},
+        )
+    ]
+    assert result.outcome == "done"
+
+
+# Примечание: на вопрос о времени ответили текстом «в 15» — Brain понимает это при живом pending
+@pytest.mark.parametrize(
+    ("answer", "moment"),
+    [("в 15", "2026-10-22T15:00:00+03:00"), ("сегодня в 23:15", "2026-10-21T23:15:00+03:00")],
+)
+async def test_timeAnsweredByText(answer: str, moment: str) -> None:
+    asked, _ = await runPhrase("напомни купить хлеб", "2026-10-21T21:30")
+    assert asked.clarify is not None
+    tools = RecordingTools(
+        ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
+    )
+    turn = turnAt(answer, "2026-10-21T21:31").model_copy(update={"pending": asked.clarify.pending})
+    result = await ScriptedBrain().run(turn, tools)
+    assert result.outcome == "done"
+    assert tools.calls[0][1]["due_at"] == moment
+
+
+# Примечание: при живом pending новая просьба — обычная фраза, вопрос забывается
+async def test_newPhraseIgnoresPending() -> None:
+    turn = turnAt("что у меня завтра", "2026-10-21T21:31").model_copy(
+        update={"pending": {"kind": "time", "tool": "create_task", "args": {}, "options": []}}
+    )
+    tools = RecordingTools()
+    result = await ScriptedBrain().run(turn, tools)
+    assert [name for name, _ in tools.calls] == ["list_items"]
+    assert result.outcome == "answer"
+
+
+# Примечание: ASR не уверен — «Я правильно понял?»; «Да» выполняет фразу, «Нет» — просит текст
+async def test_lowConfidenceConfirm() -> None:
+    turn = turnAt("напомни завтра в 10 позвонить Ивану", "2026-10-21T21:30").model_copy(
+        update={"inputType": "voice", "asrLowConfidence": True}
+    )
+    tools = RecordingTools(
+        ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
+    )
+    asked = await ScriptedBrain().run(turn, tools)
+    assert asked.outcome == "clarify"
+    assert asked.say == "Я правильно понял: «напомни завтра в 10 позвонить Ивану»?"
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["Да", "Нет, напишу текстом"]
+    assert tools.calls == []
+    answer = turn.model_copy(update={"text": "Да", "pending": asked.clarify.pending})
+    yes = await ScriptedBrain().resume(answer, "0", tools)
+    assert yes.outcome == "done"
+    assert [name for name, _ in tools.calls] == ["create_task"]
+    no = await ScriptedBrain().resume(answer, "1", tools)
+    assert (no.outcome, no.say) == ("answer", WRITE_TEXT)
+
+
+# Примечание: «встреча с … завтра в 15» → create_event с названием и временем начала
+async def test_eventCreated() -> None:
+    created = ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
+    result, tools = await runPhrase(
+        "Встреча с Иваном завтра в 15", "2026-10-21T21:30", tools=RecordingTools(created)
+    )
+    assert tools.calls == [
+        ("create_event", {"title": "Встреча с Иваном", "starts_at": "2026-10-22T15:00:00+03:00"})
+    ]
+    assert result.outcome == "done"
+
+
+# Примечание: встреча без времени — тот же вопрос о времени, поле starts_at
+async def test_eventWithoutTimeAsks() -> None:
+    result, tools = await runPhrase("созвон с командой завтра", "2026-10-21T21:30")
+    assert tools.calls == []
+    assert result.clarify is not None
+    assert result.clarify.pending["tool"] == "create_event"
+    assert result.clarify.missing == ["starts_at"]
+
+
+# Примечание: конфликт → вопрос со свободными слотами; выбор слота → create_event в этом слоте
+async def test_conflictOffersSlots() -> None:
+    busy = dict(ITEM, title="Стоматолог", kind="event")
+    conflict = ToolResult(
+        ok=True,
+        summary="конфликт",
+        data={
+            "status": "conflict",
+            "item": None,
+            "conflicts": [busy],
+            "free_slots": [
+                {"starts_at": "2026-10-22T10:00:00+03:00", "ends_at": "2026-10-22T11:00:00+03:00"},
+                {"starts_at": "2026-10-22T11:00:00+03:00", "ends_at": "2026-10-22T12:00:00+03:00"},
+            ],
+        },
+    )
+    asked, _ = await runPhrase(
+        "встреча с Петром завтра в 9:30", "2026-10-21T21:30", tools=RecordingTools(conflict)
+    )
+    assert asked.outcome == "clarify"
+    assert asked.say is not None
+    assert "«Стоматолог»" in asked.say
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["10:00–11:00", "11:00–12:00"]
+    created = RecordingTools(
+        ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
+    )
+    turn = turnAt("11:00–12:00", "2026-10-21T21:31").model_copy(
+        update={"pending": asked.clarify.pending}
+    )
+    done = await ScriptedBrain().resume(turn, "1", created)
+    assert done.outcome == "done"
+    assert created.calls == [
+        (
+            "create_event",
+            {
+                "title": "Встреча с Петром",
+                "starts_at": "2026-10-22T11:00:00+03:00",
+                "ends_at": "2026-10-22T12:00:00+03:00",
+            },
+        )
+    ]
+
+
+# Примечание: конфликт без свободных окон — ответ без записи, а не «готово»
+async def test_conflictWithoutSlots() -> None:
+    conflict = ToolResult(
+        ok=True,
+        summary="конфликт",
+        data={"status": "conflict", "item": None, "conflicts": [ITEM], "free_slots": []},
+    )
+    result, _ = await runPhrase(
+        "встреча с Петром завтра в 10", "2026-10-21T21:30", tools=RecordingTools(conflict)
+    )
+    assert result.outcome == "answer"
+    assert result.say is not None
+    assert "свободных окон" in result.say
+
+
+# Примечание: выбор не из своих вариантов (чужой pending, номер вне списка) — просим повторить
+@pytest.mark.parametrize(
+    ("pending", "choice"),
+    [(None, "0"), ({"kind": "time", "options": []}, "0"), ({"kind": "slot", "slots": []}, "x")],
+)
+async def test_badChoice(pending: dict[str, object] | None, choice: str) -> None:
+    turn = turnAt("9:00", "2026-10-21T21:31").model_copy(update={"pending": pending})
+    result = await ScriptedBrain().resume(turn, choice, RecordingTools())
+    assert (result.outcome, result.say) == ("answer", BAD_CHOICE)
 
 
 # Примечание: задача — с простым временем или вовсе без времени
@@ -257,10 +462,8 @@ async def test_noCallerInArgs() -> None:
     assert all("caller" not in args and "user_id" not in args for _, args in tools.calls)
 
 
-# Примечание: resume — S2; AGENT_BRAIN=llm — понятная ошибка до мержа с B
-async def test_resumeAndLlmMode() -> None:
-    with pytest.raises(NotImplementedError, match="S2"):
-        await ScriptedBrain().resume(turnAt("10:00", "2026-10-21T21:30"), "10:00", RecordingTools())
+# Примечание: AGENT_BRAIN=llm — понятная ошибка до мержа с B
+async def test_llmMode() -> None:
     assert isinstance(buildBrain("scripted"), ScriptedBrain)
     with pytest.raises(BrainNotConnectedError, match="AGENT_BRAIN=scripted"):
         buildBrain("llm")

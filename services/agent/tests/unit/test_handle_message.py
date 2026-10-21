@@ -5,8 +5,9 @@ from typing import Final
 import pytest
 import structlog
 
-from agent.application.handle_message import HandleMessage, TurnDeps
+from agent.application.handle_message import HandleMessage
 from agent.application.ports import DialogContext
+from agent.application.turn_pipeline import TurnDeps, TurnPipeline
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.templates import loadTemplates
 from common.errors import AppError, ErrorCode
@@ -53,7 +54,7 @@ class Rig:
         self.lock = InMemoryUserLock()
         self.store = store or InMemoryContextStore()
         self.tools = RecordingToolFactory()
-        self.handler = HandleMessage(
+        self.pipeline = TurnPipeline(
             TurnDeps(
                 resolver=self.resolver,
                 lock=self.lock,
@@ -66,6 +67,7 @@ class Rig:
             turnTimeoutS=turnTimeoutS,
             lockWaitS=lockWaitS,
         )
+        self.handler = HandleMessage(self.pipeline)
 
     # Примечание: ход внутри trace-контекста, как в запросе через middleware
     async def run(self, request: MessageRequest = REQUEST) -> Reply:

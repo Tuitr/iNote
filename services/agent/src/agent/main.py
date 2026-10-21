@@ -12,9 +12,10 @@ import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from agent.application.handle_message import HandleMessage, TurnDeps
+from agent.application.handle_action import HandleAction
+from agent.application.handle_message import HandleMessage
 from agent.application.ports import Clock, ReplyRenderer, ToolExecutorFactory, UserResolver
-from agent.application.use_cases import HandleAction
+from agent.application.turn_pipeline import TurnDeps, TurnPipeline
 from agent.infrastructure.brains import buildBrain
 from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
@@ -103,10 +104,11 @@ def createApp(
             )
             app.state.redis = redis
             app.state.mcpHttp = mcpHttp
-            app.state.handleMessage = HandleMessage(
+            pipeline = TurnPipeline(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
-            app.state.handleAction = HandleAction(actionSource)
+            app.state.handleMessage = HandleMessage(pipeline)
+            app.state.handleAction = HandleAction(pipeline, actionSource)
             _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
             try:
                 yield

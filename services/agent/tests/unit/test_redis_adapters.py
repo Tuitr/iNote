@@ -52,6 +52,7 @@ async def test_contextRoundTrip(store: KeyedRedis) -> None:
         history=(Turn(role="user", text="привет", at=AT),),
         focus=(ItemBrief.fromWire(ITEM),),
         pending={"opaque": [1, 2, {"x": None}]},
+        options=("сегодня 19:00", "завтра 9:00"),
     )
     await contexts.save(17, saved)
     assert await contexts.load(17) == saved
@@ -60,6 +61,17 @@ async def test_contextRoundTrip(store: KeyedRedis) -> None:
     assert json.loads(raw)[0]["text"] == "привет"
     await contexts.save(17, DialogContext(history=saved.history, focus=saved.focus))
     assert await store.client.exists("va:v1:agent:pending:17") == 0
+
+
+# Примечание: pending Brain лежит как есть рядом с вариантами; старый формат — «нет вопроса»
+async def test_pendingStoredOpaqueWithOptions(store: KeyedRedis) -> None:
+    contexts = RedisDialogContextStore(store)
+    await contexts.save(17, DialogContext(pending={"kind": "time", "n": 1}, options=("9:00",)))
+    raw = await store.client.get("va:v1:agent:pending:17")
+    assert raw is not None
+    assert json.loads(raw) == {"brain": {"kind": "time", "n": 1}, "options": ["9:00"]}
+    await store.client.set("va:v1:agent:pending:17", json.dumps({"step": 1}), ex=60)
+    assert (await contexts.load(17)).pending is None
 
 
 # Примечание: битый JSON в ключе не роняет ход — эта часть контекста просто пустая

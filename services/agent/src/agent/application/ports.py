@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import Protocol
 
 from agent.domain.user import Caller, UserContext, UserId
@@ -13,6 +14,8 @@ class DialogContext:
     history: tuple[Turn, ...] = ()
     focus: tuple[ItemBrief, ...] = ()
     pending: JsonObject | None = field(default=None)
+    # варианты уточнения в том порядке, в каком ушли кнопками (pick_option.args.choice — индекс)
+    options: tuple[str, ...] = ()
 
 
 # Примечание: max_user_id → внутренний пользователь (J8 resolve, с кешем)
@@ -51,6 +54,12 @@ class ToolExecutorFactory(Protocol):
     def forTurn(self, caller: Caller) -> ToolExecutor: ...
 
 
+# Примечание: короткие ответы действий без LLM; тексты — в шаблонах ([notices] в ru.toml)
+class Notice(StrEnum):
+    PENDING_EXPIRED = "pending_expired"
+    CANCELLED = "cancelled"
+
+
 # Примечание: перевод итога хода в Reply; все тексты — в шаблонах presentation
 class ReplyRenderer(Protocol):
     # Примечание: Reply по итогу хода Brain; heard — распознанный текст голосового («Распознал: …»)
@@ -60,6 +69,9 @@ class ReplyRenderer(Protocol):
 
     # Примечание: Reply, если лок пользователя занят
     def busy(self, traceId: str) -> Reply: ...
+
+    # Примечание: короткий ответ действия без LLM («Вопрос устарел», «Хорошо, отменил»)
+    def notice(self, notice: Notice, traceId: str) -> Reply: ...
 
     # Примечание: Reply-ошибка по коду (upstream_timeout, internal, …)
     def failure(self, errorCode: str, traceId: str) -> Reply: ...

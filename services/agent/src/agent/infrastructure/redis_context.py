@@ -1,7 +1,7 @@
 import json
 from typing import Final
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from agent.application.ports import DialogContext
 from agent.domain.user import UserId
@@ -16,9 +16,17 @@ PENDING_TTL_S: Final = 10 * 60
 
 _HISTORY: Final = TypeAdapter(list[Turn])
 _FOCUS: Final = TypeAdapter(list[ItemBrief])
-_PENDING: Final = TypeAdapter(dict[str, object])
 
 _log = getLogger(__name__)
+
+
+# Примечание: ключ pending: непрозрачный pending Brain + варианты, ушедшие кнопками
+class StoredPending(BaseModel):
+    brain: dict[str, object]
+    options: list[str] = []
+
+
+_PENDING: Final = TypeAdapter(StoredPending)
 
 
 # Примечание: контекст диалога в трёх ключах Redis; pending хранится как есть — формат решает B
@@ -31,9 +39,12 @@ class RedisDialogContextStore:
     async def load(self, userId: UserId) -> DialogContext:
         history = await self._read(_key("ctx", userId), _HISTORY)
         focus = await self._read(_key("focus", userId), _FOCUS)
-        pending = await self._read(_key("pending", userId), _PENDING)
+        stored = await self._read(_key("pending", userId), _PENDING)
         return DialogContext(
-            history=tuple(history or []), focus=tuple(focus or []), pending=pending
+            history=tuple(history or []),
+            focus=tuple(focus or []),
+            pending=stored.brain if stored else None,
+            options=tuple(stored.options) if stored else (),
         )
 
     # Примечание: pending=None удаляет ключ — незавершённого уточнения больше нет
@@ -48,8 +59,8 @@ class RedisDialogContextStore:
         if context.pending is None:
             await self._store.delete(pendingKey)
         else:
-            payload = json.dumps(context.pending, ensure_ascii=False)
-            await self._store.setValue(pendingKey, payload, ttlS=PENDING_TTL_S)
+            stored = StoredPending(brain=context.pending, options=list(context.options))
+            await self._store.setValue(pendingKey, stored.model_dump_json(), ttlS=PENDING_TTL_S)
 
     # Примечание: чтение и разбор одного ключа; None — ключа нет или он битый
     async def _read[T](self, key: RedisKey, adapter: TypeAdapter[T]) -> T | None:

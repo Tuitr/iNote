@@ -69,6 +69,12 @@ open_week = "Открыть неделю"
 today = "Сегодня"
 tomorrow = "Завтра"
 week = "Неделя"
+cancel = "Отмена"
+
+# ответы действий без LLM (/v1/actions)
+[notices]
+pending_expired = "Вопрос устарел — повтори просьбу."
+cancelled = "Хорошо, отменил."
 
 [errors]
 code = "Код: {code}"

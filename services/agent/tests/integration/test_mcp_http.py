@@ -272,3 +272,64 @@ async def test_sameKeyNoDuplicate(stub: StubProcess, uniqueId: str) -> None:
         other = await mcp.callTool("create_task", reminderArgs(caller, f"{uniqueId}:2"), 5)
     assert itemId(first) == itemId(again) != itemId(other)
     assert len(stub.events("tool_replayed")) == 1
+
+
+# Примечание: аргументы create_event с caller и своим ключом
+def eventArgs(caller: Caller, key: str, startsAt: datetime, **extra: object) -> dict[str, object]:
+    return {
+        "title": "Встреча с Петром",
+        "starts_at": startsAt.isoformat(),
+        "caller": {
+            "user_id": caller.userId,
+            "tz": caller.tz,
+            "trace_id": caller.traceId,
+            "idempotency_key": key,
+        },
+        **extra,
+    }
+
+
+# Примечание: конфликт — не ошибка: status=conflict, что мешает, свободные окна; force — создаёт
+async def test_eventConflict(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    tomorrow = datetime.now(ZoneInfo(TZ)).replace(second=0, microsecond=0) + timedelta(days=1)
+    dentist = tomorrow.replace(hour=9, minute=30)  # фикстура «Стоматолог», завтра 09:30–10:30
+    async with connection(stub.url) as mcp:
+        conflict = await mcp.callTool(
+            "create_event", eventArgs(caller, f"{uniqueId}:1", dentist), 5
+        )
+        assert not conflict.isError
+        data = conflict.structured
+        assert data is not None
+        assert data["status"] == "conflict"
+        assert data["item"] is None
+        titles = [c["title"] for c in data["conflicts"]]  # type: ignore[attr-defined]
+        assert titles == ["Стоматолог"]
+        slots = data["free_slots"]
+        assert isinstance(slots, list)
+        assert slots
+        first = datetime.fromisoformat(slots[0]["starts_at"])
+        created = await mcp.callTool("create_event", eventArgs(caller, f"{uniqueId}:2", first), 5)
+        assert created.structured is not None
+        assert created.structured["status"] == "created"
+        again = await mcp.callTool("create_event", eventArgs(caller, f"{uniqueId}:3", first), 5)
+        assert again.structured is not None
+        assert again.structured["status"] == "conflict"
+        forced = await mcp.callTool(
+            "create_event", eventArgs(caller, f"{uniqueId}:4", first, force=True), 5
+        )
+        assert forced.structured is not None
+        assert forced.structured["status"] == "created"
+
+
+# Примечание: созданное видно в поиске; «звонок Ивану» находит «Позвонить Ивану» (по началу слов)
+async def test_searchFindsByStem(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    async with connection(stub.url) as mcp:
+        # ключ «:0» — исполнитель хода начнёт свои ключи с «:1», повтора не будет
+        await mcp.callTool("create_task", reminderArgs(caller, f"{uniqueId}:0"), 5)
+        reply = await McpToolExecutor(mcp, caller).call("search_items", {"query": "звонок Ивану"})
+    assert reply.data is not None
+    titles = [r["item"]["title"] for r in reply.data["results"]]  # type: ignore[attr-defined]
+    assert "Позвонить Ивану" in titles
+    assert "Позвонить" in titles

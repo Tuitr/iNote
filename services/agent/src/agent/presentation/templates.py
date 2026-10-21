@@ -97,6 +97,13 @@ class ButtonTemplates(_Section):
     today: str
     tomorrow: str
     week: str
+    cancel: str
+
+
+# Примечание: ответы действий без LLM: имена ключей совпадают с Notice (application/ports)
+class NoticeTemplates(_Section):
+    pendingExpired: str
+    cancelled: str
 
 
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
@@ -108,6 +115,7 @@ class ReplyTemplates(_Section):
     search: SearchTemplates
     answer: AnswerTemplates
     buttons: ButtonTemplates
+    notices: NoticeTemplates
     errors: dict[str, str]
 
     # Примечание: у каждого возможного кода ошибки — свой текст, иначе пользователь увидит «default»

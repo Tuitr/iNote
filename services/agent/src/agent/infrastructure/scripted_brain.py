@@ -1,20 +1,24 @@
 """ScriptedBrain — правила вместо LLM (C): реализация Brain из J2 для моков и e2e, без сети.
 
 Понимает только: «что у меня сегодня / завтра / на неделе», «напомни … (завтра в 10)»,
-«создай задачу …», «найди …». Всё остальное — outcome=answer с подсказкой.
-Работает только через ToolExecutor, actions — из реальных ToolResult (правило 3).
+«создай задачу …», «встреча с … завтра в 15», «найди …».
+Всё остальное — outcome=answer с подсказкой.
+Уточняет (S2): время у «напомни» и встречи без времени; «правильно понял?» при неуверенном ASR;
+свободный слот при конфликте встреч. pending — свой формат (kind: time | confirm | slot),
+агент его не разбирает. Работает только через ToolExecutor, actions — из ToolResult (правило 3).
 """
 
 import re
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
 from contracts.agent_side import (
+    Clarify,
     ExecutedAction,
     ToolErrorCode,
     ToolExecutor,
@@ -29,10 +33,19 @@ HELP: Final = (
     "Пока понимаю только: «что у меня сегодня», «что у меня завтра», «что у меня на неделе», "
     "«напомни завтра в 10 позвонить Ивану», «создай задачу купить хлеб», «найди договор»."
 )
-ASK_TIME: Final = "Скажи, когда напомнить: например, «напомни завтра в 10 позвонить Ивану»."
 EMPTY_TITLE: Final = "Не понял, что записать: например, «создай задачу купить хлеб»."
+ASK_TIME: Final = "На какое время? Выбери вариант или напиши, например: «завтра в 10»."
+ASK_CONFIRM: Final = "Я правильно понял: «{text}»?"
+CONFIRM_OPTIONS: Final = ("Да", "Нет, напишу текстом")
+WRITE_TEXT: Final = "Хорошо, напиши текстом."
+ASK_SLOT: Final = "В это время уже есть: {busy}. Выбери свободное время:"
+NO_SLOTS: Final = "В это время уже есть: {busy}, а свободных окон рядом нет. Назови другое время."
+BAD_CHOICE: Final = "Не понял выбор — повтори просьбу."
+# Варианты времени по таблице толкования: утро, день, вечер
+TIME_OPTIONS: Final = (9, 13, 19)
 
 type Period = Literal["today", "tomorrow", "week"]
+type DayWord = Literal["today", "tomorrow"]
 
 _LIST_RE: Final = re.compile(
     r"^(?:что\s+у\s+меня|что\s+запланировано|покажи(?:\s+дела)?)\s+"
@@ -42,6 +55,13 @@ _LIST_RE: Final = re.compile(
 _REMIND_RE: Final = re.compile(r"^напомни(?:\s+мне)?\s+(?P<rest>.+)$", re.IGNORECASE)
 _TASK_RE: Final = re.compile(r"^(?:создай|добавь|запиши)\s+задачу\s*(?P<rest>.*)$", re.IGNORECASE)
 _SEARCH_RE: Final = re.compile(r"^(?:найди|поищи)\s+(?P<rest>.+)$", re.IGNORECASE)
+_EVENT_RE: Final = re.compile(r"^(?P<word>встреча|созвон)\s+(?P<rest>.+)$", re.IGNORECASE)
+# Ответ на вопрос о времени текстом: «в 15», «15:30», «завтра в 10»
+_TIME_ANSWER_RE: Final = re.compile(
+    r"^(?:(?P<day>сегодня|завтра)\s+)?(?:в\s+)?(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?$",
+    re.IGNORECASE,
+)
+_DAY_RE: Final = re.compile(r"\b(?P<day>сегодня|завтра)\b", re.IGNORECASE)
 # Только простое время: «сегодня/завтра в 10» или «в 10:30»
 _WHEN_RE: Final = re.compile(
     r"\b(?P<day>сегодня|завтра)\s+в\s+(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?\b",
@@ -82,10 +102,51 @@ def normalize(text: str) -> str:
 
 # Примечание: Brain на правилах; resume — S2
 class ScriptedBrain:
-    # Примечание: разбор фразы → один вызов инструмента или ответ без инструментов
+    # Примечание: разбор фразы → один вызов инструмента, уточнение или ответ без инструментов
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
         started = time.perf_counter()
         text = normalize(turn.text)
+        if turn.asrLowConfidence:
+            return _clarify(
+                ASK_CONFIRM.format(text=text),
+                ["confirmation"],
+                list(CONFIRM_OPTIONS),
+                {"kind": "confirm", "text": turn.text},
+                started=started,
+            )
+        answered = self._answerToTimeQuestion(turn, text)
+        if answered is not None:
+            pending, when = answered
+            return await self._completeWithTime(turn, tools, pending, when, started)
+        return await self._parse(turn, tools, text, started)
+
+    # Примечание: выбор варианта по кнопке; choice — номер варианта из clarify.options
+    async def resume(self, turn: TurnInput, choice: str, tools: ToolExecutor) -> TurnResult:
+        started = time.perf_counter()
+        pending = turn.pending or {}
+        index = int(choice) if choice.isdigit() else -1
+        kind = pending.get("kind")
+        if kind == "confirm":
+            if index != 0:
+                return _answer(WRITE_TEXT, started)
+            confirmed = turn.model_copy(
+                update={"text": str(pending.get("text") or turn.text), "asrLowConfidence": False}
+            )
+            return await self._parse(confirmed, tools, normalize(confirmed.text), started)
+        options = _strList(pending.get("options"))
+        if kind == "time" and 0 <= index < len(options):
+            when = datetime.fromisoformat(options[index])
+            return await self._completeWithTime(turn, tools, pending, when, started)
+        slots = _slotList(pending.get("slots"))
+        if kind == "slot" and 0 <= index < len(slots):
+            args = {**_asArgs(pending.get("args")), **slots[index]}
+            return await self._createEvent(turn, tools, args, started)
+        return _answer(BAD_CHOICE, started)
+
+    # Примечание: обычная фраза: список, напоминание, задача, встреча, поиск или подсказка
+    async def _parse(
+        self, turn: TurnInput, tools: ToolExecutor, text: str, started: float
+    ) -> TurnResult:
         if listed := _LIST_RE.match(text):
             period = _period(listed["period"])
             span = periodRange(period, turn.now, turn.tz)
@@ -95,16 +156,14 @@ class ScriptedBrain:
             return await self._create(turn, tools, reminded["rest"], "reminder", started)
         if tasked := _TASK_RE.match(text):
             return await self._create(turn, tools, tasked["rest"], "task", started)
+        if event := _EVENT_RE.match(text):
+            return await self._event(turn, tools, event["word"], event["rest"], started)
         if searched := _SEARCH_RE.match(text):
             args = {"query": searched["rest"], "limit": SEARCH_LIMIT}
             return await self._call(tools, "search_items", args, "answer", started)
         return _answer(HELP, started)
 
-    # Примечание: уточнения по кнопке варианта появятся в S2
-    async def resume(self, turn: TurnInput, choice: str, tools: ToolExecutor) -> TurnResult:
-        raise NotImplementedError("ScriptedBrain.resume — S2")
-
-    # Примечание: напоминание без времени не создаём (уточнение — S2), задача без времени — можно
+    # Примечание: напоминание без времени — вопрос с вариантами; задача без времени — сразу
     async def _create(
         self,
         turn: TurnInput,
@@ -114,16 +173,125 @@ class ScriptedBrain:
         started: float,
     ) -> TurnResult:
         when, title = _extractWhen(rest, turn.now, turn.tz)
+        day, title = _extractDay(title) if when is None else (None, title)
         if not title:
             return _answer(EMPTY_TITLE, started)
-        if kind == "reminder" and when is None:
-            return _answer(ASK_TIME, started)
         args: dict[str, object] = {"title": title[0].upper() + title[1:], "kind": kind}
+        if kind == "reminder" and when is None:
+            return self._askTime(
+                turn, tool="create_task", args=args, field="due_at", day=day, started=started
+            )
         if when is not None:
-            args["due_at"] = when.isoformat()
-            if kind == "reminder":
-                args["remind_at"] = when.isoformat()
+            args.update(_taskTime(kind, when))
         return await self._call(tools, "create_task", args, "done", started)
+
+    # Примечание: «встреча с Петром завтра в 15» → create_event; без времени — вопрос
+    async def _event(
+        self, turn: TurnInput, tools: ToolExecutor, word: str, rest: str, started: float
+    ) -> TurnResult:
+        when, title = _extractWhen(rest, turn.now, turn.tz)
+        day, title = _extractDay(title) if when is None else (None, title)
+        if not title:
+            return _answer(EMPTY_TITLE, started)
+        args: dict[str, object] = {"title": f"{word.capitalize()} {title}"}
+        if when is None:
+            return self._askTime(
+                turn, tool="create_event", args=args, field="starts_at", day=day, started=started
+            )
+        return await self._createEvent(
+            turn, tools, {**args, "starts_at": when.isoformat()}, started
+        )
+
+    # Примечание: create_event; conflict — не ошибка: вопрос со свободными слотами из ответа
+    async def _createEvent(
+        self, turn: TurnInput, tools: ToolExecutor, args: Mapping[str, object], started: float
+    ) -> TurnResult:
+        result = await self._call(tools, "create_event", args, "done", started)
+        if result.outcome != "done":
+            return result
+        data = result.actions[-1].result.data or {}
+        if data.get("status") != "conflict":
+            return result
+        busy = ", ".join(f"«{t}»" for t in _conflictTitles(data)) or "другая встреча"
+        slots = [
+            slot for raw in _asList(data.get("free_slots")) if (slot := _slot(raw)) is not None
+        ]
+        if not slots:
+            return _answer(NO_SLOTS.format(busy=busy), started, actions=result.actions)
+        labels = [_slotLabel(slot, turn.tz) for slot in slots]
+        pending: dict[str, object] = {
+            "kind": "slot",
+            "args": {k: v for k, v in args.items() if k not in {"starts_at", "ends_at"}},
+            "slots": [dict(slot) for slot in slots],
+        }
+        return _clarify(
+            ASK_SLOT.format(busy=busy),
+            ["starts_at"],
+            labels,
+            pending,
+            started=started,
+            actions=result.actions,
+        )
+
+    # Примечание: вопрос о времени: варианты 9:00 / 13:00 / 19:00 — ближайшие в будущем
+    def _askTime(
+        self,
+        turn: TurnInput,
+        *,
+        tool: str,
+        args: Mapping[str, object],
+        field: str,
+        day: DayWord | None,
+        started: float,
+    ) -> TurnResult:
+        moments = _timeOptions(turn.now, turn.tz, day)
+        pending: dict[str, object] = {
+            "kind": "time",
+            "tool": tool,
+            "args": dict(args),
+            "field": field,
+            "options": [m.isoformat() for m in moments],
+        }
+        labels = [_momentLabel(m, turn.now, turn.tz) for m in moments]
+        return _clarify(ASK_TIME, [field], labels, pending, started=started)
+
+    # Примечание: живой вопрос о времени и ответ текстом «в 15» → (pending, момент)
+    def _answerToTimeQuestion(
+        self, turn: TurnInput, text: str
+    ) -> tuple[Mapping[str, object], datetime] | None:
+        pending = turn.pending
+        if not pending or pending.get("kind") != "time":
+            return None
+        match = _TIME_ANSWER_RE.match(text)
+        if match is None:
+            return None
+        zone = ZoneInfo(turn.tz)
+        local = turn.now.astimezone(zone)
+        hour, minute = int(match["hour"]), int(match["minute"] or 0)
+        day = local.date() + timedelta(days=1 if (match["day"] or "").lower() == "завтра" else 0)
+        moment = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
+        if match["day"] is None and moment <= local:
+            moment += timedelta(days=1)
+        return pending, moment
+
+    # Примечание: время выбрано — дособираем вызов из pending и выполняем
+    async def _completeWithTime(
+        self,
+        turn: TurnInput,
+        tools: ToolExecutor,
+        pending: Mapping[str, object],
+        when: datetime,
+        started: float,
+    ) -> TurnResult:
+        args = _asArgs(pending.get("args"))
+        if pending.get("tool") == "create_event":
+            return await self._createEvent(
+                turn, tools, {**args, "starts_at": when.isoformat()}, started
+            )
+        kind: Literal["task", "reminder"] = "task" if args.get("kind") == "task" else "reminder"
+        return await self._call(
+            tools, "create_task", {**args, **_taskTime(kind, when)}, "done", started
+        )
 
     # Примечание: один вызов; ошибка инструмента → outcome=error с его кодом
     async def _call(
@@ -196,9 +364,119 @@ def _focusIds(data: Mapping[str, object] | None) -> list[uuid.UUID]:
     return ids
 
 
-# Примечание: ответ без инструментов
-def _answer(say: str, started: float) -> TurnResult:
-    return TurnResult(outcome="answer", say=say, usage=_usage(started))
+# Примечание: ответ без изменений; actions — если инструмент уже вызывали (конфликт без окон)
+def _answer(say: str, started: float, *, actions: Sequence[ExecutedAction] = ()) -> TurnResult:
+    return TurnResult(outcome="answer", say=say, actions=list(actions), usage=_usage(started))
+
+
+# Примечание: уточнение: вопрос, варианты кнопками и свой pending (агент его не разбирает)
+def _clarify(
+    say: str,
+    missing: list[str],
+    options: list[str],
+    pending: dict[str, object],
+    *,
+    started: float,
+    actions: Sequence[ExecutedAction] = (),
+) -> TurnResult:
+    return TurnResult(
+        outcome="clarify",
+        say=say,
+        clarify=Clarify(missing=missing, options=options, pending=pending),
+        actions=list(actions),
+        usage=_usage(started),
+    )
+
+
+# Примечание: у напоминания срок и момент напоминания совпадают; у задачи — только срок
+def _taskTime(kind: Literal["task", "reminder"], when: datetime) -> dict[str, object]:
+    times: dict[str, object] = {"due_at": when.isoformat()}
+    if kind == "reminder":
+        times["remind_at"] = when.isoformat()
+    return times
+
+
+# Примечание: «завтра» без времени — запомнить день и убрать слово из названия
+def _extractDay(rest: str) -> tuple[DayWord | None, str]:
+    match = _DAY_RE.search(rest)
+    if match is None:
+        return None, rest.strip()
+    title = re.sub(r"\s+", " ", rest[: match.start()] + rest[match.end() :]).strip(" ,")
+    return ("tomorrow" if match["day"].lower() == "завтра" else "today"), title
+
+
+# Примечание: 9:00, 13:00, 19:00 в поясе пользователя: в названный день или ближайшие в будущем
+def _timeOptions(now: datetime, tz: str, day: DayWord | None) -> list[datetime]:
+    zone = ZoneInfo(tz)
+    local = now.astimezone(zone)
+    today = local.date()
+    if day is not None:
+        base = today + timedelta(days=1 if day == "tomorrow" else 0)
+        moments = [datetime(base.year, base.month, base.day, h, tzinfo=zone) for h in TIME_OPTIONS]
+        return [m for m in moments if m > local] or [m + timedelta(days=1) for m in moments]
+    options: list[datetime] = []
+    for hour in TIME_OPTIONS:
+        moment = datetime(today.year, today.month, today.day, hour, tzinfo=zone)
+        options.append(moment if moment > local else moment + timedelta(days=1))
+    return sorted(options)
+
+
+# Примечание: подпись варианта: «сегодня 19:00» / «завтра 9:00» / «пт 23.10 9:00»
+def _momentLabel(moment: datetime, now: datetime, tz: str) -> str:
+    zone = ZoneInfo(tz)
+    days = (moment.astimezone(zone).date() - now.astimezone(zone).date()).days
+    local = moment.astimezone(zone)
+    day = {0: "сегодня", 1: "завтра"}.get(days, f"{local:%d.%m}")
+    return f"{day} {local.hour}:{local:%M}"
+
+
+# Примечание: свободное окно {starts_at, ends_at} из ответа инструмента; не по форме — None
+def _slot(raw: object) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    start, end = raw.get("starts_at"), raw.get("ends_at")
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None
+    return {"starts_at": start, "ends_at": end}
+
+
+# Примечание: подпись слота «16:00–17:00» в поясе пользователя
+def _slotLabel(slot: Mapping[str, str], tz: str) -> str:
+    zone = ZoneInfo(tz)
+    start = datetime.fromisoformat(slot["starts_at"]).astimezone(zone)
+    end = datetime.fromisoformat(slot["ends_at"]).astimezone(zone)
+    return f"{start:%H:%M}–{end:%H:%M}"
+
+
+# Примечание: названия записей, с которыми конфликт
+def _conflictTitles(data: Mapping[str, object]) -> list[str]:
+    return [
+        str(item["title"])
+        for item in _asList(data.get("conflicts"))
+        if isinstance(item, dict) and item.get("title")
+    ]
+
+
+# Примечание: list из JSON инструмента или pending
+def _asList(value: object) -> list[object]:
+    return list(value) if isinstance(value, list) else []
+
+
+# Примечание: строки из pending (варианты времени)
+def _strList(value: object) -> list[str]:
+    return [str(v) for v in _asList(value) if isinstance(v, str)]
+
+
+# Примечание: слоты из pending
+def _slotList(value: object) -> list[dict[str, str]]:
+    return [slot for raw in _asList(value) if (slot := _slot(raw)) is not None]
+
+
+# Примечание: аргументы вызова из pending (копия, без caller — его ставит агент)
+def _asArgs(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): v for k, v in value.items() if k != "caller"}
 
 
 # Примечание: расход хода — LLM не вызывалась

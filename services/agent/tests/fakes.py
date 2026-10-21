@@ -158,6 +158,7 @@ class ScenarioBrain:
         self.delayS = delayS
         self.error = error
         self.turns: list[TurnInput] = []
+        self.choices: list[str] = []
 
     # Примечание: запоминает TurnInput — проверяем, что в нём нет user_id
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
@@ -167,9 +168,11 @@ class ScenarioBrain:
             raise self.error
         return self.script(turn)
 
-    # Примечание: уточнения — S2
+    # Примечание: resume — тот же сценарий; choices — какие варианты выбирали
     async def resume(self, turn: TurnInput, choice: str, tools: ToolExecutor) -> TurnResult:
-        raise NotImplementedError
+        self.choices.append(choice)
+        self.turns.append(turn)
+        return self.script(turn)
 
 
 # Примечание: служебный REST mcp-контейнера (J8 и health) для httpx.MockTransport; requests — журнал

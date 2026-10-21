@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.json import JSONSnapshotExtension
 
+from agent.application.ports import Notice
 from agent.domain.user import UserContext
 from agent.presentation.dates import DateFormatter
 from agent.presentation.markdown import escapeMarkdown
@@ -340,3 +341,11 @@ def test_heardKeepsLimit() -> None:
     user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=MSK)
     reply = renderer.render(turn("answer", say="я" * 3990), user, TRACE, heard="ы" * 500)
     assert len(reply.text) <= REPLY_TEXT_MAX_LENGTH
+
+
+# Примечание: у каждого Notice — свой текст из шаблонов, ответ без разметки
+@pytest.mark.parametrize("notice", list(Notice))
+def test_notices(notice: Notice) -> None:
+    reply = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)).notice(notice, TRACE)
+    assert reply.text
+    assert (reply.state, reply.format.value) == (ReplyState.ANSWER, "plain")
