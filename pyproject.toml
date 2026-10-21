@@ -21,6 +21,10 @@ dev = [
   "mypy>=1.13",
   "pre-commit>=4.0",
   "import-linter>=2.1",
+  "respx>=0.22",
+  "fakeredis>=2.28",
+  "testcontainers[redis]>=4.15",
+  "time-machine>=2.16",
   # --- конец зоны C ---
 ]
 
@@ -85,6 +89,8 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# Имена модулей заданы планом (common.logging, common.http): импорт всегда абсолютный
+"libs/common/src/common/{logging,http}.py" = ["A005"]
 "**/tests/**" = [
   "S101",    # assert в тестах
   "S105", "S106",  # «пароли» в фикстурах — тестовые значения
@@ -107,6 +113,7 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"
+plugins = ["pydantic.mypy"]
 strict = true
 warn_unreachable = true
 disallow_any_explicit = true
@@ -134,6 +141,10 @@ mypy_path = [
   "$MYPY_CONFIG_FILE_DIR",
 ]
 exclude = ['(^|/)\.venv/', '(^|/)build/', '(^|/)__snapshots__/']
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
 
 [tool.pytest.ini_options]
 minversion = "8.3"
