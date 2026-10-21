@@ -1,9 +1,9 @@
 import pytest
-from services.bot.tests.fakes import CountingRateLimiter, InMemoryDeduplicator
 
 from bot.application.handle_update import HandleUpdate
 from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.presentation.templates import RussianTexts
+from services.bot.tests.fakes import CountingRateLimiter, InMemoryDeduplicator
 
 
 # Примечание: свежий фейковый MAX на тест

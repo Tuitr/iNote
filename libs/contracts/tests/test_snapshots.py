@@ -6,7 +6,6 @@
 """
 
 import pytest
-from libs.contracts.tests.examples import EXAMPLES_DIR, loadExample
 from pydantic import BaseModel
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.json import JSONSnapshotExtension
@@ -14,6 +13,7 @@ from syrupy.extensions.json import JSONSnapshotExtension
 from contracts.agent_side import TurnInput, TurnResult
 from contracts.notify import NotifyDelivered, NotifyRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
+from libs.contracts.tests.examples import EXAMPLES_DIR, loadExample
 
 pytestmark = pytest.mark.contract
 

@@ -1,9 +1,9 @@
 import pytest
-from libs.contracts.tests.examples import loadExample
 from pydantic import ValidationError
 
 from common.errors import ErrorEnvelope
 from contracts.notify import CHAT_NOT_FOUND, NotifyDelivered, NotifyRequest
+from libs.contracts.tests.examples import loadExample
 
 
 # Примечание: пример запроса Scheduler валиден и сериализуется обратно без потерь

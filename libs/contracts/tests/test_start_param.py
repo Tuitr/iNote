@@ -3,9 +3,9 @@ from datetime import date
 from typing import Final
 
 import pytest
-from libs.contracts.tests.examples import loadExample
 
 from contracts.start_param import StartParam, StartParamKind, isValidStartParam, parseStartParam
+from libs.contracts.tests.examples import loadExample
 
 ITEM_ID: Final = uuid.UUID("7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90")
 

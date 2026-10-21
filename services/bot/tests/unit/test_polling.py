@@ -2,13 +2,12 @@ import asyncio
 import dataclasses
 from typing import override
 
-from services.bot.tests.fakes import loadIncoming, loadMaxUpdate
-
 from bot.domain.updates import IncomingUpdate, UpdateBatch
 from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.presentation.polling import PollingLoop
 from common.trace import currentTraceId, isValidTraceId
+from services.bot.tests.fakes import loadIncoming, loadMaxUpdate
 
 
 # Примечание: обработчик-регистратор: запоминает апдейты, trace_id и marker в момент обработки

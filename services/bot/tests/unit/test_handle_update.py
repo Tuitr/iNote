@@ -1,12 +1,11 @@
 import dataclasses
 from typing import Final
 
-from services.bot.tests.fakes import loadIncoming
-
 from bot.application.handle_update import HandleOutcome, HandleUpdate
 from bot.domain.updates import UpdateKind
 from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.presentation import templates
+from services.bot.tests.fakes import loadIncoming
 
 CHAT_ID: Final = 500600700
 

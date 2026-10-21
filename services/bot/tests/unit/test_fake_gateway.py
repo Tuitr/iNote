@@ -1,9 +1,8 @@
 import asyncio
 
-from services.bot.tests.fakes import loadMaxUpdate
-
 from bot.domain.messages import OutgoingMessage
 from bot.infrastructure.fake_max import FakeMaxGateway
+from services.bot.tests.fakes import loadMaxUpdate
 
 
 # Примечание: пустая очередь — ждём до таймаута и возвращаем тот же marker

@@ -1,8 +1,8 @@
 import pytest
-from libs.contracts.tests.examples import loadExample
 from pydantic import ValidationError
 
 from contracts.agent_side import ToolResult, TurnInput, TurnResult
+from libs.contracts.tests.examples import loadExample
 
 
 # Примечание: примеры J2 валидны и сериализуются обратно без потерь

@@ -7,13 +7,13 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from redis.asyncio import Redis
-from services.bot.tests.fakes import loadMaxUpdate
 
 from bot.infrastructure.real_max import ADAPTER_NOT_CHOSEN, MaxAdapterNotChosenError
 from bot.infrastructure.settings import BotSettings
 from bot.main import createApp
 from bot.presentation import templates
 from common.redis import createRedis
+from services.bot.tests.fakes import loadMaxUpdate
 
 
 # Примечание: окружение бота для тестов: фейковый MAX, короткий long polling

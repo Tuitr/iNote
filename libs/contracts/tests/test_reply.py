@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Final
 
 import pytest
-from libs.contracts.tests.examples import loadExample
 from pydantic import ValidationError
 
 from contracts.reply import (
@@ -13,6 +12,7 @@ from contracts.reply import (
     Reply,
     ReplyState,
 )
+from libs.contracts.tests.examples import loadExample
 
 REPLY_EXAMPLES: Final = ["reply/confirm.json", "reply/list.json", "reply/error.json"]
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"

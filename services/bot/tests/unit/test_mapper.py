@@ -2,10 +2,10 @@ import copy
 from typing import Final
 
 import pytest
-from services.bot.tests.fakes import FIXTURE_NAMES, loadMaxUpdate
 
 from bot.domain.updates import UpdateKind, VoiceRef
 from bot.infrastructure.max_mapper import deriveUpdateId, mapRawUpdate
+from services.bot.tests.fakes import FIXTURE_NAMES, loadMaxUpdate
 
 USER_ID: Final = 100200300
 CHAT_ID: Final = 500600700

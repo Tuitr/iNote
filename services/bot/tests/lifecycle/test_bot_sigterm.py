@@ -11,9 +11,9 @@ from typing import Final
 import httpx
 import pytest
 import redis
-from services.bot.tests.fakes import loadMaxUpdate
 
 from bot.infrastructure.max_mapper import deriveUpdateId
+from services.bot.tests.fakes import loadMaxUpdate
 
 pytestmark = [pytest.mark.lifecycle, pytest.mark.integration]
 
