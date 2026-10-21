@@ -13,6 +13,10 @@
   `{items, range, truncated}`, `search_items` → `{results: [{item, score}], best_match_confident}`,
   ошибка → `isError` + конверт `{"error": {code, message, details}}` в `structuredContent`;
 - записи — из `fixtures/items.json`, день считается от `from` (для списка) или от «сегодня» пользователя (для поиска);
+- `create_event` без `force: true` проверяет пересечения с записями из фикстур и созданными: при конфликте —
+  `status: conflict`, `item: null`, `conflicts` и до трёх `free_slots` той же длины в пределах 9:00–20:00;
+- созданные записи хранятся в памяти по `user_id` и видны в `list_items` и `search_items`;
+- поиск — по началу слов (первые 4 буквы слова запроса длиной от 4): «звонок» найдёт «Позвонить»;
 - время без смещения → `validation_error`, в прошлом → `past_time`, нет `caller` → `validation_error`;
 - повтор с тем же `(user_id, idempotency_key)` возвращает тот же ответ (id записи — от ключа);
 - J8 `POST /internal/v1/users/resolve`: `user_id` по `max_user_id` в памяти (с 17, повтор — тот же, `created=false`),

@@ -36,8 +36,13 @@ FIRST_USER_ID: Final = 17
 FIXTURES: Final = Path(__file__).with_name("fixtures")
 WEEKDAYS: Final = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
 DEFAULT_EVENT_MIN: Final = 60
-# Поиск по началу слов: короткие предлоги не считаем, слово режем до 5 букв
-MIN_WORD: Final = 3
+# Поиск по началу слов: короткие предлоги не считаем, слово режем до 4 букв («звонок» ~ «позвонить»)
+MIN_WORD: Final = 4
+STEM: Final = 4
+# Свободные окна при конфликте: в пределах дня, не больше трёх
+FIRST_SLOT_HOUR: Final = 9
+LAST_SLOT_HOUR: Final = 20
+MAX_FREE_SLOTS: Final = 3
 # caller в схеме — как у D: агент вырезает его для LLM и заполняет сам (J3)
 CALLER_SCHEMA: Final[dict[str, object]] = {
     "type": "object",
@@ -100,6 +105,8 @@ class StubTools:
         self._items = loadFixture("items.json")
         self._now = now
         self._replies: dict[tuple[int, str], types.CallToolResult] = {}
+        # созданное пользователем — видно в list и search, встречи участвуют в конфликтах
+        self._created: dict[int, list[Json]] = {}
 
     # Примечание: вызов инструмента: проверка caller, ответ из фикстур, ошибка → isError
     def call(self, name: str, arguments: Mapping[str, object] | None) -> types.CallToolResult:
@@ -122,7 +129,7 @@ class StubTools:
             log("tool_replayed", tool=name, user_id=userId, idempotency_key=key)
             return self._replies[(userId, key)]
         try:
-            result = self._dispatch(name, args, ZoneInfo(str(caller["tz"])), key)
+            result = self._dispatch(name, args, ZoneInfo(str(caller["tz"])), key, userId)
         except ToolFailureError as failure:
             log("tool_failed", tool=name, user_id=userId, error_code=failure.code)
             result = _failure(failure)
@@ -131,17 +138,21 @@ class StubTools:
         return result
 
     # Примечание: инструмент по имени
-    def _dispatch(self, name: str, args: Json, zone: ZoneInfo, key: object) -> types.CallToolResult:
+    def _dispatch(
+        self, name: str, args: Json, zone: ZoneInfo, key: object, userId: int
+    ) -> types.CallToolResult:
         if name not in self._known:
             raise ToolFailureError("not_found", f"Неизвестный инструмент {name}")
         if name in {"create_task", "create_event"}:
-            return self._create(name, args, zone, key)
+            return self._create(name, args, zone, key, userId)
         if name == "list_items":
-            return self._list(args, zone)
-        return self._search(args, zone)
+            return self._list(args, zone, userId)
+        return self._search(args, zone, userId)
 
     # Примечание: create_task / create_event: запись из аргументов, id детерминирован от ключа
-    def _create(self, name: str, args: Json, zone: ZoneInfo, key: object) -> types.CallToolResult:
+    def _create(
+        self, name: str, args: Json, zone: ZoneInfo, key: object, userId: int
+    ) -> types.CallToolResult:
         title = str(args.get("title") or "").strip()
         if not title:
             raise ToolFailureError("validation_error", "Пустое название", {"field": "title"})
@@ -164,19 +175,69 @@ class StubTools:
         if isEvent and when is not None:
             ends = _optionalTime(args, "ends_at") or when + timedelta(minutes=DEFAULT_EVENT_MIN)
             item["ends_at"] = ends.astimezone(zone).isoformat()
+            busy = [] if args.get("force") else self._overlapping(when, ends, zone, userId)
+            if busy:
+                return self._conflict(when, ends, busy, zone, userId)
+        self._created.setdefault(userId, []).append(item)
         data: Json = {"status": "created", "item": item, "conflicts": [], "free_slots": []}
         return _ok(f"Создано: {_brief(item)}", data)
 
+    # Примечание: встречи пользователя, пересекающиеся с [start, end)
+    def _overlapping(
+        self, start: datetime, end: datetime, zone: ZoneInfo, userId: int
+    ) -> list[Json]:
+        return [
+            event
+            for event in self._knownEvents(zone, userId)
+            if _itemTime(event) < end and start < _itemEnd(event)
+        ]
+
+    # Примечание: встречи с концом: фикстуры от «сегодня» и созданные пользователем
+    def _knownEvents(self, zone: ZoneInfo, userId: int) -> list[Json]:
+        today = self._clock().astimezone(zone).date()
+        items = [*self._materialize(today, zone), *self._created.get(userId, [])]
+        return [i for i in items if i["kind"] == "event" and i.get("starts_at")]
+
+    # Примечание: конфликт — не ошибка (J3): status=conflict, что мешает и до 3 свободных окон
+    def _conflict(
+        self, start: datetime, end: datetime, busy: list[Json], zone: ZoneInfo, userId: int
+    ) -> types.CallToolResult:
+        duration = end - start
+        local = start.astimezone(zone)
+        slots: list[Json] = []
+        for hour in [
+            *range(local.hour + 1, LAST_SLOT_HOUR + 1),
+            *range(local.hour - 1, FIRST_SLOT_HOUR - 1, -1),
+        ]:
+            candidate = local.replace(hour=hour, minute=0)
+            if candidate < self._clock() or self._overlapping(
+                candidate, candidate + duration, zone, userId
+            ):
+                continue
+            slots.append(
+                {"starts_at": candidate.isoformat(), "ends_at": (candidate + duration).isoformat()}
+            )
+            if len(slots) == MAX_FREE_SLOTS:
+                break
+        data: Json = {"status": "conflict", "item": None, "conflicts": busy, "free_slots": slots}
+        lines = "; ".join(_brief(item) for item in busy)
+        return _ok(f"Конфликт: {lines}; свободных окон: {len(slots)}", data)
+
     # Примечание: list_items: фикстуры раскладываются от даты from, отбор по [from, to)
-    def _list(self, args: Json, zone: ZoneInfo) -> types.CallToolResult:
+    def _list(self, args: Json, zone: ZoneInfo, userId: int) -> types.CallToolResult:
         start, end = _requiredTime(args, "from"), _requiredTime(args, "to")
         if end <= start:
             raise ToolFailureError("validation_error", "to раньше from", {"field": "to"})
         kinds = args.get("kinds")
         items = [
             item
-            for item in self._materialize(start.astimezone(zone).date(), zone)
-            if start <= _itemTime(item) < end and (not kinds or item["kind"] in _asList(kinds))
+            for item in [
+                *self._materialize(start.astimezone(zone).date(), zone),
+                *self._created.get(userId, []),
+            ]
+            if item.get("starts_at")
+            and start <= _itemTime(item) < end
+            and (not kinds or item["kind"] in _asList(kinds))
         ]
         data: Json = {
             "items": items,
@@ -187,16 +248,16 @@ class StubTools:
         return _ok(f"Найдено {len(items)}: {lines}", data)
 
     # Примечание: search_items: совпадение по началу слов названия, от «сегодня» пользователя
-    def _search(self, args: Json, zone: ZoneInfo) -> types.CallToolResult:
+    def _search(self, args: Json, zone: ZoneInfo, userId: int) -> types.CallToolResult:
         query = str(args.get("query") or "").strip().lower()
         if not query:
             raise ToolFailureError("validation_error", "Пустой запрос", {"field": "query"})
         limit = int(str(args.get("limit", 5)))
-        stems = [word[:5] for word in query.split() if len(word) >= MIN_WORD]
+        stems = [word[:STEM] for word in query.split() if len(word) >= MIN_WORD]
         today = self._clock().astimezone(zone).date()
         found = [
             {"item": item, "score": 0.9}
-            for item in self._materialize(today, zone)
+            for item in [*self._materialize(today, zone), *self._created.get(userId, [])]
             if any(stem in str(item["title"]).lower() for stem in stems)
         ][:limit]
         data: Json = {"results": found, "best_match_confident": bool(found)}
@@ -264,6 +325,13 @@ def _requiredTime(args: Json, field: str) -> datetime:
     if moment is None:
         raise ToolFailureError("validation_error", f"Нет поля {field}", {"field": field})
     return moment
+
+
+# Примечание: конец записи: ends_at или начало + 60 минут
+def _itemEnd(item: Json) -> datetime:
+    raw = item.get("ends_at")
+    start = _itemTime(item)
+    return datetime.fromisoformat(str(raw)) if raw else start + timedelta(minutes=DEFAULT_EVENT_MIN)
 
 
 # Примечание: момент записи для отбора по периоду
