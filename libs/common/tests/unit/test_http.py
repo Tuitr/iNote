@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Final
 
 import httpx
 import pytest
@@ -10,10 +11,10 @@ from common.errors import AppError
 from common.http import RetryPolicy, ServiceHttpClient
 from common.trace import isValidTraceId, traceContext
 
-BASE = "http://agent:8000"
-TOKEN = "s" * 32
-TRACE = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
-FAST_RETRY = RetryPolicy(retries=2, initialDelayS=0.001, maxDelayS=0.002)
+BASE: Final = "http://agent:8000"
+TOKEN: Final = "s" * 32
+TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+FAST_RETRY: Final = RetryPolicy(retries=2, initialDelayS=0.001, maxDelayS=0.002)
 
 
 # Примечание: клиент с двумя повторами и мгновенной паузой

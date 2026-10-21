@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Final
 
 import httpx
 import pytest
@@ -16,7 +17,7 @@ from bot.infrastructure.max_mapper import deriveUpdateId
 
 pytestmark = [pytest.mark.lifecycle, pytest.mark.integration]
 
-SEND_DELAY_MS = 1500
+SEND_DELAY_MS: Final = 1500
 
 
 # Примечание: свободный порт для uvicorn

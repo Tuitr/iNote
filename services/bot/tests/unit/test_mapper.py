@@ -1,4 +1,5 @@
 import copy
+from typing import Final
 
 import pytest
 from services.bot.tests.fakes import FIXTURE_NAMES, loadMaxUpdate
@@ -6,8 +7,8 @@ from services.bot.tests.fakes import FIXTURE_NAMES, loadMaxUpdate
 from bot.domain.updates import UpdateKind, VoiceRef
 from bot.infrastructure.max_mapper import deriveUpdateId, mapRawUpdate
 
-USER_ID = 100200300
-CHAT_ID = 500600700
+USER_ID: Final = 100200300
+CHAT_ID: Final = 500600700
 
 
 # Примечание: все фикстуры разбираются и помечены как синтетика

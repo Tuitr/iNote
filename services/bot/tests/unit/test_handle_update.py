@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Final
 
 from services.bot.tests.fakes import loadIncoming
 
@@ -7,7 +8,7 @@ from bot.domain.updates import UpdateKind
 from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.presentation import templates
 
-CHAT_ID = 500600700
+CHAT_ID: Final = 500600700
 
 
 # Примечание: текст → эхо в тот же чат, формат plain

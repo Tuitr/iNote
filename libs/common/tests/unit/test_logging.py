@@ -1,12 +1,13 @@
 import json
 import logging
+from typing import Final
 
 import pytest
 
 from common.logging import bindUserId, configureLogging, getLogger
 from common.trace import traceContext
 
-TRACE = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
 
 
 # Примечание: последние JSON-строки из stdout

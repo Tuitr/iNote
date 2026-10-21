@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Final
 
 import httpx
 import pytest
@@ -12,8 +13,8 @@ from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
 from agent.infrastructure.settings import AgentSettings
 from agent.main import createApp
 
-TRACE = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
-AUTH = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
+TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
 
 
 # Примечание: окружение агента: токен и пути к примерам из корня репо

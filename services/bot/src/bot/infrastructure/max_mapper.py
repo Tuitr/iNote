@@ -145,9 +145,9 @@ def _mapMessage(update: MaxMessageCreated) -> IncomingUpdate | None:
     return IncomingUpdate(updateId, UpdateKind.TEXT, userId, chatId, text=text)
 
 
-# Примечание: голосовое = вложение audio
-# TODO(C): подтвердить на живом апдейте, что голосовое приходит как type=audio; длительность и mime
+# Примечание: голосовое = вложение audio; длительности и mime в схеме MAX нет
 def _findVoice(attachments: list[MaxAttachment]) -> VoiceRef | None:
+    # TODO(C): подтвердить на живом апдейте, что голосовое приходит как type=audio
     for attachment in attachments:
         if attachment.type == "audio" and attachment.payload is not None:
             return VoiceRef(url=attachment.payload.url, token=attachment.payload.token)

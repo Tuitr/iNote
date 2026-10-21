@@ -16,4 +16,4 @@
 | `redis` | `createRedis(url)`, `RedisKey("bot", "upd", id)` → `va:v1:bot:upd:<id>`, `KeyedRedis` — запись только с TTL (без TTL — белый список реестра) |
 | `testing` | pytest-плагин (подключается сам): `redisContainerUrl`, `redisClient`, `uniqueId` |
 
-Тесты: `uv run pytest libs/common` (unit), `-m integration` (нужен Docker; образ — `VA_TEST_REDIS_IMAGE`, по умолчанию `redis:7.4-alpine`), `-m lifecycle` (SIGTERM в подпроцессе).
+Тесты: `uv run pytest libs/common` (unit), `-m integration` (нужен Docker; образ `redis:7.4-alpine`, как на стенде), `-m lifecycle` (SIGTERM в подпроцессе).

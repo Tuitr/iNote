@@ -170,6 +170,8 @@ branch = true
 source = ["common", "contracts", "bot", "agent"]
 
 [tool.coverage.report]
+# CLAUDE.md: сервисы ≥ 60% (libs/core ≥ 80% — свой порог у D)
+fail_under = 60
 show_missing = true
 skip_covered = true
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]

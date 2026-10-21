@@ -1,11 +1,11 @@
-from typing import ClassVar, Literal
+from typing import ClassVar, Final, Literal
 
 import pytest
 from pydantic import Field, ValidationError
 
 from common.config import BaseServiceSettings
 
-TOKEN = "t" * 32
+TOKEN: Final = "t" * 32
 
 
 # Примечание: окружение теста с обязательным токеном

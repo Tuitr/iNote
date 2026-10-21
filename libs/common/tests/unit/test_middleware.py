@@ -1,10 +1,12 @@
+from typing import Final
+
 import httpx
 import pytest
 import structlog
 
 from common.trace import isValidTraceId
 
-VALID_TRACE = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+VALID_TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
 
 
 # Примечание: без заголовка trace_id создаётся и возвращается в ответе

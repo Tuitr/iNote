@@ -75,8 +75,7 @@ class HandleUpdate:
             case _:
                 assert_never(update.kind)
 
-    # Примечание: «Слишком часто» — сообщением один раз за окно; на кнопку отвечаем всегда,
-    # иначе в клиенте MAX продолжит крутиться индикатор нажатия
+    # Примечание: «Слишком часто» — раз за окно; на кнопку — всегда, иначе MAX крутит индикатор
     async def _replyTooOften(self, update: IncomingUpdate, *, notify: bool) -> HandleOutcome:
         if update.kind is UpdateKind.CALLBACK:
             await self._answerCallback(update, self._texts.tooOften())

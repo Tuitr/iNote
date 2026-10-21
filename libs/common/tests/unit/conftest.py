@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import Final
 
 import httpx
 import pytest
@@ -9,7 +10,7 @@ from pydantic import SecretStr
 from common.errors import AppError, ErrorCode, installErrorHandlers
 from common.middleware import installMiddleware
 
-SERVICE_TOKEN = "s" * 32
+SERVICE_TOKEN: Final = "s" * 32
 
 
 # Примечание: мини-приложение с общими middleware и обработчиками ошибок

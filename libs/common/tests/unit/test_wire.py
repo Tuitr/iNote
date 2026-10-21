@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from typing import Final
 
 import pytest
 from pydantic import ValidationError
@@ -15,7 +16,7 @@ class Sample(WireModel):
     durationMin: int | None = None
 
 
-SAMPLE_JSON = {
+SAMPLE_JSON: Final = {
     "trace_id": "ab12",
     "max_user_id": 42,
     "starts_at": "2026-10-18T07:00:00Z",

@@ -1,4 +1,3 @@
-import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Final
@@ -9,8 +8,8 @@ from redis.asyncio import Redis
 
 from common.redis import createRedis
 
-REDIS_IMAGE_ENV: Final = "VA_TEST_REDIS_IMAGE"
-DEFAULT_REDIS_IMAGE: Final = "redis:7.4-alpine"
+# Та же версия, что в deploy/docker-compose.yml
+REDIS_IMAGE: Final = "redis:7.4-alpine"
 REDIS_PORT: Final = 6379
 
 
@@ -19,8 +18,7 @@ REDIS_PORT: Final = 6379
 def redisContainerUrl() -> Iterator[str]:
     from testcontainers.community.redis import RedisContainer
 
-    image = os.environ.get(REDIS_IMAGE_ENV, DEFAULT_REDIS_IMAGE)
-    with RedisContainer(image) as container:
+    with RedisContainer(REDIS_IMAGE) as container:
         host = container.get_container_host_ip()
         port = container.get_exposed_port(REDIS_PORT)
         yield f"redis://{host}:{port}/0"

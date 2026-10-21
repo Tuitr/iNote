@@ -3,12 +3,13 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
 pytestmark = pytest.mark.lifecycle
 
-WORKER = Path(__file__).with_name("sigterm_worker.py")
+WORKER: Final = Path(__file__).with_name("sigterm_worker.py")
 
 
 # Примечание: запускает процесс, ждёт «ready», шлёт SIGTERM и возвращает события логов
