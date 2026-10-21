@@ -1,0 +1,1364 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "iNote API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Live",
+        "operationId": "health_live_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Live Health Live Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Ready",
+        "operationId": "health_ready_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/max": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Max",
+        "operationId": "auth_max_v1_auth_max_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthMaxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMaxResponse"
+                },
+                "example": {
+                  "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJleGFtcGxlIn0.c3R1Yg",
+                  "expires_at": "2026-10-20T15:00:00+03:00",
+                  "me": {
+                    "name": "Степан",
+                    "settings": {
+                      "tz": "Europe/Moscow",
+                      "voice_replies": false,
+                      "default_event_min": 60,
+                      "remind_before_min": 15
+                    }
+                  },
+                  "start_param": "today"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Get Me",
+        "operationId": "get_me_v1_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                },
+                "example": {
+                  "name": "Степан",
+                  "settings": {
+                    "tz": "Europe/Moscow",
+                    "voice_replies": false,
+                    "default_event_min": 60,
+                    "remind_before_min": 15
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Patch Me",
+        "operationId": "patch_me_v1_me_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                },
+                "example": {
+                  "name": "Степан",
+                  "settings": {
+                    "tz": "Asia/Yekaterinburg",
+                    "voice_replies": true,
+                    "default_event_min": 60,
+                    "remind_before_min": 15
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/items": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "summary": "List Items",
+        "operationId": "list_items_v1_items_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ItemKind"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "done",
+                "all"
+              ],
+              "type": "string",
+              "default": "open",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "day",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ItemsByDayResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ItemsResponse"
+                    }
+                  ],
+                  "title": "Response List Items V1 Items Get"
+                },
+                "examples": {
+                  "group=day": {
+                    "value": {
+                      "range": {
+                        "from": "2026-10-19",
+                        "to": "2026-10-22",
+                        "tz": "Europe/Moscow"
+                      },
+                      "version": 42,
+                      "days": [
+                        {
+                          "date": "2026-10-19",
+                          "label": "Пн, 19 октября",
+                          "items": [
+                            {
+                              "id": "b41c2d7e-0a1f-4e2b-8c3d-5e6f7a8b9c0d",
+                              "kind": "event",
+                              "title": "Встреча с дизайнером",
+                              "starts_at": "2026-10-19T11:00:00+03:00",
+                              "ends_at": "2026-10-19T12:00:00+03:00",
+                              "all_day": false,
+                              "remind_at": "2026-10-19T10:45:00+03:00",
+                              "status": "open",
+                              "participants": [
+                                "Дизайнер"
+                              ],
+                              "source_text": "Встреча с дизайнером в понедельник в 11",
+                              "created_at": "2026-10-17T12:00:00+03:00",
+                              "updated_at": "2026-10-17T12:00:00+03:00"
+                            }
+                          ]
+                        },
+                        {
+                          "date": "2026-10-20",
+                          "label": "Вт, 20 октября",
+                          "items": []
+                        },
+                        {
+                          "date": "2026-10-21",
+                          "label": "Ср, 21 октября",
+                          "items": [
+                            {
+                              "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+                              "kind": "reminder",
+                              "title": "Позвонить Ивану",
+                              "all_day": false,
+                              "remind_at": "2026-10-21T10:00:00+03:00",
+                              "status": "open",
+                              "participants": [],
+                              "source_text": "Напомни завтра в 10 позвонить Ивану",
+                              "created_at": "2026-10-20T14:05:00+03:00",
+                              "updated_at": "2026-10-20T14:05:00+03:00"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "без group": {
+                    "value": {
+                      "range": {
+                        "from": "2026-10-19",
+                        "to": "2026-10-22",
+                        "tz": "Europe/Moscow"
+                      },
+                      "version": 42,
+                      "items": [
+                        {
+                          "id": "b41c2d7e-0a1f-4e2b-8c3d-5e6f7a8b9c0d",
+                          "kind": "event",
+                          "title": "Встреча с дизайнером",
+                          "starts_at": "2026-10-19T11:00:00+03:00",
+                          "ends_at": "2026-10-19T12:00:00+03:00",
+                          "all_day": false,
+                          "remind_at": "2026-10-19T10:45:00+03:00",
+                          "status": "open",
+                          "participants": [
+                            "Дизайнер"
+                          ],
+                          "source_text": "Встреча с дизайнером в понедельник в 11",
+                          "created_at": "2026-10-17T12:00:00+03:00",
+                          "updated_at": "2026-10-17T12:00:00+03:00"
+                        },
+                        {
+                          "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+                          "kind": "reminder",
+                          "title": "Позвонить Ивану",
+                          "all_day": false,
+                          "remind_at": "2026-10-21T10:00:00+03:00",
+                          "status": "open",
+                          "participants": [],
+                          "source_text": "Напомни завтра в 10 позвонить Ивану",
+                          "created_at": "2026-10-20T14:05:00+03:00",
+                          "updated_at": "2026-10-20T14:05:00+03:00"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "304": {
+            "description": "Данные не изменились: If-None-Match совпал с ETag"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/items/search": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Search Items",
+        "operationId": "search_items_v1_items_search_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchItemsResult"
+                },
+                "example": {
+                  "results": [
+                    {
+                      "item": {
+                        "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+                        "kind": "reminder",
+                        "title": "Позвонить Ивану",
+                        "all_day": false,
+                        "remind_at": "2026-10-21T10:00:00+03:00",
+                        "status": "open",
+                        "participants": [],
+                        "source_text": "Напомни завтра в 10 позвонить Ивану",
+                        "created_at": "2026-10-20T14:05:00+03:00",
+                        "updated_at": "2026-10-20T14:05:00+03:00"
+                      },
+                      "score": 0.83
+                    }
+                  ],
+                  "best_match_confident": true
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/items/{item_id}": {
+      "get": {
+        "tags": [
+          "items"
+        ],
+        "summary": "Get Item",
+        "operationId": "get_item_v1_items__item_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                },
+                "example": {
+                  "id": "b41c2d7e-0a1f-4e2b-8c3d-5e6f7a8b9c0d",
+                  "kind": "event",
+                  "title": "Встреча с дизайнером",
+                  "starts_at": "2026-10-19T11:00:00+03:00",
+                  "ends_at": "2026-10-19T12:00:00+03:00",
+                  "all_day": false,
+                  "remind_at": "2026-10-19T10:45:00+03:00",
+                  "status": "open",
+                  "participants": [
+                    "Дизайнер"
+                  ],
+                  "source_text": "Встреча с дизайнером в понедельник в 11",
+                  "created_at": "2026-10-17T12:00:00+03:00",
+                  "updated_at": "2026-10-17T12:00:00+03:00"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Нужна авторизация",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "not_found",
+                    "message": "Запись не найдена",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "validation_error",
+                    "message": "Неверные поля запроса",
+                    "details": {},
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/HttpErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthMaxRequest": {
+        "properties": {
+          "init_data": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Init Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "init_data"
+        ],
+        "title": "AuthMaxRequest"
+      },
+      "AuthMaxResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "me": {
+            "$ref": "#/components/schemas/Me"
+          },
+          "start_param": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Param"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "expires_at",
+          "me",
+          "start_param"
+        ],
+        "title": "AuthMaxResponse"
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "validation_error",
+          "unauthorized",
+          "forbidden",
+          "not_found",
+          "stale",
+          "past_time",
+          "rate_limited",
+          "internal",
+          "upstream_unavailable",
+          "upstream_timeout"
+        ],
+        "title": "ErrorCode"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HttpErrorInfo": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          },
+          "trace_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Trace Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "trace_id"
+        ],
+        "title": "HttpErrorInfo"
+      },
+      "HttpErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/HttpErrorInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "HttpErrorResponse",
+        "description": "Единый конверт ошибки для всех HTTP-ответов."
+      },
+      "Item": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "all_day": {
+            "type": "boolean",
+            "title": "All Day"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ItemStatus"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "remind_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind At"
+          },
+          "rrule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rrule"
+          },
+          "participants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Participants"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "starts_at",
+          "all_day",
+          "status",
+          "notes",
+          "ends_at",
+          "remind_at",
+          "rrule",
+          "participants",
+          "source_text",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "Item"
+      },
+      "ItemKind": {
+        "type": "string",
+        "enum": [
+          "task",
+          "reminder",
+          "event"
+        ],
+        "title": "ItemKind"
+      },
+      "ItemStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "done",
+          "cancelled"
+        ],
+        "title": "ItemStatus"
+      },
+      "ItemsByDayResponse": {
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/ItemsRange"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ItemsDay"
+            },
+            "type": "array",
+            "title": "Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "version",
+          "days"
+        ],
+        "title": "ItemsByDayResponse"
+      },
+      "ItemsDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "label",
+          "items"
+        ],
+        "title": "ItemsDay"
+      },
+      "ItemsRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "title": "To"
+          },
+          "tz": {
+            "type": "string",
+            "title": "Tz"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "tz"
+        ],
+        "title": "ItemsRange"
+      },
+      "ItemsResponse": {
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/ItemsRange"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "version",
+          "items"
+        ],
+        "title": "ItemsResponse"
+      },
+      "Me": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/UserSettings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "settings"
+        ],
+        "title": "Me"
+      },
+      "MePatch": {
+        "properties": {
+          "tz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tz"
+          },
+          "voice_replies": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Replies"
+          },
+          "default_event_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 480.0,
+                "minimum": 5.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Event Min"
+          },
+          "remind_before_min": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1440.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remind Before Min"
+          }
+        },
+        "type": "object",
+        "title": "MePatch",
+        "description": "Любое подмножество полей UserSettings; непереданные поля не меняются."
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "fail"
+              ]
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessResponse"
+      },
+      "SearchHit": {
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/Item"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item",
+          "score"
+        ],
+        "title": "SearchHit"
+      },
+      "SearchItemsResult": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "best_match_confident": {
+            "type": "boolean",
+            "title": "Best Match Confident"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "best_match_confident"
+        ],
+        "title": "SearchItemsResult"
+      },
+      "UserSettings": {
+        "properties": {
+          "tz": {
+            "type": "string",
+            "title": "Tz"
+          },
+          "voice_replies": {
+            "type": "boolean",
+            "title": "Voice Replies",
+            "default": false
+          },
+          "default_event_min": {
+            "type": "integer",
+            "maximum": 480.0,
+            "minimum": 5.0,
+            "title": "Default Event Min",
+            "default": 60
+          },
+          "remind_before_min": {
+            "type": "integer",
+            "maximum": 1440.0,
+            "minimum": 0.0,
+            "title": "Remind Before Min",
+            "default": 15
+          }
+        },
+        "type": "object",
+        "required": [
+          "tz"
+        ],
+        "title": "UserSettings"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

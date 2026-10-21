@@ -1,0 +1,35 @@
+{
+  "arguments": {
+    "caller": {
+      "user_id": 17,
+      "tz": "Europe/Moscow",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80",
+      "idempotency_key": "ab12f0c4d5e6f708192a3b4c5d6e7f80:1"
+    },
+    "id": "7f3a9c2e"
+  },
+  "structuredContent": {
+    "status": "deleted",
+    "item": {
+      "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "event",
+      "title": "Встреча с Иваном",
+      "notes": null,
+      "starts_at": "2026-10-18T15:00:00+03:00",
+      "ends_at": "2026-10-18T16:00:00+03:00",
+      "all_day": false,
+      "remind_at": "2026-10-18T14:45:00+03:00",
+      "status": "open",
+      "rrule": null,
+      "participants": [
+        "Иван"
+      ],
+      "source_text": "Поставь встречу с Иваном завтра в три",
+      "created_at": "2026-10-17T15:42:07+03:00",
+      "updated_at": "2026-10-17T16:00:00+03:00"
+    },
+    "conflicts": [],
+    "free_slots": []
+  },
+  "text": "Удалено: [7f3a9c2e] Встреча с Иваном"
+}

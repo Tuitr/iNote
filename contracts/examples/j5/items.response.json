@@ -1,0 +1,44 @@
+{
+  "range": {
+    "from": "2026-10-19",
+    "to": "2026-10-22",
+    "tz": "Europe/Moscow"
+  },
+  "version": 42,
+  "items": [
+    {
+      "id": "b41c2d7e-0a1f-4e2b-8c3d-5e6f7a8b9c0d",
+      "kind": "event",
+      "title": "Встреча с дизайнером",
+      "notes": null,
+      "starts_at": "2026-10-19T11:00:00+03:00",
+      "ends_at": "2026-10-19T12:00:00+03:00",
+      "all_day": false,
+      "remind_at": "2026-10-19T10:45:00+03:00",
+      "status": "open",
+      "rrule": null,
+      "participants": [
+        "Дизайнер"
+      ],
+      "source_text": "Встреча с дизайнером в понедельник в 11",
+      "created_at": "2026-10-17T12:00:00+03:00",
+      "updated_at": "2026-10-17T12:00:00+03:00"
+    },
+    {
+      "id": "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c",
+      "kind": "reminder",
+      "title": "Позвонить Ивану",
+      "notes": null,
+      "starts_at": null,
+      "ends_at": null,
+      "all_day": false,
+      "remind_at": "2026-10-21T10:00:00+03:00",
+      "status": "open",
+      "rrule": null,
+      "participants": [],
+      "source_text": "Напомни завтра в 10 позвонить Ивану",
+      "created_at": "2026-10-20T14:05:00+03:00",
+      "updated_at": "2026-10-20T14:05:00+03:00"
+    }
+  ]
+}

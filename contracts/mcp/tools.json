@@ -1,0 +1,2730 @@
+[
+  {
+    "name": "create_task",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "default": "task",
+          "enum": [
+            "task",
+            "reminder"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "rrule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rrule"
+        },
+        "source_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Text"
+        }
+      },
+      "required": [
+        "caller",
+        "title"
+      ],
+      "title": "CreateTaskArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "description": "Ответ изменяющих инструментов. Конфликт — не ошибка, а status: conflict.",
+      "properties": {
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "completed",
+            "deleted",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "item"
+      ],
+      "title": "MutationResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "create_event",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            }
+          ],
+          "title": "Starts At"
+        },
+        "ends_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends At"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Participants",
+          "type": "array"
+        },
+        "remind_before_min": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind Before Min"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "rrule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rrule"
+        },
+        "source_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Text"
+        },
+        "allow_conflict": {
+          "default": false,
+          "title": "Allow Conflict",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller",
+        "title",
+        "starts_at"
+      ],
+      "title": "CreateEventArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "description": "Ответ изменяющих инструментов. Конфликт — не ошибка, а status: conflict.",
+      "properties": {
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "completed",
+            "deleted",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "item"
+      ],
+      "title": "MutationResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "list_items",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "from": {
+          "format": "date",
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "format": "date",
+          "title": "To",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ItemKind"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "done",
+            "all"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "caller",
+        "from",
+        "to"
+      ],
+      "title": "ListItemsArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "DateRange": {
+          "properties": {
+            "from": {
+              "format": "date",
+              "title": "From",
+              "type": "string"
+            },
+            "to": {
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "title": "DateRange",
+          "type": "object"
+        },
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Item"
+          },
+          "maxItems": 30,
+          "title": "Items",
+          "type": "array"
+        },
+        "range": {
+          "$ref": "#/$defs/DateRange"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "range",
+        "truncated"
+      ],
+      "title": "ListItemsResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "search_items",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "query": {
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ItemKind"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "include_done": {
+          "default": true,
+          "title": "Include Done",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 5,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "caller",
+        "query"
+      ],
+      "title": "SearchItemsArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "SearchHit": {
+          "properties": {
+            "item": {
+              "$ref": "#/$defs/Item"
+            },
+            "score": {
+              "title": "Score",
+              "type": "number"
+            }
+          },
+          "required": [
+            "item",
+            "score"
+          ],
+          "title": "SearchHit",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "results": {
+          "items": {
+            "$ref": "#/$defs/SearchHit"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "best_match_confident": {
+          "title": "Best Match Confident",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "results",
+        "best_match_confident"
+      ],
+      "title": "SearchItemsResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "update_item",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "description": "Переданные поля заменяются, null очищает поле, непереданные не меняются.\n\nКакие поля переданы, видно по model_fields_set: так null отличается от «не передано».",
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "id": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "task",
+                "reminder"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "ends_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends At"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "participants": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Participants"
+        },
+        "remind_before_min": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind Before Min"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "rrule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rrule"
+        },
+        "source_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Text"
+        },
+        "allow_conflict": {
+          "default": false,
+          "title": "Allow Conflict",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller",
+        "id"
+      ],
+      "title": "UpdateItemArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "description": "Ответ изменяющих инструментов. Конфликт — не ошибка, а status: conflict.",
+      "properties": {
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "completed",
+            "deleted",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "item"
+      ],
+      "title": "MutationResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "complete_item",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "id": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "done": {
+          "default": true,
+          "title": "Done",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller",
+        "id"
+      ],
+      "title": "CompleteItemArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "description": "Ответ изменяющих инструментов. Конфликт — не ошибка, а status: conflict.",
+      "properties": {
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "completed",
+            "deleted",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "item"
+      ],
+      "title": "MutationResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "delete_item",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "id": {
+          "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
+          "title": "Id",
+          "type": "string"
+        },
+        "restore": {
+          "default": false,
+          "title": "Restore",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "caller",
+        "id"
+      ],
+      "title": "DeleteItemArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "Item": {
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            },
+            "notes": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Notes"
+            },
+            "ends_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ends At"
+            },
+            "remind_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Remind At"
+            },
+            "rrule": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Rrule"
+            },
+            "participants": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Participants",
+              "type": "array"
+            },
+            "source_text": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Text"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status",
+            "notes",
+            "ends_at",
+            "remind_at",
+            "rrule",
+            "participants",
+            "source_text",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "Item",
+          "type": "object"
+        },
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "description": "Ответ изменяющих инструментов. Конфликт — не ошибка, а status: conflict.",
+      "properties": {
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "completed",
+            "deleted",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Item"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "item"
+      ],
+      "title": "MutationResult",
+      "type": "object"
+    }
+  },
+  {
+    "name": "check_conflicts",
+    "inputSchema": {
+      "$defs": {
+        "Caller": {
+          "description": "Служебный аргумент: заполняет агент, модель его не видит.",
+          "properties": {
+            "user_id": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "tz": {
+              "title": "Tz",
+              "type": "string"
+            },
+            "trace_id": {
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "Trace Id",
+              "type": "string"
+            },
+            "idempotency_key": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Idempotency Key"
+            }
+          },
+          "required": [
+            "user_id",
+            "tz",
+            "trace_id"
+          ],
+          "title": "Caller",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "caller": {
+          "$ref": "#/$defs/Caller"
+        },
+        "starts_at": {
+          "format": "date-time",
+          "title": "Starts At",
+          "type": "string"
+        },
+        "ends_at": {
+          "format": "date-time",
+          "title": "Ends At",
+          "type": "string"
+        },
+        "exclude_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclude Id"
+        }
+      },
+      "required": [
+        "caller",
+        "starts_at",
+        "ends_at"
+      ],
+      "title": "CheckConflictsArgs",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ItemBrief": {
+          "description": "Короткая форма записи: для фокуса диалога, конфликтов и истории.",
+          "properties": {
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "kind": {
+              "$ref": "#/$defs/ItemKind"
+            },
+            "title": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Title",
+              "type": "string"
+            },
+            "starts_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Starts At"
+            },
+            "all_day": {
+              "title": "All Day",
+              "type": "boolean"
+            },
+            "status": {
+              "$ref": "#/$defs/ItemStatus"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "title",
+            "starts_at",
+            "all_day",
+            "status"
+          ],
+          "title": "ItemBrief",
+          "type": "object"
+        },
+        "ItemKind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "ItemKind",
+          "type": "string"
+        },
+        "ItemStatus": {
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "ItemStatus",
+          "type": "string"
+        },
+        "TimeSlot": {
+          "properties": {
+            "starts_at": {
+              "format": "date-time",
+              "title": "Starts At",
+              "type": "string"
+            },
+            "ends_at": {
+              "format": "date-time",
+              "title": "Ends At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "starts_at",
+            "ends_at"
+          ],
+          "title": "TimeSlot",
+          "type": "object"
+        }
+      },
+      "properties": {
+        "conflicts": {
+          "items": {
+            "$ref": "#/$defs/ItemBrief"
+          },
+          "title": "Conflicts",
+          "type": "array"
+        },
+        "free_slots": {
+          "items": {
+            "$ref": "#/$defs/TimeSlot"
+          },
+          "title": "Free Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "conflicts",
+        "free_slots"
+      ],
+      "title": "CheckConflictsResult",
+      "type": "object"
+    }
+  }
+]
