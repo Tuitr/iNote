@@ -1,0 +1,33 @@
+{
+  "_synthetic": true,
+  "_source": "max-messenger/api-schema schema.yaml 0.0.33 (1a4a502); заменить живым апдейтом",
+  "update_type": "message_created",
+  "timestamp": 1792580460123,
+  "message": {
+    "sender": {
+      "user_id": 100200300,
+      "first_name": "Иван",
+      "last_name": "Петров",
+      "username": null,
+      "is_bot": false,
+      "last_activity_time": 1792580000000
+    },
+    "recipient": {
+      "chat_id": 500600700,
+      "chat_type": "dialog",
+      "user_id": null
+    },
+    "timestamp": 1792580460123,
+    "link": null,
+    "body": {
+      "mid": "mid.synthetic.command.0001",
+      "seq": 115000000000000001,
+      "text": "/today",
+      "attachments": null,
+      "markup": null
+    },
+    "stat": null,
+    "url": null
+  },
+  "user_locale": "ru"
+}

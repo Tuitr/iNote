@@ -1,0 +1,160 @@
+import asyncio
+import dataclasses
+from typing import override
+
+from services.bot.tests.fakes import loadIncoming, loadMaxUpdate
+
+from bot.domain.updates import IncomingUpdate, UpdateBatch
+from bot.infrastructure.fake_max import FakeMaxGateway
+from bot.presentation.polling import PollingLoop
+from common.trace import currentTraceId, isValidTraceId
+
+
+# Примечание: обработчик-регистратор: запоминает апдейты, trace_id и marker в момент обработки
+class Recorder:
+    # Примечание: delayS — имитация долгой обработки
+    def __init__(self, loop: "PollingLoop | None" = None, delayS: float = 0.0) -> None:
+        self.loop = loop
+        self.delayS = delayS
+        self.seen: list[tuple[str, str | None, int | None]] = []
+        self.started = asyncio.Event()
+
+    # Примечание: вызывается PollingLoop для каждого апдейта
+    async def __call__(self, update: IncomingUpdate) -> None:
+        self.started.set()
+        await asyncio.sleep(self.delayS)
+        marker = self.loop.marker if self.loop else None
+        self.seen.append((update.updateId, currentTraceId(), marker))
+
+
+# Примечание: дождаться условия с таймаутом
+async def waitFor(predicate: object, timeoutS: float = 2.0) -> None:
+    assert callable(predicate)
+    async with asyncio.timeout(timeoutS):
+        while not predicate():  # noqa: ASYNC110 — опрос состояния в тесте
+            await asyncio.sleep(0.005)
+
+
+# Примечание: marker фиксируется после обработки страницы; у каждого апдейта свой trace_id
+async def test_markerCommittedAfterProcessing(gateway: FakeMaxGateway) -> None:
+    recorder = Recorder()
+    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1)
+    recorder.loop = loop
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await gateway.pushRaw(loadMaxUpdate("text"))
+    await gateway.pushRaw(loadMaxUpdate("command"))
+    await waitFor(lambda: len(recorder.seen) == 2)
+    await waitFor(lambda: loop.marker == 2)
+    stopping.set()
+    await asyncio.wait_for(task, timeout=1)
+    # Во время обработки marker ещё прежний (None) — фиксируется только после
+    assert {m for _, _, m in recorder.seen} == {None}
+    traceIds = [t for _, t, _ in recorder.seen]
+    assert all(t is not None and isValidTraceId(t) for t in traceIds)
+    assert len(set(traceIds)) == 2
+
+
+# Примечание: апдейты одного пользователя — по порядку, даже если первый долгий
+async def test_perUserOrder() -> None:
+    first = loadIncoming("text")
+    second = dataclasses.replace(loadIncoming("command"), maxUserId=first.maxUserId)
+    other = dataclasses.replace(loadIncoming("bot_started"), maxUserId=42)
+    order: list[str] = []
+
+    # Примечание: первый апдейт пользователя обрабатывается дольше остальных
+    async def handler(update: IncomingUpdate) -> None:
+        await asyncio.sleep(0.05 if update is first else 0)
+        order.append(update.updateId)
+
+    # Примечание: шлюз, отдающий одну заранее заданную страницу
+    class OnePage(FakeMaxGateway):
+        # Примечание: первая выборка — страница, дальше пусто
+        @override
+        async def fetchUpdates(self, marker: int | None, timeoutS: int) -> UpdateBatch:
+            if marker is None:
+                return UpdateBatch(updates=(first, second, other), marker=3)
+            await asyncio.sleep(timeoutS)
+            return UpdateBatch(updates=(), marker=marker)
+
+    loop = PollingLoop(gateway=OnePage(), handler=handler, pollTimeoutS=1)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await waitFor(lambda: len(order) == 3)
+    stopping.set()
+    await task
+    assert order.index(first.updateId) < order.index(second.updateId)
+    assert order[0] == other.updateId
+
+
+# Примечание: падение обработки одного апдейта не останавливает цикл
+async def test_failingUpdateDoesNotStopLoop(gateway: FakeMaxGateway) -> None:
+    handled: list[str] = []
+
+    # Примечание: падает на команде, остальное обрабатывает
+    async def handler(update: IncomingUpdate) -> None:
+        if update.kind.value == "command":
+            msg = "boom"
+            raise RuntimeError(msg)
+        handled.append(update.kind.value)
+
+    loop = PollingLoop(gateway=gateway, handler=handler, pollTimeoutS=1)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    for name in ("command", "text"):
+        await gateway.pushRaw(loadMaxUpdate(name))
+    await waitFor(lambda: handled == ["text"] and loop.marker == 2)
+    stopping.set()
+    await task
+
+
+# Примечание: остановка во время ожидания long polling — сразу, не через 30 секунд
+async def test_stopsWhileWaiting(gateway: FakeMaxGateway) -> None:
+    loop = PollingLoop(gateway=gateway, handler=Recorder(), pollTimeoutS=30)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await asyncio.sleep(0.02)
+    stopping.set()
+    await asyncio.wait_for(task, timeout=0.5)
+
+
+# Примечание: остановка во время обработки — апдейт дорабатывается, новые не берутся
+async def test_stopDuringProcessingFinishesUpdate(gateway: FakeMaxGateway) -> None:
+    recorder = Recorder(delayS=0.1)
+    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await gateway.pushRaw(loadMaxUpdate("text"))
+    await asyncio.wait_for(recorder.started.wait(), timeout=1)
+    stopping.set()
+    await gateway.pushRaw(loadMaxUpdate("command"))
+    await asyncio.wait_for(task, timeout=1)
+    assert len(recorder.seen) == 1
+    assert loop.marker == 1
+
+
+# Примечание: сбой MAX при выборке — пауза и повтор, цикл живёт
+async def test_fetchErrorRetried() -> None:
+    calls: list[int | None] = []
+
+    # Примечание: первая выборка падает, вторая отдаёт апдейт
+    class Flaky(FakeMaxGateway):
+        # Примечание: падает один раз
+        @override
+        async def fetchUpdates(self, marker: int | None, timeoutS: int) -> UpdateBatch:
+            calls.append(marker)
+            if len(calls) == 1:
+                msg = "MAX 500"
+                raise ConnectionError(msg)
+            return await super().fetchUpdates(marker, timeoutS)
+
+    gateway = Flaky()
+    recorder = Recorder()
+    loop = PollingLoop(gateway=gateway, handler=recorder, pollTimeoutS=1, initialBackoffS=0.01)
+    stopping = asyncio.Event()
+    task = asyncio.create_task(loop.run(stopping))
+    await gateway.pushRaw(loadMaxUpdate("text"))
+    await waitFor(lambda: len(recorder.seen) == 1)
+    stopping.set()
+    await task
+    assert len(calls) >= 2

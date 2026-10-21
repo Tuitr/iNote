@@ -1,1 +1,86 @@
-# Composition root сервиса: здесь lifespan соберёт зависимости (шаг 3–4).
+"""Composition root бота: lifespan собирает зависимости, больше ничего.
+
+Запуск: uvicorn bot.main:createApp --factory --host 0.0.0.0 --port 8000
+"""
+
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from typing import Final
+
+from fastapi import FastAPI
+from redis.asyncio import Redis
+
+from bot.application.handle_update import HandleUpdate
+from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
+from bot.infrastructure.real_max import createRealMaxGateway
+from bot.infrastructure.redis_adapters import RedisRateLimiter, RedisUpdateDeduplicator
+from bot.infrastructure.settings import BotSettings
+from bot.presentation.dev_routes import buildDevRouter
+from bot.presentation.polling import PollingLoop
+from bot.presentation.templates import RussianTexts
+from common.errors import installErrorHandlers
+from common.health import HealthCheck, buildHealthRouter
+from common.lifecycle import managedTasks
+from common.logging import configureLogging, getLogger
+from common.middleware import installMiddleware
+from common.redis import KeyedRedis, createRedis
+
+SERVICE_NAME: Final = "bot"
+POLLING_TASK: Final = "max-long-polling"
+
+type RedisFactory = Callable[[str], Redis]
+
+_log = getLogger(__name__)
+
+
+# Примечание: фабрика приложения; redisFactory подменяется в тестах (fakeredis)
+def createApp(
+    settings: BotSettings | None = None, *, redisFactory: RedisFactory = createRedis
+) -> FastAPI:
+    config = settings or BotSettings()
+    configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
+
+    # Примечание: клиенты и фоновые задачи живут ровно столько, сколько приложение (правило 9)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if config.maxMode == "real":
+            createRealMaxGateway()
+        redis = redisFactory(config.redisUrl)
+        gateway = FakeMaxGateway(FakeMaxOptions(sendDelayS=config.fakeSendDelayMs / 1000))
+        store = KeyedRedis(redis)
+        handler = HandleUpdate(
+            gateway=gateway,
+            deduplicator=RedisUpdateDeduplicator(store),
+            rateLimiter=RedisRateLimiter(store, limit=config.rateLimitPerMin),
+            texts=RussianTexts(),
+        )
+        loop = PollingLoop(gateway=gateway, handler=handler, pollTimeoutS=config.pollTimeoutS)
+        app.state.devConsole = gateway
+        app.state.redis = redis
+        try:
+            async with managedTasks(config.shutdownTimeoutS) as tasks:
+                _ = tasks.spawn(loop.run(tasks.stopping), name=POLLING_TASK)
+                _log.info("bot_started", max_mode=config.maxMode)
+                yield
+                _log.info("bot_stopping")
+        finally:
+            await redis.aclose()
+            _log.info("bot_stopped")
+
+    app = FastAPI(title="va-bot", lifespan=lifespan)
+    installErrorHandlers(app)
+    installMiddleware(app, serviceToken=config.serviceToken)
+    app.include_router(buildHealthRouter({"redis": _redisCheck(app)}))
+    if config.maxMode == "fake":
+        app.include_router(buildDevRouter())
+    return app
+
+
+# Примечание: клиент Redis появляется в lifespan, поэтому проверка берёт его из app.state при вызове
+def _redisCheck(app: FastAPI) -> HealthCheck:
+    # Примечание: PING текущего клиента; до старта lifespan — ошибка, то есть «не готов»
+    async def probe() -> object:
+        redis: Redis = app.state.redis
+        return await redis.ping()
+
+    return HealthCheck(probe=probe)
