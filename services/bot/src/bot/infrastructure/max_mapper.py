@@ -71,6 +71,7 @@ class MaxMessageCreated(WireModel):
     updateType: Literal["message_created"]
     timestamp: int
     message: MaxMessage
+    userLocale: str | None = None
 
 
 # Примечание: message_callback; message может быть null, если исходное сообщение удалено
@@ -79,6 +80,7 @@ class MaxMessageCallback(WireModel):
     timestamp: int
     callback: MaxCallback
     message: MaxMessage | None = None
+    userLocale: str | None = None
 
 
 # Примечание: bot_started — пользователь нажал «Начать»; payload — из deep link
@@ -88,6 +90,7 @@ class MaxBotStarted(WireModel):
     chatId: int
     user: MaxUser
     payload: str | None = None
+    userLocale: str | None = None
 
 
 SUPPORTED_TYPES: Final = frozenset({"message_created", "message_callback", "bot_started"})
@@ -132,17 +135,34 @@ def _mapMessage(update: MaxMessageCreated) -> IncomingUpdate | None:
     userId, chatId = message.sender.userId, message.recipient.chatId
     voice = _findVoice(message.body.attachments or [])
     text = (message.body.text or "").strip()
+    name, locale = _name(message.sender), update.userLocale
     if voice is not None:
-        return IncomingUpdate(updateId, UpdateKind.VOICE, userId, chatId, voice=voice)
-    if text.startswith(COMMAND_PREFIX) and len(text) > len(COMMAND_PREFIX):
-        name = text[len(COMMAND_PREFIX) :].split(maxsplit=1)[0]
         return IncomingUpdate(
-            updateId, UpdateKind.COMMAND, userId, chatId, text=text, commandName=name
+            updateId, UpdateKind.VOICE, userId, chatId, voice=voice, userName=name, locale=locale
+        )
+    if text.startswith(COMMAND_PREFIX) and len(text) > len(COMMAND_PREFIX):
+        command = text[len(COMMAND_PREFIX) :].split(maxsplit=1)[0]
+        return IncomingUpdate(
+            updateId,
+            UpdateKind.COMMAND,
+            userId,
+            chatId,
+            text=text,
+            commandName=command,
+            userName=name,
+            locale=locale,
         )
     if not text:
         _log.info("update_ignored", reason="empty_message")
         return None
-    return IncomingUpdate(updateId, UpdateKind.TEXT, userId, chatId, text=text)
+    return IncomingUpdate(
+        updateId, UpdateKind.TEXT, userId, chatId, text=text, userName=name, locale=locale
+    )
+
+
+# Примечание: имя для профиля (J8): first_name, пустое — None
+def _name(user: MaxUser) -> str | None:
+    return user.firstName.strip() or None
 
 
 # Примечание: голосовое = вложение audio; длительности и mime в схеме MAX нет
@@ -165,6 +185,8 @@ def _mapCallback(update: MaxMessageCallback) -> IncomingUpdate:
         maxChatId=chatId,
         callbackId=callback.callbackId,
         callbackPayload=callback.payload,
+        userName=_name(callback.user),
+        locale=update.userLocale,
     )
 
 
@@ -176,4 +198,6 @@ def _mapBotStarted(update: MaxBotStarted) -> IncomingUpdate:
         maxUserId=update.user.userId,
         maxChatId=update.chatId,
         startPayload=update.payload,
+        userName=_name(update.user),
+        locale=update.userLocale,
     )

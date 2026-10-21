@@ -1,19 +1,25 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
+from typing import Final
 
 import fakeredis
 import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from pydantic import TypeAdapter
 from redis.asyncio import Redis
 
 from bot.infrastructure.real_max import ADAPTER_NOT_CHOSEN, MaxAdapterNotChosenError
 from bot.infrastructure.settings import BotSettings
 from bot.main import createApp
 from bot.presentation import templates
+from bot.presentation.dev_routes import SentLog, SentMessageDto
 from common.redis import createRedis
-from services.bot.tests.fakes import loadMaxUpdate
+from services.bot.tests.fakes import REPLY_EXAMPLES, loadMaxUpdate
+
+BUTTONS: Final = TypeAdapter(list[list[dict[str, str]]])
 
 
 # Примечание: окружение бота для тестов: фейковый MAX, короткий long polling
@@ -40,10 +46,40 @@ async def running(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
             yield client
 
 
-# Примечание: бот целиком поверх fakeredis
+# Примечание: агент на MockTransport: confirm.json на /v1/messages, list.json на /v1/actions
+class FakeAgentHttp:
+    # Примечание: requests — что бот отправил агенту
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.down = False
+
+    # Примечание: транспорт для createApp(agentTransport=…)
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._handle)
+
+    # Примечание: ответ-пример по пути; down — 503 в конверте ошибки
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.down:
+            error = {"code": "upstream_unavailable", "message": "down", "details": {}}
+            return httpx.Response(503, json={"error": error})
+        name = "confirm.json" if request.url.path == "/v1/messages" else "list.json"
+        return httpx.Response(200, content=(REPLY_EXAMPLES / name).read_bytes())
+
+
+# Примечание: фейковый агент на тест
 @pytest.fixture
-def app(botEnv: pytest.MonkeyPatch) -> FastAPI:
-    return createApp(BotSettings(), redisFactory=fakeRedisFactory)
+def agentHttp() -> FakeAgentHttp:
+    return FakeAgentHttp()
+
+
+# Примечание: бот целиком поверх fakeredis и фейкового агента
+@pytest.fixture
+def app(botEnv: pytest.MonkeyPatch, agentHttp: FakeAgentHttp) -> FastAPI:
+    return createApp(
+        BotSettings(), redisFactory=fakeRedisFactory, agentTransport=agentHttp.transport
+    )
 
 
 # Примечание: ждём, пока фейковый MAX «отправит» нужное число сообщений
@@ -58,19 +94,54 @@ async def waitSent(client: httpx.AsyncClient, count: int) -> dict[str, object]:
             await asyncio.sleep(0.02)
 
 
-# Примечание: путь апдейт → polling → HandleUpdate → фейковый MAX; JSON в snake_case
-async def test_echoThroughDevRoutes(running: httpx.AsyncClient) -> None:
+# Примечание: журнал фейкового MAX как модель — поля типизированы
+async def sentLog(client: httpx.AsyncClient, count: int) -> SentLog:
+    return SentLog.fromWire(await waitSent(client, count))
+
+
+# Примечание: кнопки первого вложения inline_keyboard
+def keyboardOf(message: SentMessageDto) -> list[list[dict[str, str]]]:
+    [keyboard] = message.attachments
+    payload = keyboard["payload"]
+    assert isinstance(payload, dict)
+    return BUTTONS.validate_python(payload["buttons"])
+
+
+# Примечание: апдейт → polling → агент → Reply в формате MAX; нажатие кнопки → /v1/actions
+async def test_textAndButtonThroughAgent(
+    running: httpx.AsyncClient, agentHttp: FakeAgentHttp
+) -> None:
     pushed = await running.post("/dev/max/updates", json=loadMaxUpdate("text"))
-    assert pushed.status_code == 200
     assert pushed.json() == {"accepted": True, "position": 0}
-    body = await waitSent(running, 1)
-    messages = body["messages"]
-    assert isinstance(messages, list)
-    [message] = messages
-    assert isinstance(message, dict)
-    assert message["text"] == "Вы написали: Напомни завтра в 10 позвонить Ивану"
-    assert message["chat_id"] == 500600700
-    assert body["callback_answers"] == []
+    log = await sentLog(running, 1)
+    [message] = log.messages
+    assert message.text.startswith("Напоминание создано")
+    assert message.format == "markdown"
+    undo = keyboardOf(message)[0][0]
+    assert (undo["type"], undo["text"]) == ("callback", "Отменить")
+    assert log.typing == [500600700]
+    [request] = agentHttp.requests
+    assert json.loads(request.content)["name"] == "Иван"
+    # Нажатие «Отменить»: payload — ключ в Redis, за ним action=undo
+    press = loadMaxUpdate("callback")
+    callback = press["callback"]
+    assert isinstance(callback, dict)
+    callback["payload"] = undo["payload"]
+    await running.post("/dev/max/updates", json=press)
+    log = await sentLog(running, 2)
+    action = json.loads(agentHttp.requests[1].content)
+    assert (action["action"], action["callback_id"]) == ("undo", "cb.synthetic.0001")
+    [answer] = log.callbackAnswers
+    assert (answer.callbackId, answer.notification) == ("cb.synthetic.0001", None)
+
+
+# Примечание: агент лежит — пользователь получает текст бота с кодом цепочки
+async def test_agentDown(running: httpx.AsyncClient, agentHttp: FakeAgentHttp) -> None:
+    agentHttp.down = True
+    await running.post("/dev/max/updates", json=loadMaxUpdate("text"))
+    [message] = (await sentLog(running, 1)).messages
+    assert message.text.startswith("Не получилось связаться с ассистентом")
+    assert message.attachments == []
 
 
 # Примечание: один и тот же апдейт дважды — одно приветствие (дедуп через Redis)

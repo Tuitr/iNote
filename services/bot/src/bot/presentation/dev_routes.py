@@ -16,6 +16,7 @@ class SentMessageDto(WireModel):
     chatId: int
     text: str
     format: str
+    attachments: list[dict[str, object]]
 
 
 # Примечание: один ответ на нажатие кнопки
@@ -28,6 +29,7 @@ class CallbackAnswerDto(WireModel):
 class SentLog(WireModel):
     messages: list[SentMessageDto]
     callbackAnswers: list[CallbackAnswerDto]
+    typing: list[int]
 
 
 # Примечание: консоль фейкового MAX кладётся в app.state в lifespan
@@ -52,13 +54,20 @@ def buildDevRouter() -> APIRouter:
         console = _console(request)
         return SentLog(
             messages=[
-                SentMessageDto(messageId=m.messageId, chatId=m.chatId, text=m.text, format=m.format)
+                SentMessageDto(
+                    messageId=m.messageId,
+                    chatId=m.chatId,
+                    text=m.text,
+                    format=m.format,
+                    attachments=m.attachments,
+                )
                 for m in console.sentMessages()
             ],
             callbackAnswers=[
                 CallbackAnswerDto(callbackId=a.callbackId, notification=a.notification)
                 for a in console.callbackAnswers()
             ],
+            typing=list(console.typingActions()),
         )
 
     return router

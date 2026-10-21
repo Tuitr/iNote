@@ -78,7 +78,7 @@ else
 	$(COMPOSE) logs --no-color $(SERVICE) | grep -- "$(TRACE)"
 endif
 
-smoke: ## апдейт фейковому MAX → эхо (нужен make up)
+smoke: ## апдейт фейковому MAX → ответ агента (нужен make up)
 	./deploy/smoke.sh
 
 seed: ## тестовые данные — появится в S1 (владелец D)

@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from bot.domain.messages import MessageId, OutgoingMessage
-from bot.domain.updates import MaxUserId, UpdateBatch, UpdateId
+from bot.domain.updates import MaxChatId, MaxUserId, UpdateBatch, UpdateId
+from contracts.reply import ActionRequest, ArgValue, MessageRequest, Reply
 
 
 # Примечание: порт к MAX; реализации — FakeMaxGateway и (позже) реальный адаптер
@@ -15,6 +16,34 @@ class MaxGateway(Protocol):
 
     # Примечание: ответ на нажатие кнопки (POST /answers): всплывающее уведомление
     async def answerCallback(self, callbackId: str, notification: str | None) -> None: ...
+
+    # Примечание: «печатает…» в чате (POST /chats/{chat_id}/actions, typing_on)
+    async def sendTyping(self, chatId: MaxChatId) -> None: ...
+
+
+# Примечание: агент (API агента из contracts/reply.py); сбой — AppError с кодом стандарта
+class AgentGateway(Protocol):
+    # Примечание: текст пользователя → POST /v1/messages
+    async def sendMessage(self, request: MessageRequest) -> Reply: ...
+
+    # Примечание: кнопка или команда без LLM → POST /v1/actions
+    async def sendAction(self, request: ActionRequest) -> Reply: ...
+
+
+# Примечание: что лежит за callback-кнопкой: действие и аргументы для /v1/actions
+@dataclass(frozen=True)
+class StoredAction:
+    action: str
+    args: dict[str, ArgValue]
+
+
+# Примечание: payload кнопки MAX — короткий ключ; само действие — в Redis на 24 ч
+class CallbackStore(Protocol):
+    # Примечание: сохранить действие, вернуть ключ для payload кнопки
+    async def save(self, action: StoredAction) -> str: ...
+
+    # Примечание: действие по ключу; None — ключ устарел, чужой или не наш формат
+    async def load(self, key: str) -> StoredAction | None: ...
 
 
 # Примечание: дедуп апдейтов — MAX может прислать одно событие дважды
@@ -45,22 +74,25 @@ class MarkerStore(Protocol):
     async def save(self, marker: int) -> None: ...
 
 
-# Примечание: тексты ответов; живут в presentation/templates.py, а не в use case
+# Примечание: тексты бота; живут в presentation/templates.py, а не в use case
 class BotTexts(Protocol):
-    # Примечание: эхо текста пользователя
-    def echo(self, text: str) -> str: ...
-
-    # Примечание: эхо имени команды
-    def command(self, name: str) -> str: ...
-
     # Примечание: заглушка голосовых до J1
     def voiceNotSupportedYet(self) -> str: ...
-
-    # Примечание: уведомление на нажатие кнопки
-    def callbackAck(self, payload: str | None) -> str: ...
 
     # Примечание: приветствие на «Начать»
     def greeting(self) -> str: ...
 
     # Примечание: превышен лимит частоты
     def tooOften(self) -> str: ...
+
+    # Примечание: агент не ответил; code — первые 6 символов trace_id
+    def agentFailed(self, code: str) -> str: ...
+
+    # Примечание: кнопка из старого сообщения — ключа в Redis уже нет
+    def buttonExpired(self) -> str: ...
+
+    # Примечание: неизвестная команда — подсказка со списком команд
+    def unknownCommand(self, name: str) -> str: ...
+
+    # Примечание: справка на /start и /help
+    def help(self) -> str: ...

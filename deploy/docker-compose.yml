@@ -85,6 +85,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       BOT_MAX_MODE: ${BOT_MAX_MODE:-fake}
+      BOT_AGENT_URL: http://agent:8000
     ports:
       - "127.0.0.1:${BOT_DEV_PORT:-8001}:8000"
     depends_on:

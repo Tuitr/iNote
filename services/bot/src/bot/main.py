@@ -7,20 +7,29 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Final
 
+import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from bot.application.handle_update import HandleUpdate
+from bot.application.handle_update import BotDeps, HandleUpdate
+from bot.application.reply_mapper import ReplyToMaxMapper
+from bot.application.typing import TypingIndicator
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
+from bot.infrastructure.http_agent import HttpAgentGateway
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
-from bot.infrastructure.redis_adapters import RedisRateLimiter, RedisUpdateDeduplicator
+from bot.infrastructure.redis_adapters import (
+    RedisCallbackStore,
+    RedisRateLimiter,
+    RedisUpdateDeduplicator,
+)
 from bot.infrastructure.settings import BotSettings
 from bot.presentation.dev_routes import buildDevRouter
 from bot.presentation.polling import PollingLoop
 from bot.presentation.templates import RussianTexts
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
+from common.http import ServiceHttpClient
 from common.lifecycle import managedTasks
 from common.logging import configureLogging, getLogger
 from common.middleware import installMiddleware
@@ -34,9 +43,12 @@ type RedisFactory = Callable[[str], Redis]
 _log = getLogger(__name__)
 
 
-# Примечание: фабрика приложения; redisFactory подменяется в тестах (fakeredis)
+# Примечание: фабрика приложения; redisFactory и agentTransport подменяются в тестах
 def createApp(
-    settings: BotSettings | None = None, *, redisFactory: RedisFactory = createRedis
+    settings: BotSettings | None = None,
+    *,
+    redisFactory: RedisFactory = createRedis,
+    agentTransport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or BotSettings()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
@@ -49,29 +61,47 @@ def createApp(
         redis = redisFactory(config.redisUrl)
         gateway = FakeMaxGateway(FakeMaxOptions(sendDelayS=config.fakeSendDelayMs / 1000))
         store = KeyedRedis(redis)
-        handler = HandleUpdate(
-            gateway=gateway,
-            deduplicator=RedisUpdateDeduplicator(store),
-            rateLimiter=RedisRateLimiter(store, limit=config.rateLimitPerMin),
-            texts=RussianTexts(),
+        # Бот → агент: 45 с без повторов (стандарт); POST без ключа и так не повторяется
+        agentHttp = ServiceHttpClient(
+            baseUrl=config.agentUrl,
+            timeoutS=config.agentTimeoutS,
+            serviceToken=config.serviceToken,
+            upstreamName="agent",
+            transport=agentTransport,
         )
-        # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить нельзя;
-        # для real здесь будет RedisMarkerStore(store)
-        loop = PollingLoop(
-            gateway=gateway,
-            handler=handler,
-            markerStore=InMemoryMarkerStore(),
-            pollTimeoutS=config.pollTimeoutS,
-        )
+        callbacks = RedisCallbackStore(store)
         app.state.devConsole = gateway
         app.state.redis = redis
         try:
             async with managedTasks(config.shutdownTimeoutS) as tasks:
+                handler = HandleUpdate(
+                    BotDeps(
+                        gateway=gateway,
+                        deduplicator=RedisUpdateDeduplicator(store),
+                        rateLimiter=RedisRateLimiter(store, limit=config.rateLimitPerMin),
+                        texts=RussianTexts(),
+                        agent=HttpAgentGateway(agentHttp),
+                        callbacks=callbacks,
+                        mapper=ReplyToMaxMapper(
+                            callbacks, mode=config.openAppMode, botUsername=config.username
+                        ),
+                        typing=TypingIndicator(gateway, tasks, config.typingIntervalS),
+                    )
+                )
+                # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить нельзя;
+                # для real здесь будет RedisMarkerStore(store)
+                loop = PollingLoop(
+                    gateway=gateway,
+                    handler=handler,
+                    markerStore=InMemoryMarkerStore(),
+                    pollTimeoutS=config.pollTimeoutS,
+                )
                 _ = tasks.spawn(loop.run(tasks.stopping), name=POLLING_TASK)
                 _log.info("bot_started", max_mode=config.maxMode)
                 yield
                 _log.info("bot_stopping")
         finally:
+            await agentHttp.aclose()
             await redis.aclose()
             _log.info("bot_stopped")
 

@@ -5,8 +5,9 @@ from dataclasses import dataclass
 
 from bot.application.dev_console import CallbackAnswerRecord, SentMessageRecord
 from bot.domain.messages import MessageId, OutgoingMessage
-from bot.domain.updates import UpdateBatch
+from bot.domain.updates import MaxChatId, UpdateBatch
 from bot.infrastructure.max_mapper import mapRawUpdate
+from bot.infrastructure.max_outgoing import attachments
 from common.logging import getLogger
 
 _log = getLogger(__name__)
@@ -28,6 +29,7 @@ class FakeMaxGateway:
         self._changed = asyncio.Condition()
         self._sent: list[SentMessageRecord] = []
         self._answers: list[CallbackAnswerRecord] = []
+        self._typing: list[MaxChatId] = []
         self._messageIds = itertools.count(1)
 
     # Примечание: подложить сырой апдейт MAX; возвращает его позицию (marker = позиция + 1)
@@ -60,12 +62,14 @@ class FakeMaxGateway:
         if self._options.sendDelayS > 0:
             await asyncio.sleep(self._options.sendDelayS)
         messageId = f"fake-mid-{next(self._messageIds)}"
+        # Вложения — ровно то, что ушло бы в POST /messages: так тесты видят формат MAX
         self._sent.append(
             SentMessageRecord(
                 messageId=messageId,
                 chatId=message.chatId,
                 text=message.text,
                 format=message.format.value,
+                attachments=attachments(message),
             )
         )
         _log.info("max_message_sent", message_id=messageId, fake=True)
@@ -77,6 +81,14 @@ class FakeMaxGateway:
             await asyncio.sleep(self._options.sendDelayS)
         self._answers.append(CallbackAnswerRecord(callbackId=callbackId, notification=notification))
         _log.info("max_callback_answered", fake=True)
+
+    # Примечание: «печатает…» — запись в журнал
+    async def sendTyping(self, chatId: MaxChatId) -> None:
+        self._typing.append(chatId)
+
+    # Примечание: чаты, куда уходило «печатает…»
+    def typingActions(self) -> tuple[MaxChatId, ...]:
+        return tuple(self._typing)
 
     # Примечание: журнал отправленных сообщений (для /dev/max/sent и тестов)
     def sentMessages(self) -> tuple[SentMessageRecord, ...]:

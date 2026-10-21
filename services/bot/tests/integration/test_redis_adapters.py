@@ -1,10 +1,13 @@
 import pytest
 from redis.asyncio import Redis
 
+from bot.application.ports import StoredAction
 from bot.infrastructure.redis_adapters import (
+    CALLBACK_TTL_S,
     DEDUP_TTL_S,
     MARKER_TTL_S,
     RATE_WINDOW_S,
+    RedisCallbackStore,
     RedisMarkerStore,
     RedisRateLimiter,
     RedisUpdateDeduplicator,
@@ -45,3 +48,18 @@ async def test_markerStore(redisClient: Redis) -> None:
     assert await store.load() == 12345
     ttl = await redisClient.ttl("va:v1:bot:marker:poll")
     assert MARKER_TTL_S - 5 < ttl <= MARKER_TTL_S
+
+
+# Примечание: кнопки на настоящем Redis: ключ va:v1:bot:cb:{key}, TTL 24 ч, чужой payload мимо
+async def test_callbackKeyAndTtl(redisClient: Redis, uniqueId: str) -> None:
+    store = RedisCallbackStore(KeyedRedis(redisClient))
+    key = await store.save(StoredAction("undo", {"item_id": uniqueId, "n": 1, "ok": True}))
+    assert len(key) == 16
+    ttl = await redisClient.ttl(f"va:v1:bot:cb:{key}")
+    assert CALLBACK_TTL_S - 5 < ttl <= CALLBACK_TTL_S
+    loaded = await store.load(key)
+    assert loaded == StoredAction("undo", {"item_id": uniqueId, "n": 1, "ok": True})
+    assert await store.load("undo:7f3a9c2e-5b1d") is None
+    assert await store.load("A" * 16) is None
+    await redisClient.set(f"va:v1:bot:cb:{'B' * 16}", "{битый", ex=60)
+    assert await store.load("B" * 16) is None

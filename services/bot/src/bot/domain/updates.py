@@ -37,6 +37,9 @@ class IncomingUpdate:
     callbackPayload: str | None = None
     startPayload: str | None = None
     voice: VoiceRef | None = None
+    # Имя из профиля MAX и язык клиента — для J8 resolve и MessageRequest.locale
+    userName: str | None = None
+    locale: str | None = None
 
 
 # Примечание: страница апдейтов и marker следующей страницы (фиксируется после обработки)

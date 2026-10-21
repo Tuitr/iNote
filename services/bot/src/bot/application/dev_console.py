@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 
@@ -10,6 +10,8 @@ class SentMessageRecord:
     chatId: int
     text: str
     format: str
+    # вложения NewMessageBody как их получил бы MAX (клавиатура inline_keyboard)
+    attachments: list[dict[str, object]] = field(default_factory=list)
 
 
 # Примечание: запись журнала ответа на нажатие кнопки
@@ -29,3 +31,6 @@ class DevMaxConsole(Protocol):
 
     # Примечание: все ответы на нажатия кнопок
     def callbackAnswers(self) -> tuple[CallbackAnswerRecord, ...]: ...
+
+    # Примечание: чаты, куда уходило «печатает…», по порядку
+    def typingActions(self) -> tuple[int, ...]: ...
