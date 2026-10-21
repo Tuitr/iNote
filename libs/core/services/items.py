@@ -1,9 +1,12 @@
-"""Записи пользователя: создание задач, напоминаний и встреч, список за период.
+"""Записи пользователя: создание, изменение, выполнение, удаление, восстановление, список.
 
 Один метод — одна транзакция; версия данных в Redis растёт только после коммита (развилка 4.3-А).
 """
 
+from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
+from typing import Any
+from uuid import UUID
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -11,13 +14,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from libs.contracts.items import Item, ItemBrief
 from libs.contracts.tools import (
     Caller,
+    CheckConflictsArgs,
+    CheckConflictsResult,
+    CompleteItemArgs,
     CreateEventArgs,
     CreateTaskArgs,
     DateRange,
+    DeleteItemArgs,
     ListItemsArgs,
     ListItemsResult,
     MutationResult,
     TimeSlot,
+    UpdateItemArgs,
 )
 from libs.core.db.models import ItemRow, UserRow
 from libs.core.embedding import Embedder, embed_or_none, item_text
@@ -29,7 +37,6 @@ from libs.core.services.time import (
     days_range_utc,
     local_midnight_utc,
     local_time_utc,
-    local_today,
     now_utc,
     to_user_tz,
     to_utc,
@@ -44,6 +51,10 @@ FREE_SLOTS_TO = time(22, 0)
 MAX_FREE_SLOTS = 3
 # Больше записей модели за раз не отдаём, остальное помечаем truncated (J3).
 MAX_LIST_ITEMS = 30
+# Сколько записей с подходящим коротким id показываем агенту на выбор.
+MAX_ID_CANDIDATES = 5
+# Поля, от которых зависит вектор записи: если меняются, вектор пересчитывается.
+_TEXT_FIELDS = {"title", "notes", "participants", "source_text"}
 
 
 class ItemService:
@@ -52,11 +63,14 @@ class ItemService:
         session_factory: async_sessionmaker[AsyncSession],
         redis: Redis,
         embedder: Embedder | None,
+        clock: Callable[[], datetime] = now_utc,
     ) -> None:
         self._session_factory = session_factory
         self._redis = redis
         # None — эмбеддера нет (libs/embed от A ещё нет): записи сохраняются без вектора.
         self._embedder = embedder
+        # Часы подменяются в тестах: время в них заморожено.
+        self._clock = clock
 
     async def create_task(self, args: CreateTaskArgs) -> MutationResult:
         caller = args.caller
@@ -77,13 +91,14 @@ class ItemService:
             idempotency_key=caller.idempotency_key,
             embedding=await self._embed(args.title, args.notes, [], args.source_text),
         )
+        now = self._clock()
         created = False
         async with self._session_factory() as session, session.begin():
             await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
-                _reject_past("remind_at", args.remind_at, caller.tz)
+                _reject_past("remind_at", task.remind_at, caller.tz, now)
                 row, created = await _insert(session, items, caller, task)
         if created:
             await bump_version(self._redis, caller.user_id)
@@ -93,22 +108,119 @@ class ItemService:
         caller = args.caller
         _check_event_end(args)
         embedding = await self._embed(args.title, args.notes, args.participants, args.source_text)
+        now = self._clock()
         created = False
         async with self._session_factory() as session, session.begin():
             user = await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
-                event = _new_event(args, user, embedding)
+                event = _new_event(args, user, embedding, now)
                 # ends_at нет только у встречи на весь день, а она не конфликтует (решение 10).
                 if not args.allow_conflict and event.starts_at and event.ends_at:
-                    conflict = await _conflict(items, caller, event.starts_at, event.ends_at)
+                    conflict = await _conflict(
+                        items, caller, event.starts_at, event.ends_at, None, now
+                    )
                     if conflict is not None:
                         return conflict
                 row, created = await _insert(session, items, caller, event)
         if created:
             await bump_version(self._redis, caller.user_id)
         return MutationResult(status="created", item=to_item(row, caller.tz))
+
+    async def update_item(self, args: UpdateItemArgs) -> MutationResult:
+        """Переданные поля заменяются, null очищает, непереданные не меняются (J3).
+
+        Повтор того же вызова приводит к тому же состоянию, поэтому ключ идемпотентности
+        здесь хранить не нужно.
+        """
+        caller = args.caller
+        changed = args.model_fields_set - {"caller", "id", "allow_conflict"}
+        now = self._clock()
+        async with self._session_factory() as session, session.begin():
+            user = await require_user(session, caller.user_id)
+            items = ItemRepo(session)
+            row = await _find_one(items, caller, args.id, deleted=False)
+            values = _updated_values(args, changed, row, user, now)
+            starts_at = values.get("starts_at", row.starts_at)
+            ends_at = values.get("ends_at", row.ends_at)
+            moved = bool({"starts_at", "ends_at"} & values.keys())
+            if row.kind == "event" and moved and not args.allow_conflict and starts_at and ends_at:
+                conflict = await _conflict(items, caller, starts_at, ends_at, row.id, now)
+                if conflict is not None:
+                    return conflict
+            if _TEXT_FIELDS & changed:
+                # Старый вектор описывает старый текст; новый посчитаем после коммита.
+                values["embedding"] = None
+            old_remind_at = row.remind_at
+            row = await items.update(caller.user_id, row.id, values)
+            if row.remind_at != old_remind_at:
+                await _reschedule(session, row, now)
+        await bump_version(self._redis, caller.user_id)
+        if _TEXT_FIELDS & changed:
+            await self._refresh_embedding(caller.user_id, row)
+        return MutationResult(status="updated", item=to_item(row, caller.tz))
+
+    async def complete_item(self, args: CompleteItemArgs) -> MutationResult:
+        """«Выполнено» (done=true) или снова в работу (done=false); повтор ничего не меняет."""
+        caller = args.caller
+        target = "done" if args.done else "open"
+        now = self._clock()
+        async with self._session_factory() as session, session.begin():
+            await require_user(session, caller.user_id)
+            items = ItemRepo(session)
+            row = await _find_one(items, caller, args.id, deleted=False)
+            changed = row.status != target
+            if changed:
+                row = await items.update(caller.user_id, row.id, {"status": target})
+                await _reschedule(session, row, now)
+        if changed:
+            await bump_version(self._redis, caller.user_id)
+        return MutationResult(
+            status="completed" if args.done else "updated", item=to_item(row, caller.tz)
+        )
+
+    async def delete_item(self, args: DeleteItemArgs) -> MutationResult:
+        """Мягкое удаление или его отмена (restore); повтор ничего не меняет.
+
+        Ищем среди удалённых и неудалённых сразу: повторное «удали» по тому же id должно
+        ответить «удалено», а не «не найдено».
+        """
+        caller = args.caller
+        now = self._clock()
+        async with self._session_factory() as session, session.begin():
+            await require_user(session, caller.user_id)
+            items = ItemRepo(session)
+            row = await _find_one(items, caller, args.id, deleted=None)
+            changed = (row.deleted_at is None) != args.restore
+            if changed:
+                deleted_at = None if args.restore else now
+                row = await items.update(caller.user_id, row.id, {"deleted_at": deleted_at})
+                await _reschedule(session, row, now)
+        if changed:
+            await bump_version(self._redis, caller.user_id)
+        # В J3 нет статуса «восстановлено»: восстановление — изменение записи.
+        return MutationResult(
+            status="updated" if args.restore else "deleted", item=to_item(row, caller.tz)
+        )
+
+    async def check_conflicts(self, args: CheckConflictsArgs) -> CheckConflictsResult:
+        caller = args.caller
+        if args.ends_at <= args.starts_at:
+            raise InvalidArgumentsError("Конец раньше начала", {"invalid": ["ends_at"]})
+        now = self._clock()
+        async with self._session_factory() as session, session.begin():
+            await require_user(session, caller.user_id)
+            items = ItemRepo(session)
+            exclude = None
+            if args.exclude_id is not None:
+                exclude = (await _find_one(items, caller, args.exclude_id, deleted=False)).id
+            conflict = await _conflict(
+                items, caller, to_utc(args.starts_at), to_utc(args.ends_at), exclude, now
+            )
+        if conflict is None:
+            return CheckConflictsResult(conflicts=[], free_slots=[])
+        return CheckConflictsResult(conflicts=conflict.conflicts, free_slots=conflict.free_slots)
 
     async def list_items(self, args: ListItemsArgs) -> ListItemsResult:
         caller = args.caller
@@ -138,6 +250,14 @@ class ItemService:
         # Считаем до транзакции: ожидание эмбеддера не должно держать соединение с базой.
         text = item_text(title, notes, participants, source_text)
         return await embed_or_none(self._embedder, text, "document")
+
+    async def _refresh_embedding(self, user_id: int, row: ItemRow) -> None:
+        """Вектор изменённого текста; не вышло — запись остаётся без вектора до досчёта (S3)."""
+        vector = await self._embed(row.title, row.notes, row.participants, row.source_text)
+        if vector is None:
+            return
+        async with self._session_factory() as session, session.begin():
+            await ItemRepo(session).update(user_id, row.id, {"embedding": vector})
 
 
 def free_slots(
@@ -176,11 +296,13 @@ def _check_event_end(args: CreateEventArgs) -> None:
         raise InvalidArgumentsError("Конец встречи раньше начала", {"invalid": ["ends_at"]})
 
 
-def _new_event(args: CreateEventArgs, user: UserRow, embedding: list[float] | None) -> NewItem:
+def _new_event(
+    args: CreateEventArgs, user: UserRow, embedding: list[float] | None, now: datetime
+) -> NewItem:
     """Встреча с временем по умолчанию из настроек. Время в прошлом → PastTimeError."""
     tz = args.caller.tz
     if isinstance(args.starts_at, datetime):
-        _reject_past("starts_at", args.starts_at, tz)
+        _reject_past("starts_at", args.starts_at, tz, now)
         starts_at = to_utc(args.starts_at)
         ends_at: datetime | None = (
             to_utc(args.ends_at)
@@ -193,7 +315,7 @@ def _new_event(args: CreateEventArgs, user: UserRow, embedding: list[float] | No
         if remind_before is None:
             remind_before = user.remind_before_min
     else:
-        _reject_past_day(args.starts_at, tz)
+        _reject_past_day(args.starts_at, tz, now)
         starts_at = local_midnight_utc(args.starts_at, tz)
         ends_at = None
         all_day = True
@@ -206,7 +328,7 @@ def _new_event(args: CreateEventArgs, user: UserRow, embedding: list[float] | No
         starts_at=starts_at,
         ends_at=ends_at,
         all_day=all_day,
-        remind_at=_reminder(starts_at, remind_before),
+        remind_at=_reminder(starts_at, remind_before, now),
         rrule=args.rrule,
         participants=args.participants,
         source_text=args.source_text,
@@ -215,25 +337,115 @@ def _new_event(args: CreateEventArgs, user: UserRow, embedding: list[float] | No
     )
 
 
-def _reminder(starts_at: datetime, remind_before_min: int | None) -> datetime | None:
+def _updated_values(
+    args: UpdateItemArgs, changed: set[str], row: ItemRow, user: UserRow, now: datetime
+) -> dict[str, Any]:
+    """Новые значения полей по аргументам update_item; проверяет их вместе с остальными полями."""
+    tz = args.caller.tz
+    values: dict[str, Any] = {}
+    if "title" in changed:
+        if args.title is None:
+            raise InvalidArgumentsError("Название нельзя очистить", {"invalid": ["title"]})
+        values["title"] = args.title
+    for field in ("notes", "rrule", "source_text"):
+        if field in changed:
+            values[field] = getattr(args, field)
+    if "participants" in changed:
+        values["participants"] = args.participants or []
+    if "kind" in changed:
+        # Задачу можно сделать напоминанием и обратно; встреча задачей не становится.
+        if args.kind is None or row.kind == "event":
+            raise InvalidArgumentsError("Нельзя так поменять вид записи", {"invalid": ["kind"]})
+        values["kind"] = args.kind
+
+    starts_at, all_day = row.starts_at, row.all_day
+    ends_at, remind_at = row.ends_at, row.remind_at
+    if "starts_at" in changed:
+        starts_at, all_day = _start(args.starts_at, tz)
+        if isinstance(args.starts_at, datetime):
+            _reject_past("starts_at", args.starts_at, tz, now)
+        elif args.starts_at is not None:
+            _reject_past_day(args.starts_at, tz, now)
+        shift = starts_at - row.starts_at if starts_at and row.starts_at else None
+        if row.kind == "event":
+            ends_at = _moved_end(row, starts_at, all_day, shift, user)
+        if shift is not None and remind_at is not None:
+            # Напоминание едет вместе с началом: «за 15 минут» остаётся «за 15 минут».
+            remind_at = remind_at + shift
+    if "ends_at" in changed:
+        if args.ends_at is not None and all_day:
+            raise InvalidArgumentsError(
+                "У встречи на весь день нет времени конца", {"invalid": ["ends_at"]}
+            )
+        ends_at = None if args.ends_at is None else to_utc(args.ends_at)
+    if "remind_before_min" in changed:
+        if starts_at is None:
+            raise InvalidArgumentsError(
+                "Не от чего отсчитать напоминание", {"missing": ["starts_at"]}
+            )
+        remind_at = _reminder(starts_at, args.remind_before_min, now)
+    if "remind_at" in changed:
+        _reject_past("remind_at", args.remind_at, tz, now)
+        remind_at = None if args.remind_at is None else to_utc(args.remind_at)
+
+    if starts_at is not None and ends_at is not None and ends_at <= starts_at:
+        raise InvalidArgumentsError("Конец встречи раньше начала", {"invalid": ["ends_at"]})
+    if values.get("kind", row.kind) == "reminder" and remind_at is None:
+        raise InvalidArgumentsError("Для напоминания нужно время", {"missing": ["remind_at"]})
+    if row.kind == "event" and starts_at is None:
+        raise InvalidArgumentsError("У встречи должно быть начало", {"missing": ["starts_at"]})
+    for field, value in (
+        ("starts_at", starts_at),
+        ("all_day", all_day),
+        ("ends_at", ends_at),
+        ("remind_at", remind_at),
+    ):
+        if value != getattr(row, field):
+            values[field] = value
+    return values
+
+
+def _moved_end(
+    row: ItemRow,
+    starts_at: datetime | None,
+    all_day: bool,
+    shift: timedelta | None,
+    user: UserRow,
+) -> datetime | None:
+    """Конец перенесённой встречи: длительность сохраняется, у «весь день» конца нет."""
+    if all_day or starts_at is None:
+        return None
+    if row.ends_at is not None and shift is not None and not row.all_day:
+        return row.ends_at + shift
+    return starts_at + timedelta(minutes=user.default_event_min)
+
+
+def _reminder(starts_at: datetime, remind_before_min: int | None, now: datetime) -> datetime | None:
     """Момент напоминания или None: 0 — без напоминания; уже прошедшее — тоже без (решение 11)."""
     if not remind_before_min:
         return None
     remind_at = starts_at - timedelta(minutes=remind_before_min)
-    return remind_at if remind_at > now_utc() else None
+    return remind_at if remind_at > now else None
 
 
 async def _conflict(
-    items: ItemRepo, caller: Caller, starts_at: datetime, ends_at: datetime
+    items: ItemRepo,
+    caller: Caller,
+    starts_at: datetime,
+    ends_at: datetime,
+    exclude_id: UUID | None,
+    now: datetime,
 ) -> MutationResult | None:
     """Ответ «конфликт» со свободными окнами или None, если время свободно."""
-    conflicts = await items.find_events_overlapping(caller.user_id, starts_at, ends_at)
+    conflicts = await items.find_events_overlapping(caller.user_id, starts_at, ends_at, exclude_id)
     if not conflicts:
         return None
     day = to_user_tz(starts_at, caller.tz).date()
-    window_start = max(local_time_utc(day, FREE_SLOTS_FROM, caller.tz), now_utc())
+    window_start = max(local_time_utc(day, FREE_SLOTS_FROM, caller.tz), now)
     window_end = local_time_utc(day, FREE_SLOTS_TO, caller.tz)
-    busy_rows = await items.find_events_overlapping(caller.user_id, window_start, window_end)
+    busy_rows = await items.find_events_overlapping(
+        caller.user_id, window_start, window_end, exclude_id
+    )
     busy = [(row.starts_at, row.ends_at) for row in busy_rows]
     slots = free_slots(busy, ends_at - starts_at, window_start, window_end)
     return MutationResult(
@@ -252,6 +464,32 @@ async def require_user(session: AsyncSession, user_id: int) -> UserRow:
     if user is None:
         raise NotFoundError("Пользователь не найден")
     return user
+
+
+async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | None) -> ItemRow:
+    """Запись по полному или короткому id. Чужая и несуществующая — одинаково not_found (КиП)."""
+    rows = await items.find_by_ref(caller.user_id, ref, deleted, MAX_ID_CANDIDATES)
+    if not rows:
+        raise NotFoundError("Запись не найдена", {"id": ref})
+    if len(rows) > 1:
+        # Черновик D: validation_error со списком записей, чтобы агент показал кнопки выбора.
+        candidates = [_to_brief(row, caller.tz).model_dump(mode="json") for row in rows]
+        raise InvalidArgumentsError(
+            "Под короткий id подходят несколько записей",
+            {"invalid": ["id"], "candidates": candidates},
+        )
+    return rows[0]
+
+
+async def _reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None:
+    """Уведомления по текущему состоянию записи: неотправленные отменяются, новое ставится,
+    только если запись открыта, не удалена и время напоминания впереди.
+    """
+    notifications = NotificationRepo(session)
+    await notifications.cancel_pending(row.user_id, row.id)
+    is_active = row.status == "open" and row.deleted_at is None
+    if is_active and row.remind_at is not None and row.remind_at > now:
+        await notifications.schedule(row.user_id, row.id, row.remind_at)
 
 
 async def _replay(items: ItemRepo, caller: Caller) -> ItemRow | None:
@@ -277,18 +515,18 @@ async def _insert(
             raise RuntimeError("Запись не создана и не найдена после конфликта ключа")
         return replay, False
     if inserted.remind_at is not None:
-        NotificationRepo(session).add(caller.user_id, inserted.id, inserted.remind_at)
+        await NotificationRepo(session).schedule(caller.user_id, inserted.id, inserted.remind_at)
     return inserted, True
 
 
-def _reject_past(field: str, value: datetime | None, tz: str) -> None:
-    if value is not None and value < now_utc() - PAST_TIME_TOLERANCE:
+def _reject_past(field: str, value: datetime | None, tz: str, now: datetime) -> None:
+    if value is not None and value < now - PAST_TIME_TOLERANCE:
         raise PastTimeError("Время уже прошло", {field: to_user_tz(value, tz).isoformat()})
 
 
-def _reject_past_day(day: date, tz: str) -> None:
+def _reject_past_day(day: date, tz: str, now: datetime) -> None:
     # Встреча на весь день сегодня — не в прошлом, хотя её полночь уже прошла.
-    if day < local_today(tz):
+    if day < to_user_tz(now, tz).date():
         raise PastTimeError("Время уже прошло", {"starts_at": day.isoformat()})
 
 

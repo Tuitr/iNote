@@ -14,7 +14,6 @@ from libs.core.db.models import ItemRow
 from libs.core.services.time import now_utc
 from services.mcp.server import build_server
 from services.mcp.tools.context import ToolServices
-from services.mcp.tools.stub import EXAMPLES_DIR, load_examples
 
 pytestmark = pytest.mark.anyio
 
@@ -31,7 +30,7 @@ def _caller(user_id: int) -> dict[str, Any]:
 
 
 async def _call(services: ToolServices, name: str, arguments: dict[str, Any]) -> CallToolResult:
-    server = build_server(lambda: services, load_examples(EXAMPLES_DIR))
+    server = build_server(lambda: services)
     async with Client(server) as client:
         return await client.call_tool(name, arguments)
 
@@ -194,3 +193,69 @@ async def test_find_what_i_wrote_about_ivan(tool_services: ToolServices, user_id
     assert [hit["item"]["id"] for hit in result.structured_content["results"]] == [item_id]
     assert result.structured_content["best_match_confident"] is True
     assert result.content[0].text == f"Найдено: [{item_id[:8]}] Позвонить Ивану"
+
+
+async def test_move_complete_delete_and_restore_through_mcp(
+    tool_services: ToolServices, user_id: int
+) -> None:
+    tomorrow = (now_utc() + timedelta(days=1)).astimezone(MOSCOW).date().isoformat()
+    caller = {**_caller(user_id), "idempotency_key": None}
+    created = await _call(
+        tool_services,
+        "create_task",
+        {
+            "caller": caller,
+            "title": "Позвонить Ивану",
+            "kind": "reminder",
+            "remind_at": f"{tomorrow}T10:00:00+03:00",
+        },
+    )
+    short = created.structured_content["item"]["id"][:8]
+
+    # «Перенеси звонок Ивану на 12», «отметь выполненным», «удали», «верни», «свободно ли в 15?»
+    moved = await _call(
+        tool_services,
+        "update_item",
+        {"caller": caller, "id": short, "remind_at": f"{tomorrow}T12:00:00+03:00"},
+    )
+    done = await _call(tool_services, "complete_item", {"caller": caller, "id": short})
+    deleted = await _call(tool_services, "delete_item", {"caller": caller, "id": short})
+    restored = await _call(
+        tool_services, "delete_item", {"caller": caller, "id": short, "restore": True}
+    )
+    check = await _call(
+        tool_services,
+        "check_conflicts",
+        {
+            "caller": caller,
+            "starts_at": f"{tomorrow}T15:00:00+03:00",
+            "ends_at": f"{tomorrow}T16:00:00+03:00",
+        },
+    )
+
+    assert moved.content[0].text.startswith(f"Изменено: [{short}] ")
+    assert moved.content[0].text.endswith(" 12:00 Позвонить Ивану")
+    assert done.structured_content["status"] == "completed"
+    assert done.content[0].text.startswith(f"Выполнено: [{short}]")
+    assert deleted.content[0].text.startswith(f"Удалено: [{short}]")
+    assert restored.content[0].text.startswith(f"Восстановлено: [{short}]")
+    assert check.structured_content == {"conflicts": [], "free_slots": []}
+    assert check.content[0].text == "Время свободно"
+
+
+async def test_unknown_id_is_a_not_found_tool_error(
+    tool_services: ToolServices, user_id: int
+) -> None:
+    result = await _call(
+        tool_services, "complete_item", {"caller": _caller(user_id), "id": "deadbeef"}
+    )
+
+    assert result.is_error is True
+    assert result.structured_content == {
+        "error": {
+            "code": "not_found",
+            "message": "Запись не найдена",
+            "details": {"id": "deadbeef"},
+        }
+    }
+    assert result.content[0].text == "Ошибка not_found: запись не найдена"

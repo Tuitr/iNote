@@ -37,7 +37,12 @@ def day_label(day: date) -> str:
 
 
 def created_text(item: Item) -> str:
-    return f"Создано: [{short_id(item.id)}] {_with_when(item)}"
+    return item_line("Создано", item)
+
+
+def item_line(prefix: str, item: Item) -> str:
+    """«Изменено: [7f3a9c2e] чт, 22 октября 12:00 Позвонить Ивану»."""
+    return f"{prefix}: [{short_id(item.id)}] {_with_when(item)}"
 
 
 def list_text(items: list[Item], truncated: bool) -> str:
@@ -80,13 +85,14 @@ def _clock_part(item: Item, moment: datetime) -> str:
     return f"{moment:%H:%M}"
 
 
-def conflict_text(conflicts: list[ItemBrief], free_slots: list[TimeSlot]) -> str:
+def conflict_text(prefix: str, conflicts: list[ItemBrief], free_slots: list[TimeSlot]) -> str:
+    """«Не создано: пересекается с «Встреча с дизайнером» в 15:00. Свободно: 16:00–17:00.»"""
     # В ItemBrief нет конца встречи (контракт КиП), поэтому у пересечений только время начала.
     busy = ", ".join(f"«{brief.title}» в {_clock(brief.starts_at)}" for brief in conflicts)
     if free_slots:
         free = ", ".join(f"{slot.starts_at:%H:%M}–{slot.ends_at:%H:%M}" for slot in free_slots)
-        return f"Не создано: пересекается с {busy}. Свободно: {free}."
-    return f"Не создано: пересекается с {busy}. Свободных окон в этот день нет."
+        return f"{prefix}: пересекается с {busy}. Свободно: {free}."
+    return f"{prefix}: пересекается с {busy}. Свободных окон в этот день нет."
 
 
 def _clock(moment: datetime | None) -> str:

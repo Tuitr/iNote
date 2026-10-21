@@ -3,9 +3,10 @@
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from uuid import uuid4
+from typing import Any
+from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Text, and_, cast, func, literal, select
+from sqlalchemy import ColumnElement, Text, and_, cast, func, literal, select, update
 from sqlalchemy.dialects.postgresql import TSQUERY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,13 +65,47 @@ class ItemRepo:
             )
         )
 
+    async def find_by_ref(
+        self, user_id: int, ref: str, deleted: bool | None, limit: int
+    ) -> list[ItemRow]:
+        """Записи по полному id или по его первым 8 символам (J3), не больше limit.
+
+        deleted: False — только неудалённые, True — только удалённые, None — любые.
+        """
+        if len(ref) == len(str(UUID(int=0))):
+            matches_ref = ItemRow.id == UUID(ref)
+        else:
+            matches_ref = cast(ItemRow.id, Text).startswith(ref, autoescape=True)
+        statement = select(ItemRow).where(ItemRow.user_id == user_id, matches_ref)
+        if deleted is not None:
+            statement = statement.where(
+                ItemRow.deleted_at.is_not(None) if deleted else ItemRow.deleted_at.is_(None)
+            )
+        return list(await self._session.scalars(statement.order_by(ItemRow.id).limit(limit)))
+
+    async def update(self, user_id: int, item_id: UUID, values: dict[str, Any]) -> ItemRow:
+        """Меняет поля записи пользователя и updated_at; возвращает запись после изменения."""
+        statement = (
+            update(ItemRow)
+            .where(ItemRow.user_id == user_id, ItemRow.id == item_id)
+            .values(**values, updated_at=func.now())
+            .returning(ItemRow)
+            # Запись уже загружена в сессию: без populate_existing вернулись бы старые значения.
+            .execution_options(synchronize_session=False, populate_existing=True)
+        )
+        row = await self._session.scalar(statement)
+        if row is None:
+            raise LookupError("Запись исчезла внутри транзакции")
+        return row
+
     async def find_events_overlapping(
-        self, user_id: int, start: datetime, end: datetime
+        self, user_id: int, start: datetime, end: datetime, exclude_id: UUID | None
     ) -> list[ItemRow]:
         """Открытые встречи со временем, которые пересекают [start, end); по времени начала.
 
         Встреча, которая кончается ровно в start, не пересекается. Задачи и встречи на весь день
-        в пересечениях не участвуют (план S1, решение 10).
+        в пересечениях не участвуют (план S1, решение 10). exclude_id — переносимая встреча:
+        с самой собой она не конфликтует.
         """
         statement = (
             select(ItemRow)
@@ -85,6 +120,8 @@ class ItemRepo:
             )
             .order_by(ItemRow.starts_at, ItemRow.id)
         )
+        if exclude_id is not None:
+            statement = statement.where(ItemRow.id != exclude_id)
         return list(await self._session.scalars(statement))
 
     async def list_in_range(

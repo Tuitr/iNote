@@ -10,7 +10,7 @@ from services.mcp.tools.text import conflict_text, created_text
 async def create_event(services: ToolServices, args: CreateEventArgs) -> CallToolResult:
     result = await services.items.create_event(args)
     if result.status == "conflict":
-        text = conflict_text(result.conflicts, result.free_slots)
+        text = conflict_text("Не создано", result.conflicts, result.free_slots)
     else:
         text = created_text(result.item)
     return CallToolResult(

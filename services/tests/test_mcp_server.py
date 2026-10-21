@@ -1,7 +1,6 @@
-"""MCP-сервер без базы: схемы, проверка аргументов, примеры для ещё не сделанных инструментов."""
+"""MCP-сервер без базы: схемы инструментов и проверка аргументов до вызова сервисов."""
 
 import asyncio
-import json
 from typing import Any
 
 import pytest
@@ -10,12 +9,10 @@ from mcp_types import CallToolResult
 
 from libs.contracts.tools import TOOLS
 from services.mcp.export_tools import TOOLS_PATH, render_tools
-from services.mcp.server import REAL_TOOLS, build_server
+from services.mcp.server import TOOL_HANDLERS, build_server
 from services.mcp.tools.context import ToolServices
-from services.mcp.tools.stub import EXAMPLES_DIR, load_examples
 
 CALLER = {"user_id": 17, "tz": "Europe/Moscow", "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"}
-STUB_TOOLS = sorted(set(TOOLS) - set(REAL_TOOLS))
 
 
 def _no_service() -> ToolServices:
@@ -23,7 +20,7 @@ def _no_service() -> ToolServices:
 
 
 def _server() -> Any:
-    return build_server(_no_service, load_examples(EXAMPLES_DIR))
+    return build_server(_no_service)
 
 
 def _call(name: str, arguments: dict[str, Any]) -> CallToolResult:
@@ -47,15 +44,8 @@ def test_lists_all_eight_tools_with_schemas_from_contracts() -> None:
         assert tool.output_schema == TOOLS[tool.name].result.model_json_schema()
 
 
-@pytest.mark.parametrize("name", STUB_TOOLS)
-def test_not_yet_real_tool_returns_example(name: str) -> None:
-    example = json.loads((EXAMPLES_DIR / f"{name}.json").read_text(encoding="utf-8"))
-
-    result = _call(name, example["arguments"])
-
-    assert result.is_error is False
-    assert result.structured_content == example["structuredContent"]
-    assert result.content[0].text == example["text"]
+def test_every_tool_has_a_handler() -> None:
+    assert set(TOOL_HANDLERS) == set(TOOLS)
 
 
 def test_missing_and_invalid_fields_are_reported_without_values() -> None:

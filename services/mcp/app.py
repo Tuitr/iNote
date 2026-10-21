@@ -19,7 +19,6 @@ from services.mcp.internal import router as internal_router
 from services.mcp.server import build_server
 from services.mcp.service_token import ServiceTokenMiddleware
 from services.mcp.tools.context import ToolServices
-from services.mcp.tools.stub import EXAMPLES_DIR, load_examples
 
 # Защита от DNS rebinding в SDK по умолчанию пускает только localhost, а агент C
 # ходит по имени сервиса в сети compose: http://mcp:8000/mcp (КиП, «Транспорт»).
@@ -32,7 +31,7 @@ _TRANSPORT_SECURITY = TransportSecuritySettings(
 def create_app() -> FastAPI:
     # Сервисы появятся в app.state только при старте (lifespan), а сервер нужен раньше,
     # поэтому сервер получает функцию, которая берёт сервис в момент вызова инструмента.
-    mcp_server = build_server(lambda: app.state.tool_services, load_examples(EXAMPLES_DIR))
+    mcp_server = build_server(lambda: app.state.tool_services)
     mcp_http_app = mcp_server.streamable_http_app(
         streamable_http_path="/mcp", transport_security=_TRANSPORT_SECURITY
     )
