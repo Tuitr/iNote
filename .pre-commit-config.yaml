@@ -55,7 +55,7 @@ repos:
 
       - id: mypy
         name: mypy --strict
-        entry: uv run --frozen mypy libs services
+        entry: uv run --frozen mypy libs services tests
         language: system
         types_or: [python, pyi]
         pass_filenames: false

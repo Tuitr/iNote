@@ -151,7 +151,7 @@ init_typed = true
 
 [tool.pytest.ini_options]
 minversion = "8.3"
-testpaths = ["libs", "services"]
+testpaths = ["libs", "services", "tests"]
 # importlib: одноимённые test_*.py и conftest.py в разных пакетах не конфликтуют;
 # pythonpath ".": хелперы тестов импортируются полным путём (services.bot.tests.fakes).
 addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]

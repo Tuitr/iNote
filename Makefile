@@ -5,7 +5,7 @@ UV ?= uv
 
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
-        test-integration test-lifecycle cov check up down logs ps smoke seed eval deploy
+        test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy
 
 # Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
 PROFILE ?= mock
@@ -32,7 +32,7 @@ lint: ## ruff без правок
 	$(UV) run ruff format --check .
 
 typecheck: ## mypy --strict
-	$(UV) run mypy libs services
+	$(UV) run mypy libs services tests
 
 imports: ## границы слоёв и пакетов
 	$(UV) run lint-imports
@@ -78,8 +78,11 @@ else
 	$(COMPOSE) logs --no-color $(SERVICE) | grep -- "$(TRACE)"
 endif
 
-smoke: ## апдейт фейковому MAX → ответ агента (нужен make up)
+smoke: ## два сценария S1 через фейковый MAX: список на сегодня и напоминание (нужен make up)
 	./deploy/smoke.sh
+
+e2e: up ## e2e на стенде: tests/e2e (поднимает стенд, если ещё не поднят)
+	$(UV) run pytest -m e2e tests/e2e
 
 seed: ## тестовые данные — появится в S1 (владелец D)
 	@echo "seed появится в S1 у владельца D"
