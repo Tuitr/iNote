@@ -15,7 +15,9 @@ from agent.application.handle_message import HandleMessage, TurnDeps
 from agent.application.ports import Clock, ReplyRenderer, ToolExecutorFactory, UserResolver
 from agent.application.use_cases import HandleAction
 from agent.infrastructure.brains import buildBrain
-from agent.infrastructure.placeholders import DevUserResolver, NoToolsExecutorFactory
+from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
+from agent.infrastructure.mcp_executor import McpToolExecutorFactory
+from agent.infrastructure.placeholders import DevUserResolver
 from agent.infrastructure.redis_context import RedisDialogContextStore
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
@@ -25,6 +27,7 @@ from agent.presentation.basic_renderer import BasicReplyRenderer
 from agent.presentation.routes import buildAgentRouter
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
+from common.lifecycle import managedTasks
 from common.logging import configureLogging, getLogger
 from common.middleware import INTERNAL_PREFIXES, installMiddleware
 from common.redis import KeyedRedis, createRedis
@@ -58,34 +61,44 @@ def createApp(
     custom = overrides or AgentOverrides()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
 
-    # Примечание: Redis, ход агента и заглушка /v1/actions; клиенты закрываются при остановке
+    # Примечание: Redis, MCP-сессия, ход и заглушка /v1/actions; всё закрывается при остановке
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         brain = custom.brain or buildBrain(config.brain)
         actionSource = ExampleReplySource(loadReplyExample(config.stubActionReply))
-        redis = (custom.redisFactory or createRedis)(config.redisUrl)
-        store = KeyedRedis(redis)
-        deps = TurnDeps(
-            resolver=custom.resolver or DevUserResolver(config.defaultTz),
-            lock=RedisUserLock(store),
-            contextStore=RedisDialogContextStore(store),
-            clock=custom.clock or SystemClock(),
-            brain=brain,
-            tools=custom.tools or NoToolsExecutorFactory(),
-            renderer=custom.renderer or BasicReplyRenderer(),
-        )
-        app.state.redis = redis
-        app.state.handleMessage = HandleMessage(
-            deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
-        )
-        app.state.handleAction = HandleAction(actionSource)
-        _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
-        try:
-            yield
-        finally:
-            _log.info("agent_stopping")
-            await redis.aclose()
-            _log.info("agent_stopped")
+        async with managedTasks() as tasks:
+            redis = (custom.redisFactory or createRedis)(config.redisUrl)
+            store = KeyedRedis(redis)
+            mcp: McpConnection | None = None
+            tools = custom.tools
+            if tools is None:
+                mcp = McpConnection(httpSessionFactory(config.mcpUrl, config.serviceToken))
+                mcp.start(tasks)
+                tools = McpToolExecutorFactory(mcp, timeoutS=config.mcpTimeoutS)
+            deps = TurnDeps(
+                resolver=custom.resolver or DevUserResolver(config.defaultTz),
+                lock=RedisUserLock(store),
+                contextStore=RedisDialogContextStore(store),
+                clock=custom.clock or SystemClock(),
+                brain=brain,
+                tools=tools,
+                renderer=custom.renderer or BasicReplyRenderer(),
+            )
+            app.state.redis = redis
+            app.state.handleMessage = HandleMessage(
+                deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
+            )
+            app.state.handleAction = HandleAction(actionSource)
+            _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
+            try:
+                yield
+            finally:
+                _log.info("agent_stopping")
+                # MCP-сессию закрываем до остановки реестра: её хозяин — фоновая задача в нём
+                if mcp is not None:
+                    await mcp.close()
+                await redis.aclose()
+                _log.info("agent_stopped")
 
     app = FastAPI(title="va-agent", lifespan=lifespan)
     installErrorHandlers(app)
