@@ -1,0 +1,14 @@
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJleGFtcGxlIn0.c3R1Yg",
+  "expires_at": "2026-10-20T15:00:00+03:00",
+  "me": {
+    "name": "Степан",
+    "settings": {
+      "tz": "Europe/Moscow",
+      "voice_replies": false,
+      "default_event_min": 60,
+      "remind_before_min": 15
+    }
+  },
+  "start_param": "today"
+}

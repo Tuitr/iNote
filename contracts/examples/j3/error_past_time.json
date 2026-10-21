@@ -1,0 +1,13 @@
+{
+  "isError": true,
+  "structuredContent": {
+    "error": {
+      "code": "past_time",
+      "message": "Время уже прошло",
+      "details": {
+        "remind_at": "2026-10-19T10:00:00+03:00"
+      }
+    }
+  },
+  "text": "Ошибка past_time: время уже прошло"
+}
