@@ -207,7 +207,7 @@ async def test_item_is_created_even_if_redis_is_down(
         async def incr(self, key: str) -> int:
             raise RedisConnectionError("нет связи")
 
-    service = ItemService(session_factory, BrokenRedis())
+    service = ItemService(session_factory, BrokenRedis(), None)
 
     with caplog.at_level(logging.ERROR):
         result = await service.create_task(_task(user_id, starts_at=date(2026, 10, 22).isoformat()))

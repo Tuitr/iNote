@@ -43,9 +43,11 @@ def create_app() -> FastAPI:
             app.state.service_token = load_service_token()
             session_factory = create_session_factory(app.state.db_engine)
             app.state.user_service = UserService(session_factory, load_default_tz())
+            # Эмбеддера нет, пока роль A не выложила libs/embed: векторы не считаются,
+            # поиск идёт по словам и буквам.
             app.state.tool_services = ToolServices(
-                items=ItemService(session_factory, app.state.redis_client),
-                search=SearchService(session_factory),
+                items=ItemService(session_factory, app.state.redis_client, embedder=None),
+                search=SearchService(session_factory, embedder=None),
             )
             app.state.dialog_service = DialogService(session_factory)
             yield

@@ -8,6 +8,7 @@
 from datetime import datetime
 from uuid import UUID
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     TIMESTAMP,
     BigInteger,
@@ -26,6 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from libs.core.embedding import EMBED_DIM
 
 # Те же имена ограничений, что в миграции 0001: по ним alembic check сверяет модели с базой.
 _NAMING_CONVENTION = {
@@ -81,6 +84,12 @@ class ItemRow(Base):
         ),
         Index("ix_items_search_tsv", "search_tsv", postgresql_using="gin"),
         Index(
+            "ix_items_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index(
             "ix_items_search_text_trgm",
             "search_text",
             postgresql_using="gin",
@@ -109,6 +118,8 @@ class ItemRow(Base):
     search_text: Mapped[str | None] = mapped_column(
         Computed(_SEARCH_TEXT, persisted=True), deferred=True
     )
+    # Пусто, если эмбеддер был недоступен: такая запись находится только по словам.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBED_DIM), deferred=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
     deleted_at: Mapped[datetime | None]

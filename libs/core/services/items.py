@@ -20,6 +20,7 @@ from libs.contracts.tools import (
     TimeSlot,
 )
 from libs.core.db.models import ItemRow, UserRow
+from libs.core.embedding import Embedder, embed_or_none, item_text
 from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.repositories.items import ItemRepo, NewItem
 from libs.core.repositories.notifications import NotificationRepo
@@ -46,9 +47,16 @@ MAX_LIST_ITEMS = 30
 
 
 class ItemService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession], redis: Redis) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        redis: Redis,
+        embedder: Embedder | None,
+    ) -> None:
         self._session_factory = session_factory
         self._redis = redis
+        # None — эмбеддера нет (libs/embed от A ещё нет): записи сохраняются без вектора.
+        self._embedder = embedder
 
     async def create_task(self, args: CreateTaskArgs) -> MutationResult:
         caller = args.caller
@@ -67,6 +75,7 @@ class ItemService:
             participants=[],
             source_text=args.source_text,
             idempotency_key=caller.idempotency_key,
+            embedding=await self._embed(args.title, args.notes, [], args.source_text),
         )
         created = False
         async with self._session_factory() as session, session.begin():
@@ -83,13 +92,14 @@ class ItemService:
     async def create_event(self, args: CreateEventArgs) -> MutationResult:
         caller = args.caller
         _check_event_end(args)
+        embedding = await self._embed(args.title, args.notes, args.participants, args.source_text)
         created = False
         async with self._session_factory() as session, session.begin():
             user = await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _replay(items, caller)
             if row is None:
-                event = _new_event(args, user)
+                event = _new_event(args, user, embedding)
                 # ends_at нет только у встречи на весь день, а она не конфликтует (решение 10).
                 if not args.allow_conflict and event.starts_at and event.ends_at:
                     conflict = await _conflict(items, caller, event.starts_at, event.ends_at)
@@ -121,6 +131,13 @@ class ItemService:
             range=DateRange(from_=args.from_, to=args.to),
             truncated=len(rows) > MAX_LIST_ITEMS,
         )
+
+    async def _embed(
+        self, title: str, notes: str | None, participants: list[str], source_text: str | None
+    ) -> list[float] | None:
+        # Считаем до транзакции: ожидание эмбеддера не должно держать соединение с базой.
+        text = item_text(title, notes, participants, source_text)
+        return await embed_or_none(self._embedder, text, "document")
 
 
 def free_slots(
@@ -159,7 +176,7 @@ def _check_event_end(args: CreateEventArgs) -> None:
         raise InvalidArgumentsError("Конец встречи раньше начала", {"invalid": ["ends_at"]})
 
 
-def _new_event(args: CreateEventArgs, user: UserRow) -> NewItem:
+def _new_event(args: CreateEventArgs, user: UserRow, embedding: list[float] | None) -> NewItem:
     """Встреча с временем по умолчанию из настроек. Время в прошлом → PastTimeError."""
     tz = args.caller.tz
     if isinstance(args.starts_at, datetime):
@@ -194,6 +211,7 @@ def _new_event(args: CreateEventArgs, user: UserRow) -> NewItem:
         participants=args.participants,
         source_text=args.source_text,
         idempotency_key=args.caller.idempotency_key,
+        embedding=embedding,
     )
 
 

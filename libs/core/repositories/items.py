@@ -37,6 +37,7 @@ class NewItem:
     participants: list[str]
     source_text: str | None
     idempotency_key: str | None
+    embedding: list[float] | None
 
 
 class ItemRepo:
@@ -144,6 +145,28 @@ class ItemRepo:
             select(ItemRow, similarity)
             .where(_search_scope(user_id, search), similarity >= min_similarity)
             .order_by(similarity.desc(), ItemRow.id)
+            .limit(limit)
+        )
+        return [(row, float(score)) for row, score in await self._session.execute(statement)]
+
+    async def search_vector(
+        self,
+        user_id: int,
+        query_vector: list[float],
+        search: SearchFilter,
+        min_similarity: float,
+        limit: int,
+    ) -> list[tuple[ItemRow, float]]:
+        """Записи, близкие к запросу по смыслу, с косинусным сходством (1 — совпадает по смыслу)."""
+        similarity = 1 - ItemRow.embedding.cosine_distance(query_vector)
+        statement = (
+            select(ItemRow, similarity)
+            .where(
+                _search_scope(user_id, search),
+                ItemRow.embedding.is_not(None),
+                similarity >= min_similarity,
+            )
+            .order_by(ItemRow.embedding.cosine_distance(query_vector), ItemRow.id)
             .limit(limit)
         )
         return [(row, float(score)) for row, score in await self._session.execute(statement)]

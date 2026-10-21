@@ -1,8 +1,8 @@
 """Поиск записей по смыслу запроса: полнотекст и триграммы, слияние по месту (развилка 4.5-А).
 
 Каждый источник даёт свой топ, места сводятся формулой RRF: score = Σ 1 / (RRF_K + место).
-Так не нужно сравнивать несравнимые оценки разных источников. Вектор добавится третьим
-источником, когда будет эмбеддер роли A (шаг 19).
+Так не нужно сравнивать несравнимые оценки разных источников. Третий источник — близость
+по смыслу (вектор), если эмбеддер есть и ответил; иначе ищем по двум.
 """
 
 from collections.abc import Hashable, Sequence
@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from libs.contracts.tools import SearchHit, SearchItemsArgs, SearchItemsResult
+from libs.core.embedding import Embedder, embed_or_none
 from libs.core.repositories.items import ItemRepo, SearchFilter
 from libs.core.services.items import require_user, to_item
 from libs.core.services.time import local_midnight_utc
@@ -23,13 +24,21 @@ RRF_K = 60
 MIN_TRIGRAM_SIMILARITY = 0.3
 # Уверенное совпадение: лучший результат найден полнотекстом или очень похож по буквам…
 STRONG_TRIGRAM_SIMILARITY = 0.5
+# …или очень близок по смыслу…
+STRONG_VECTOR_SIMILARITY = 0.8
 # …и второй заметно хуже первого: его score не больше этой доли от score первого.
 CONFIDENT_RUNNER_UP_SHARE = 0.6
+# Ниже этого косинусного сходства запись по смыслу не связана с запросом. Пороги вектора
+# зависят от модели: подбираем заново, когда будет эмбеддер роли A.
+MIN_VECTOR_SIMILARITY = 0.5
 
 
 class SearchService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession], embedder: Embedder | None
+    ) -> None:
         self._session_factory = session_factory
+        self._embedder = embedder
 
     async def search(self, args: SearchItemsArgs) -> SearchItemsResult:
         caller = args.caller
@@ -40,6 +49,8 @@ class SearchService:
             start=None if args.from_ is None else local_midnight_utc(args.from_, caller.tz),
             end=None if args.to is None else local_midnight_utc(args.to, caller.tz),
         )
+        # Вектор запроса считаем до транзакции, чтобы не держать соединение, пока ждём эмбеддер.
+        query_vector = await embed_or_none(self._embedder, args.query, "query")
         async with self._session_factory() as session, session.begin():
             await require_user(session, caller.user_id)
             items = ItemRepo(session)
@@ -49,12 +60,32 @@ class SearchService:
             trigram = await items.search_trigram(
                 caller.user_id, args.query, search, MIN_TRIGRAM_SIMILARITY, CANDIDATES_PER_SOURCE
             )
-        rows = {row.id: row for row in fulltext} | {row.id: row for row, _ in trigram}
-        scores = rrf_scores([[row.id for row in fulltext], [row.id for row, _ in trigram]])
+            vector = (
+                []
+                if query_vector is None
+                else await items.search_vector(
+                    caller.user_id,
+                    query_vector,
+                    search,
+                    MIN_VECTOR_SIMILARITY,
+                    CANDIDATES_PER_SOURCE,
+                )
+            )
+        rows = (
+            {row.id: row for row in fulltext}
+            | {row.id: row for row, _ in trigram}
+            | {row.id: row for row, _ in vector}
+        )
+        rankings = [[row.id for row in fulltext], [row.id for row, _ in trigram]]
+        if query_vector is not None:
+            rankings.append([row.id for row, _ in vector])
+        scores = rrf_scores(rankings)
         ranked = sorted(scores, key=lambda item_id: (-scores[item_id], str(item_id)))
-        strong = {row.id for row in fulltext} | {
-            row.id for row, similarity in trigram if similarity >= STRONG_TRIGRAM_SIMILARITY
-        }
+        strong = (
+            {row.id for row in fulltext}
+            | {row.id for row, similarity in trigram if similarity >= STRONG_TRIGRAM_SIMILARITY}
+            | {row.id for row, similarity in vector if similarity >= STRONG_VECTOR_SIMILARITY}
+        )
         return SearchItemsResult(
             results=[
                 SearchHit(item=to_item(rows[item_id], caller.tz), score=round(scores[item_id], 2))
