@@ -22,7 +22,7 @@ from pydantic import SecretStr
 from agent.domain.user import Caller
 from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
-from agent.infrastructure.mcp_executor import McpToolExecutor
+from agent.infrastructure.mcp_executor import McpReply, McpToolExecutor
 from common.errors import AppError
 from common.http import ServiceHttpClient
 from common.lifecycle import managedTasks
@@ -237,3 +237,38 @@ async def test_resolveRequiresToken(stub: StubProcess) -> None:
         with pytest.raises(AppError) as caught:
             await resolver.resolve(1, 1, None)
     assert caught.value.code == "unauthorized"
+
+
+# Примечание: аргументы create_task с caller и заданным ключом идемпотентности
+def reminderArgs(caller: Caller, key: str) -> dict[str, object]:
+    due = (datetime.now(ZoneInfo(TZ)) + timedelta(days=1)).replace(microsecond=0)
+    return {
+        "title": "Позвонить",
+        "kind": "reminder",
+        "due_at": due.isoformat(),
+        "caller": {
+            "user_id": caller.userId,
+            "tz": caller.tz,
+            "trace_id": caller.traceId,
+            "idempotency_key": key,
+        },
+    }
+
+
+# Примечание: id созданной записи из structuredContent
+def itemId(reply: McpReply) -> str:
+    assert reply.structured is not None
+    item = reply.structured["item"]
+    assert isinstance(item, dict)
+    return str(item["id"])
+
+
+# Примечание: повтор изменяющего вызова с тем же ключом не создаёт дубль — тот же id записи
+async def test_sameKeyNoDuplicate(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    async with connection(stub.url) as mcp:
+        first = await mcp.callTool("create_task", reminderArgs(caller, f"{uniqueId}:1"), 5)
+        again = await mcp.callTool("create_task", reminderArgs(caller, f"{uniqueId}:1"), 5)
+        other = await mcp.callTool("create_task", reminderArgs(caller, f"{uniqueId}:2"), 5)
+    assert itemId(first) == itemId(again) != itemId(other)
+    assert len(stub.events("tool_replayed")) == 1

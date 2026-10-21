@@ -72,6 +72,7 @@ def createApp(
         callbacks = RedisCallbackStore(store)
         app.state.devConsole = gateway
         app.state.redis = redis
+        app.state.agentHttp = agentHttp
         try:
             async with managedTasks(config.shutdownTimeoutS) as tasks:
                 handler = HandleUpdate(
@@ -108,7 +109,8 @@ def createApp(
     app = FastAPI(title="va-bot", lifespan=lifespan)
     installErrorHandlers(app)
     installMiddleware(app, serviceToken=config.serviceToken)
-    app.include_router(buildHealthRouter({"redis": _redisCheck(app)}))
+    # Готов, когда доступны Redis и агент (план зоны C); MAX в readiness не дёргаем
+    app.include_router(buildHealthRouter({"redis": _redisCheck(app), "agent": _agentCheck(app)}))
     if config.maxMode == "fake":
         app.include_router(buildDevRouter())
     return app
@@ -120,5 +122,15 @@ def _redisCheck(app: FastAPI) -> HealthCheck:
     async def probe() -> object:
         redis: Redis = app.state.redis
         return await redis.ping()
+
+    return HealthCheck(probe=probe)
+
+
+# Примечание: агент жив — GET /health/live без повторов; клиент берётся из app.state при вызове
+def _agentCheck(app: FastAPI) -> HealthCheck:
+    # Примечание: не-2xx и сетевой сбой — AppError, то есть «не готов»
+    async def probe() -> object:
+        http: ServiceHttpClient = app.state.agentHttp
+        return await http.get("/health/live", retry=False)
 
     return HealthCheck(probe=probe)

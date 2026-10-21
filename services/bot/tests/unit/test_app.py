@@ -60,6 +60,8 @@ class FakeAgentHttp:
 
     # Примечание: ответ-пример по пути; down — 503 в конверте ошибки
     def _handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/health/live":
+            return httpx.Response(503 if self.down else 200, json={"status": "ok"})
         self.requests.append(request)
         if self.down:
             error = {"code": "upstream_unavailable", "message": "down", "details": {}}
@@ -161,7 +163,15 @@ async def test_health(running: httpx.AsyncClient) -> None:
     assert (await running.get("/health/live")).json() == {"status": "ok"}
     ready = await running.get("/health/ready")
     assert ready.status_code == 200
-    assert ready.json()["checks"] == {"redis": "ok"}
+    assert ready.json()["checks"] == {"redis": "ok", "agent": "ok"}
+
+
+# Примечание: агент не отвечает — бот не готов (503), Redis при этом ok
+async def test_notReadyWithoutAgent(running: httpx.AsyncClient, agentHttp: FakeAgentHttp) -> None:
+    agentHttp.down = True
+    ready = await running.get("/health/ready")
+    assert ready.status_code == 503
+    assert ready.json()["checks"] == {"redis": "ok", "agent": "fail"}
 
 
 # Примечание: Redis недоступен — ready 503, live по-прежнему 200

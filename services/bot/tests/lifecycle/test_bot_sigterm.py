@@ -18,6 +18,9 @@ from services.bot.tests.fakes import loadMaxUpdate
 pytestmark = [pytest.mark.lifecycle, pytest.mark.integration]
 
 SEND_DELAY_MS: Final = 1500
+REPO_ROOT: Final = Path(__file__).resolve().parents[4]
+# Агент для readiness бота — stdlib-заглушка стенда: health 200, POST → 404 (бот ответит ошибкой)
+AGENT_STUB: Final = REPO_ROOT / "deploy" / "stub" / "server.py"
 
 
 # Примечание: свободный порт для uvicorn
@@ -60,9 +63,15 @@ def readEvents(logFile: Path) -> list[str]:
 
 # Примечание: SIGTERM посреди отправки ответа — ответ уходит, остановка штатная
 def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: Path) -> None:
-    port = freePort()
+    port, agentPort = freePort(), freePort()
     base = f"http://127.0.0.1:{port}"
     logFile = tmp_path / "bot.log"
+    agent = subprocess.Popen(  # noqa: S603 — своя заглушка из репо
+        [sys.executable, str(AGENT_STUB)],
+        env={**os.environ, "STUB_NAME": "agent", "STUB_OWNER": "C", "STUB_PORT": str(agentPort)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     env = {
         **os.environ,
         "SERVICE_TOKEN": "t" * 32,
@@ -72,6 +81,7 @@ def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: 
         "BOT_SHUTDOWN_TIMEOUT_S": "10",
         "BOT_FAKE_SEND_DELAY_MS": str(SEND_DELAY_MS),
         "LOG_FORMAT": "json",
+        "BOT_AGENT_URL": f"http://127.0.0.1:{agentPort}",
     }
     command = [sys.executable, "-m", "uvicorn", "bot.main:createApp", "--factory"]
     with logFile.open("w") as out:
@@ -97,6 +107,8 @@ def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: 
     finally:
         if proc.poll() is None:
             proc.kill()
+        agent.terminate()
+        agent.wait(timeout=5)
     events = readEvents(logFile)
     # uvicorn после штатной остановки заново поднимает SIGTERM (код -15) — это норма;
     # что остановка штатная, видно по логам: lifespan завершился, задачи не отменены
