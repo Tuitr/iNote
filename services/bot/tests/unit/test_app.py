@@ -76,12 +76,48 @@ def agentHttp() -> FakeAgentHttp:
     return FakeAgentHttp()
 
 
-# Примечание: бот целиком поверх fakeredis и фейкового агента
+# Примечание: ASR как заглушка J1: «OggS» + текст → этот текст
+def fakeAsr(request: httpx.Request) -> httpx.Response:
+    if request.url.path != "/v1/transcribe":
+        return httpx.Response(200, json={"status": "ok"})
+    text = request.content.split(b"OggS", 1)[1].split(b"\r\n", 1)[0].decode()
+    body = {"text": text, "raw_text": text, "confidence": 0.9, "duration_ms": 900}
+    return httpx.Response(200, json=body)
+
+
+# Примечание: «CDN MAX»: отдаёт файл голосового из фейкового MAX — как GET /dev/max/files/{id}
+class FilesFromFake:
+    # Примечание: app — чтобы взять файл у фейкового MAX, как это сделал бы GET /dev/max/files
+    def __init__(self) -> None:
+        self.app: FastAPI | None = None
+
+    # Примечание: транспорт для createApp(filesTransport=…)
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._handle)
+
+    # Примечание: файл по id из ссылки
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        assert self.app is not None
+        voice = self.app.state.devConsole.voiceFile(request.url.path.rsplit("/", 1)[1])
+        if voice is None:
+            return httpx.Response(404)
+        return httpx.Response(200, content=voice.content, headers={"content-type": voice.mime})
+
+
+# Примечание: бот целиком поверх fakeredis, фейкового агента, ASR и «CDN» голосовых
 @pytest.fixture
 def app(botEnv: pytest.MonkeyPatch, agentHttp: FakeAgentHttp) -> FastAPI:
-    return createApp(
-        BotSettings(), redisFactory=fakeRedisFactory, agentTransport=agentHttp.transport
+    files = FilesFromFake()
+    created = createApp(
+        BotSettings(),
+        redisFactory=fakeRedisFactory,
+        agentTransport=agentHttp.transport,
+        asrTransport=httpx.MockTransport(fakeAsr),
+        filesTransport=files.transport,
     )
+    files.app = created
+    return created
 
 
 # Примечание: ждём, пока фейковый MAX «отправит» нужное число сообщений
@@ -162,11 +198,26 @@ async def test_duplicatePushHandledOnce(running: httpx.AsyncClient) -> None:
     raw = loadMaxUpdate("bot_started")
     await running.post("/dev/max/updates", json=raw)
     await running.post("/dev/max/updates", json=raw)
-    await running.post("/dev/max/updates", json=loadMaxUpdate("voice"))
-    body = await waitSent(running, 2)
-    messages = body["messages"]
-    assert isinstance(messages, list)
-    assert [m["text"] for m in messages] == [templates.GREETING, templates.VOICE_NOT_YET]
+    await waitSent(running, 1)
+    await asyncio.sleep(0.2)
+    assert [m.text for m in (await sentLog(running, 1)).messages] == [templates.GREETING]
+
+
+# Примечание: голосовое через /dev/max/voice: скачать по ссылке → ASR (multipart) → агенту текст
+async def test_voiceThroughDevRoutes(running: httpx.AsyncClient, agentHttp: FakeAgentHttp) -> None:
+    pushed = await running.post(
+        "/dev/max/voice", json={"max_user_id": 7, "max_chat_id": 8, "text": "что у меня завтра"}
+    )
+    assert pushed.status_code == 200
+    [message] = (await sentLog(running, 1)).messages
+    assert message.chatId == 8
+    [request] = agentHttp.requests
+    body = json.loads(request.content)
+    assert (body["text"], body["source"], body["asr_low_confidence"]) == (
+        "что у меня завтра",
+        "voice",
+        False,
+    )
 
 
 # Примечание: health: live и ready (Redis отвечает)

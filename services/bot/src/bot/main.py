@@ -14,8 +14,10 @@ from redis.asyncio import Redis
 from bot.application.handle_update import BotDeps, HandleUpdate
 from bot.application.reply_mapper import ReplyToMaxMapper
 from bot.application.typing import TypingIndicator
+from bot.infrastructure.audio_downloader import HttpAudioDownloader
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
 from bot.infrastructure.http_agent import HttpAgentGateway
+from bot.infrastructure.http_asr import HttpAsrGateway
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
 from bot.infrastructure.redis_adapters import (
@@ -29,7 +31,7 @@ from bot.presentation.polling import PollingLoop
 from bot.presentation.templates import RussianTexts
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
-from common.http import ServiceHttpClient
+from common.http import RetryPolicy, ServiceHttpClient
 from common.lifecycle import managedTasks
 from common.logging import configureLogging, getLogger
 from common.middleware import installMiddleware
@@ -49,6 +51,8 @@ def createApp(
     *,
     redisFactory: RedisFactory = createRedis,
     agentTransport: httpx.AsyncBaseTransport | None = None,
+    asrTransport: httpx.AsyncBaseTransport | None = None,
+    filesTransport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or BotSettings()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
@@ -59,7 +63,11 @@ def createApp(
         if config.maxMode == "real":
             createRealMaxGateway()
         redis = redisFactory(config.redisUrl)
-        gateway = FakeMaxGateway(FakeMaxOptions(sendDelayS=config.fakeSendDelayMs / 1000))
+        gateway = FakeMaxGateway(
+            FakeMaxOptions(
+                sendDelayS=config.fakeSendDelayMs / 1000, filesBaseUrl=config.fakeFilesUrl
+            )
+        )
         store = KeyedRedis(redis)
         # Бот → агент: 45 с без повторов (стандарт); POST без ключа и так не повторяется
         agentHttp = ServiceHttpClient(
@@ -68,6 +76,19 @@ def createApp(
             serviceToken=config.serviceToken,
             upstreamName="agent",
             transport=agentTransport,
+        )
+        # ASR (J1): 15 с и до 2 повторов — вызов идемпотентный (ключ — хеш аудио)
+        asrHttp = ServiceHttpClient(
+            baseUrl=config.asrUrl,
+            timeoutS=config.asrTimeoutS,
+            serviceToken=config.serviceToken,
+            retry=RetryPolicy(retries=2),
+            upstreamName="asr",
+            transport=asrTransport,
+        )
+        # Голосовые — по внешней ссылке MAX: без сервисного токена, редиректы допустимы
+        filesHttp = httpx.AsyncClient(
+            timeout=config.voiceDownloadTimeoutS, follow_redirects=True, transport=filesTransport
         )
         callbacks = RedisCallbackStore(store)
         app.state.devConsole = gateway
@@ -87,6 +108,8 @@ def createApp(
                             callbacks, mode=config.openAppMode, botUsername=config.username
                         ),
                         typing=TypingIndicator(gateway, tasks, config.typingIntervalS),
+                        downloader=HttpAudioDownloader(filesHttp, maxBytes=config.voiceMaxBytes),
+                        asr=HttpAsrGateway(asrHttp),
                     )
                 )
                 # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить нельзя;
@@ -103,6 +126,8 @@ def createApp(
                 _log.info("bot_stopping")
         finally:
             await agentHttp.aclose()
+            await asrHttp.aclose()
+            await filesHttp.aclose()
             await redis.aclose()
             _log.info("bot_stopped")
 

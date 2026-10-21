@@ -1,16 +1,25 @@
 import dataclasses
 from typing import Final
 
+import pytest
 import structlog
 
 from bot.application.handle_update import HandleOutcome, HandleUpdate
 from bot.application.ports import StoredAction
 from bot.domain.updates import UpdateKind
+from bot.domain.voice import VoiceFailureError, VoiceFailureReason
 from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.presentation import templates
 from common.errors import AppError, ErrorCode
 from common.trace import traceContext
-from services.bot.tests.fakes import FakeAgent, InMemoryCallbackStore, exampleReply, loadIncoming
+from services.bot.tests.fakes import (
+    FakeAgent,
+    FakeAsr,
+    FakeDownloader,
+    InMemoryCallbackStore,
+    exampleReply,
+    loadIncoming,
+)
 
 CHAT_ID: Final = 500600700
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
@@ -118,14 +127,76 @@ async def test_localCommands(
     assert agent.actions == []
 
 
-# Примечание: голосовое → заглушка до J1; «Начать» → приветствие; агент не нужен
-async def test_voiceAndStart(
-    handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent
-) -> None:
-    await handler(loadIncoming("voice"))
+# Примечание: «Начать» → приветствие бота, агент не нужен
+async def test_botStarted(handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent) -> None:
     await handler(loadIncoming("bot_started"))
-    assert [m.text for m in gateway.sentMessages()] == [templates.VOICE_NOT_YET, templates.GREETING]
+    assert [m.text for m in gateway.sentMessages()] == [templates.GREETING]
     assert agent.messages == []
+
+
+# Примечание: голос: скачать → ASR → агенту распознанный текст с source=voice и флагами ASR
+async def test_voiceGoesToAgent(
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    agent: FakeAgent,
+    downloader: FakeDownloader,
+    asr: FakeAsr,
+) -> None:
+    asr.low = True
+    assert await handler(loadIncoming("voice")) is HandleOutcome.HANDLED
+    assert downloader.urls == ["https://example.invalid/synthetic/voice-0001.ogg"]
+    [request] = agent.messages
+    assert (request.text, request.source) == ("Напомни завтра в 10 позвонить Ивану", "voice")
+    assert (request.asrLowConfidence, request.asrDurationMs) == (True, 2100)
+    assert (request.name, request.locale) == ("Иван", "ru")
+    [sent] = gateway.sentMessages()
+    assert sent.text == exampleReply("confirm.json").text
+
+
+# Примечание: «печатает…» горит и пока ASR думает — а не только пока ждём агента
+async def test_typingDuringAsr(
+    handler: HandleUpdate, gateway: FakeMaxGateway, asr: FakeAsr
+) -> None:
+    asr.delayS = 0.1
+    await handler(loadIncoming("voice"))
+    assert len(gateway.typingActions()) >= 3
+
+
+# Примечание: каждая причина сбоя голосового — свой текст бота с кодом; агент не вызывается
+@pytest.mark.parametrize(
+    ("reason", "template"),
+    [
+        (VoiceFailureReason.NO_SPEECH, templates.VOICE_NO_SPEECH),
+        (VoiceFailureReason.TOO_LONG, templates.VOICE_TOO_LONG),
+        (VoiceFailureReason.UNSUPPORTED, templates.VOICE_FAILED),
+        (VoiceFailureReason.UNAVAILABLE, templates.VOICE_FAILED),
+    ],
+)
+async def test_voiceFailures(
+    *,
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    agent: FakeAgent,
+    asr: FakeAsr,
+    reason: VoiceFailureReason,
+    template: str,
+) -> None:
+    asr.error = VoiceFailureError(reason, "x")
+    with traceContext(TRACE):
+        assert await handler(loadIncoming("voice")) is HandleOutcome.VOICE_FAILED
+    [sent] = gateway.sentMessages()
+    assert sent.text == template.format(code="ab12f0")
+    assert agent.messages == []
+
+
+# Примечание: голосовое больше лимита — тот же ответ, что «слишком длинное», ASR не вызывается
+async def test_voiceTooLarge(
+    handler: HandleUpdate, gateway: FakeMaxGateway, downloader: FakeDownloader, asr: FakeAsr
+) -> None:
+    downloader.error = VoiceFailureError(VoiceFailureReason.TOO_LONG, "voice_too_large")
+    await handler(loadIncoming("voice"))
+    assert gateway.sentMessages()[0].text.startswith("Слишком длинное голосовое")
+    assert asr.calls == []
 
 
 # Примечание: повтор того же апдейта не обрабатывается и не тратит лимит

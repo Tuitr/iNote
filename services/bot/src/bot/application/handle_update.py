@@ -6,6 +6,8 @@ from typing import Final, assert_never
 
 from bot.application.ports import (
     AgentGateway,
+    AsrGateway,
+    AudioDownloader,
     BotTexts,
     CallbackStore,
     MaxGateway,
@@ -15,7 +17,8 @@ from bot.application.ports import (
 from bot.application.reply_mapper import ReplyToMaxMapper
 from bot.application.typing import TypingIndicator
 from bot.domain.messages import OutgoingMessage, fitToLimit
-from bot.domain.updates import IncomingUpdate, MaxChatId, UpdateKind
+from bot.domain.updates import IncomingUpdate, MaxChatId, UpdateKind, VoiceRef
+from bot.domain.voice import Transcript, VoiceFailureError
 from common.errors import AppError, ErrorCode
 from common.logging import getLogger
 from common.trace import shortTraceId
@@ -45,6 +48,7 @@ class HandleOutcome(StrEnum):
     RATE_LIMITED = "rate_limited"
     NO_CHAT = "no_chat"
     AGENT_FAILED = "agent_failed"
+    VOICE_FAILED = "voice_failed"
     BUTTON_EXPIRED = "button_expired"
 
 
@@ -59,6 +63,8 @@ class BotDeps:
     callbacks: CallbackStore
     mapper: ReplyToMaxMapper
     typing: TypingIndicator
+    downloader: AudioDownloader
+    asr: AsrGateway
 
 
 # Примечание: дедуп → лимит → агент (текст, команды, кнопки) → ответ в формате MAX
@@ -99,7 +105,7 @@ class HandleUpdate:
             case UpdateKind.COMMAND:
                 return await self._onCommand(update, chatId)
             case UpdateKind.VOICE:
-                return await self._sendText(chatId, self._d.texts.voiceNotSupportedYet())
+                return await self._onVoice(update, chatId)
             case UpdateKind.BOT_STARTED | UpdateKind.CALLBACK:
                 return await self._sendText(chatId, self._d.texts.greeting())
             case _:
@@ -116,6 +122,36 @@ class HandleUpdate:
             name=update.userName,
         )
         return await self._askAgent(chatId, lambda: self._d.agent.sendMessage(request))
+
+    # Примечание: голос: «печатает…» сразу и до ответа — скачать, распознать, отдать агенту
+    async def _onVoice(self, update: IncomingUpdate, chatId: MaxChatId) -> HandleOutcome:
+        if update.voice is None:
+            msg = f"голосовое без вложения: {update.updateId}"
+            raise ValueError(msg)
+        async with self._d.typing.during(chatId):
+            try:
+                transcript = await self._transcribe(update.voice)
+            except VoiceFailureError as exc:
+                _log.info("voice_failed", reason=exc.reason.value, error_code=exc.code)
+                text = self._d.texts.voiceFailed(exc.reason, shortTraceId())
+                await self._sendText(chatId, text)
+                return HandleOutcome.VOICE_FAILED
+            request = MessageRequest(
+                maxUserId=update.maxUserId,
+                maxChatId=chatId,
+                text=fitToLimit(transcript.text, REPLY_TEXT_MAX_LENGTH),
+                source="voice",
+                locale=update.locale,
+                name=update.userName,
+                asrLowConfidence=transcript.lowConfidence,
+                asrDurationMs=transcript.durationMs,
+            )
+            return await self._replyFromAgent(chatId, lambda: self._d.agent.sendMessage(request))
+
+    # Примечание: скачать сразу (ссылка живёт около суток) и распознать
+    async def _transcribe(self, voice: VoiceRef) -> Transcript:
+        audio = await self._d.downloader.download(voice)
+        return await self._d.asr.transcribe(audio)
 
     # Примечание: /today, /tomorrow, /week → /v1/actions; /start и /help — справка; иначе подсказка
     async def _onCommand(self, update: IncomingUpdate, chatId: MaxChatId) -> HandleOutcome:
@@ -147,13 +183,19 @@ class HandleUpdate:
         )
         return await self._askAgent(update.maxChatId, lambda: self._d.agent.sendAction(request))
 
-    # Примечание: вызов агента под «печатает…»; сбой — текст с кодом цепочки, а не тишина
+    # Примечание: вызов агента под «печатает…»
     async def _askAgent(
         self, chatId: MaxChatId, call: Callable[[], Awaitable[Reply]]
     ) -> HandleOutcome:
+        async with self._d.typing.during(chatId):
+            return await self._replyFromAgent(chatId, call)
+
+    # Примечание: Reply агента → сообщение MAX; сбой — текст с кодом цепочки, а не тишина
+    async def _replyFromAgent(
+        self, chatId: MaxChatId, call: Callable[[], Awaitable[Reply]]
+    ) -> HandleOutcome:
         try:
-            async with self._d.typing.during(chatId):
-                reply = await call()
+            reply = await call()
             message = await self._d.mapper.toMessage(reply, chatId)
         except AppError as exc:
             _log.warning("agent_failed", error_code=exc.code)

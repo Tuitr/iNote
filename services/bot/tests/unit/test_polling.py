@@ -219,3 +219,44 @@ async def test_brokenMarkerStoreDoesNotStopLoop(gateway: FakeMaxGateway) -> None
     await waitFor(lambda: len(recorder.seen) == 1 and loop.marker == 1)
     stopping.set()
     await task
+
+
+# Примечание: голосовое в формате MAX от user с уникальным mid
+def voiceRaw(mid: str, user: int) -> dict[str, object]:
+    raw = loadMaxUpdate("voice")
+    message = raw["message"]
+    assert isinstance(message, dict)
+    message["body"] = {**message["body"], "mid": mid}
+    message["sender"] = {**message["sender"], "user_id": user}
+    return raw
+
+
+# Примечание: два голосовых подряд от одного пользователя — по очереди, у разных — параллельно
+async def test_voicesOfOneUserInOrder() -> None:
+    events: list[str] = []
+    allDone = asyncio.Event()
+
+    # Примечание: «долгое» распознавание: начало и конец обработки каждого апдейта
+    async def slowHandler(update: IncomingUpdate) -> None:
+        events.append(f"start:{update.maxUserId}:{update.updateId}")
+        await asyncio.sleep(0.05)
+        events.append(f"end:{update.maxUserId}:{update.updateId}")
+        if sum(e.startswith("end:") for e in events) == 3:
+            allDone.set()
+
+    gateway = FakeMaxGateway()
+    for mid, user in (("m1", 1), ("m2", 1), ("m3", 2)):
+        await gateway.pushRaw(voiceRaw(mid, user))
+    loop = PollingLoop(
+        gateway=gateway, handler=slowHandler, markerStore=InMemoryMarkerStore(), pollTimeoutS=0
+    )
+    stopping = asyncio.Event()
+    running = asyncio.create_task(loop.run(stopping))
+    async with asyncio.timeout(2):
+        await allDone.wait()
+    stopping.set()
+    await running
+    firstUser = [e for e in events if ":1:" in e]
+    assert [e.split(":")[0] for e in firstUser] == ["start", "end", "start", "end"]
+    starts = [i for i, e in enumerate(events) if e.startswith("start:")]
+    assert events[starts[1]].startswith("start:2:")  # второй пользователь не ждёт первого

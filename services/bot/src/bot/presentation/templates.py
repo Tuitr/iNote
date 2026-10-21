@@ -1,8 +1,15 @@
 from typing import Final
 
+from bot.domain.voice import VoiceFailureReason
+
 # Тексты бота для пользователя — здесь, а не в use case (CLAUDE.md, «Стандарты»).
 # Ответы по существу (подтверждения, списки) строит агент по своим шаблонам.
-VOICE_NOT_YET: Final = "Голосовые подключу позже, пока напиши текстом."
+# Ошибки голосового бот отвечает сам, не доходя до агента
+VOICE_NO_SPEECH: Final = "Не расслышал — повтори или напиши текстом.\nКод: {code}"
+VOICE_TOO_LONG: Final = (
+    "Слишком длинное голосовое — уложись в минуту или напиши текстом.\nКод: {code}"
+)
+VOICE_FAILED: Final = "Не получилось распознать голосовое — напиши текстом.\nКод: {code}"
 GREETING: Final = (
     "Привет! Я помогу с задачами, напоминаниями и встречами. Напиши, например: "
     "«что у меня сегодня» или «напомни завтра в 10 позвонить Ивану»."
@@ -24,9 +31,13 @@ COMMAND_NAME_LIMIT: Final = 32
 
 # Примечание: русские тексты бота (реализация порта BotTexts)
 class RussianTexts:
-    # Примечание: голосовые до появления ASR (J1)
-    def voiceNotSupportedYet(self) -> str:
-        return VOICE_NOT_YET
+    # Примечание: голосовое не распознано: свой текст на «не расслышал» и «слишком длинное»
+    def voiceFailed(self, reason: VoiceFailureReason, code: str) -> str:
+        if reason is VoiceFailureReason.NO_SPEECH:
+            return VOICE_NO_SPEECH.format(code=code)
+        if reason is VoiceFailureReason.TOO_LONG:
+            return VOICE_TOO_LONG.format(code=code)
+        return VOICE_FAILED.format(code=code)
 
     # Примечание: приветствие на «Начать»
     def greeting(self) -> str:

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Final
 
 from bot.application.ports import RateDecision, StoredAction
-from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateId
+from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateId, VoiceRef
+from bot.domain.voice import AudioFile, Transcript, VoiceFailureError
 from bot.infrastructure.max_mapper import mapRawUpdate
 from contracts.reply import ActionRequest, MessageRequest, Reply
 
@@ -108,3 +109,51 @@ class InMemoryCallbackStore:
 # Примечание: Reply из contracts/examples/reply/<name>
 def exampleReply(name: str) -> Reply:
     return Reply.fromJson((REPLY_EXAMPLES / name).read_bytes())
+
+
+# Примечание: скачивание голосового: байты по ссылке или ошибка по сценарию
+class FakeDownloader:
+    # Примечание: error — чем упасть (например, VoiceFailureError TOO_LONG)
+    def __init__(self, error: VoiceFailureError | None = None) -> None:
+        self.error = error
+        self.urls: list[str] = []
+
+    # Примечание: «скачать» — вернуть OggS + url (чтобы ASR-фейк видел, какое это голосовое)
+    async def download(self, voice: VoiceRef) -> AudioFile:
+        self.urls.append(voice.url)
+        if self.error is not None:
+            raise self.error
+        return AudioFile(content=b"OggS" + voice.url.encode(), mime="audio/ogg")
+
+
+# Примечание: ASR по сценарию: фиксированный Transcript, задержка или ошибка
+class FakeAsr:
+    # Примечание: text — что «распознано»; low — неуверенно; delayS — сколько думать
+    def __init__(
+        self,
+        text: str = "Напомни завтра в 10 позвонить Ивану",
+        *,
+        low: bool = False,
+        delayS: float = 0.0,
+        error: VoiceFailureError | None = None,
+    ) -> None:
+        self.text = text
+        self.low = low
+        self.delayS = delayS
+        self.error = error
+        self.calls: list[AudioFile] = []
+
+    # Примечание: «распознанный» текст сценария или ошибка
+    async def transcribe(self, audio: AudioFile) -> Transcript:
+        self.calls.append(audio)
+        if self.delayS:
+            await asyncio.sleep(self.delayS)
+        if self.error is not None:
+            raise self.error
+        return Transcript(
+            text=self.text,
+            rawText=self.text.lower(),
+            confidence=0.4 if self.low else 0.95,
+            lowConfidence=self.low,
+            durationMs=2100,
+        )

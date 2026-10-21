@@ -3,7 +3,7 @@ from typing import Protocol
 
 from bot.domain.messages import MessageId, OutgoingMessage
 from bot.domain.updates import MaxChatId, MaxUserId, UpdateBatch, UpdateId, VoiceRef
-from bot.domain.voice import AudioFile, Transcript
+from bot.domain.voice import AudioFile, Transcript, VoiceFailureReason
 from contracts.reply import ActionRequest, ArgValue, MessageRequest, Reply
 
 
@@ -89,8 +89,8 @@ class MarkerStore(Protocol):
 
 # Примечание: тексты бота; живут в presentation/templates.py, а не в use case
 class BotTexts(Protocol):
-    # Примечание: заглушка голосовых до J1
-    def voiceNotSupportedYet(self) -> str: ...
+    # Примечание: голосовое не распознано; code — первые 6 символов trace_id
+    def voiceFailed(self, reason: VoiceFailureReason, code: str) -> str: ...
 
     # Примечание: приветствие на «Начать»
     def greeting(self) -> str: ...

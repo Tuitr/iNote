@@ -12,6 +12,8 @@ from common.lifecycle import TaskRegistry, managedTasks
 from services.bot.tests.fakes import (
     CountingRateLimiter,
     FakeAgent,
+    FakeAsr,
+    FakeDownloader,
     InMemoryCallbackStore,
     InMemoryDeduplicator,
 )
@@ -49,6 +51,18 @@ def callbacks() -> InMemoryCallbackStore:
     return InMemoryCallbackStore()
 
 
+# Примечание: скачивание голосовых по сценарию
+@pytest.fixture
+def downloader() -> FakeDownloader:
+    return FakeDownloader()
+
+
+# Примечание: ASR по сценарию
+@pytest.fixture
+def asr() -> FakeAsr:
+    return FakeAsr()
+
+
 # Примечание: реестр фоновых задач на тест (для «печатает…»)
 @pytest_asyncio.fixture
 async def tasks() -> AsyncIterator[TaskRegistry]:
@@ -66,6 +80,8 @@ def handler(
     agent: FakeAgent,
     callbacks: InMemoryCallbackStore,
     tasks: TaskRegistry,
+    downloader: FakeDownloader,
+    asr: FakeAsr,
 ) -> HandleUpdate:
     mapper = ReplyToMaxMapper(callbacks, mode=OpenAppMode.OPEN_APP, botUsername=BOT_USERNAME)
     return HandleUpdate(
@@ -78,5 +94,7 @@ def handler(
             callbacks=callbacks,
             mapper=mapper,
             typing=TypingIndicator(gateway, tasks, intervalS=0.02),
+            downloader=downloader,
+            asr=asr,
         )
     )
