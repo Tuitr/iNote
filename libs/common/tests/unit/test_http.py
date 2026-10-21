@@ -139,3 +139,31 @@ async def test_retryDisabledPerCall(client: ServiceHttpClient) -> None:
     with pytest.raises(AppError):
         await client.get("/health/live", retry=False)
     assert route.call_count == 1
+
+
+# Примечание: multipart: файл и поля формы уходят как есть; повтор с ключом шлёт то же аудио
+async def test_multipartPostRetried() -> None:
+    seen: list[httpx.Request] = []
+
+    # Примечание: первый ответ 503, второй 200
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(503 if len(seen) == 1 else 200, json={})
+
+    client = ServiceHttpClient(
+        baseUrl="http://asr",
+        timeoutS=1,
+        retry=RetryPolicy(retries=1, initialDelayS=0, maxDelayS=0),
+        transport=httpx.MockTransport(handle),
+    )
+    await client.post(
+        "/v1/transcribe",
+        files={"audio": ("voice.ogg", b"OggS-bytes", "audio/ogg")},
+        data={"lang": "ru-RU"},
+        idempotencyKey="k",
+    )
+    assert len(seen) == 2
+    for request in seen:
+        assert request.headers["content-type"].startswith("multipart/form-data")
+        assert b"OggS-bytes" in request.content
+        assert b'name="lang"\r\n\r\nru-RU' in request.content

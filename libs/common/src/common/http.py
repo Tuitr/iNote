@@ -21,6 +21,9 @@ IDEMPOTENT_METHODS: Final = frozenset({"GET", "HEAD", "OPTIONS", "PUT", "DELETE"
 IDEMPOTENCY_KEY_HEADER: Final = "Idempotency-Key"
 RETRYABLE_STATUSES: Final = frozenset({429, 500, 502, 503, 504})
 
+# Файл в multipart: (имя файла, байты, content-type) — байты, чтобы повтор отправил то же тело
+type MultipartFile = tuple[str, bytes, str]
+
 _log = getLogger(__name__)
 
 
@@ -76,11 +79,19 @@ class ServiceHttpClient:
     ) -> httpx.Response:
         return await self.request("GET", path, params=params, retry=retry)
 
-    # Примечание: POST повторяется только с ключом идемпотентности (правило 6)
+    # Примечание: POST повторяется только с ключом идемпотентности (правило 6); files — multipart
     async def post(
-        self, path: str, *, json: object = None, idempotencyKey: str | None = None
+        self,
+        path: str,
+        *,
+        json: object = None,
+        files: Mapping[str, MultipartFile] | None = None,
+        data: Mapping[str, str] | None = None,
+        idempotencyKey: str | None = None,
     ) -> httpx.Response:
-        return await self.request("POST", path, json=json, idempotencyKey=idempotencyKey)
+        return await self.request(
+            "POST", path, json=json, files=files, data=data, idempotencyKey=idempotencyKey
+        )
 
     # Примечание: общий вызов; не-2xx превращается в AppError (конверт соседа или upstream_*)
     async def request(
@@ -90,6 +101,8 @@ class ServiceHttpClient:
         *,
         json: object = None,
         params: Mapping[str, str] | None = None,
+        files: Mapping[str, MultipartFile] | None = None,
+        data: Mapping[str, str] | None = None,
         idempotencyKey: str | None = None,
         retry: bool = True,
     ) -> httpx.Response:
@@ -103,7 +116,13 @@ class ServiceHttpClient:
         # Примечание: одна попытка; «временный» статус поднимаем исключением для tenacity
         async def attempt() -> httpx.Response:
             response = await self._client.request(
-                method, path, json=json, params=params, headers=headers
+                method,
+                path,
+                json=json,
+                params=params,
+                files=dict(files) if files else None,
+                data=dict(data) if data else None,
+                headers=headers,
             )
             if response.status_code in RETRYABLE_STATUSES:
                 raise _RetryableStatusError(response)
