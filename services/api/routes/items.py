@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Header, Query, Request
+from fastapi import APIRouter, Header, Query, Request, Response, status
 
 from libs.contracts.api import ItemsByDayResponse, ItemsDay, ItemsRange, ItemsResponse
 from libs.contracts.errors import ErrorCode
@@ -14,7 +14,9 @@ from libs.contracts.tools import Caller, DateOnly, SearchItemsArgs, SearchItemsR
 from libs.core.services.items import ItemService
 from libs.core.services.search import SearchService
 from libs.core.services.time import day_label
+from libs.core.services.users import UserProfile
 from libs.core.services.versioning import read_version
+from services.api import list_cache
 from services.api.current_user import CurrentUser
 from services.api.docs import UNAUTHORIZED, VALIDATION, error_example, example, json_example
 from services.http_errors import HttpError
@@ -28,6 +30,10 @@ router = APIRouter(prefix="/v1", tags=["items"], responses=UNAUTHORIZED)
 @router.get(
     "/items",
     response_model=ItemsByDayResponse | ItemsResponse,
+    description=(
+        "ETag равен версии данных пользователя: с If-None-Match той же версии ответ 304 без тела. "
+        "Ответы кешируются на 5 минут под версией данных."
+    ),
     responses={
         200: {
             "content": {
@@ -51,25 +57,55 @@ async def list_items(
     kind: Annotated[list[ItemKind] | None, Query()] = None,
     item_status: Annotated[Literal["open", "done", "all"], Query(alias="status")] = "open",
     group: Literal["day"] | None = None,
-    # Есть в контракте J5 с S0; ответ 304 по нему — шаг 23 (ETag).
     if_none_match: Annotated[str | None, Header()] = None,
-) -> ItemsByDayResponse | ItemsResponse:
+) -> Response:
     if to <= from_:
         raise HttpError(
             ErrorCode.VALIDATION_ERROR,
             "Конец периода должен быть позже начала",
             {"invalid": ["query.to"]},
         )
+    redis = request.app.state.redis_client
+    # Версию читаем до данных: если запись изменится между чтениями, свежие данные попадут
+    # под старую версию и сразу устареют. Наоборот было бы хуже — старые данные под новой версией.
+    version = await read_version(redis, user.user_id)
+    etag = f'"{version}"'
+    if if_none_match == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+    kinds = sorted(value.value for value in kind) if kind else None
+    key = list_cache.cache_key(
+        user.user_id,
+        version,
+        {"from": from_, "to": to, "kind": kinds, "status": item_status, "group": group},
+    )
+    body = await list_cache.read_cached(redis, key)
+    if body is None:
+        response = await _list_response(
+            request, user, from_, to, kinds, item_status, group, version
+        )
+        body = response.model_dump_json(by_alias=True).encode()
+        await list_cache.store(redis, key, body)
+    return Response(content=body, media_type="application/json", headers={"ETag": etag})
+
+
+async def _list_response(
+    request: Request,
+    user: UserProfile,
+    start: date,
+    end: date,
+    kinds: list[str] | None,
+    item_status: str,
+    group: str | None,
+    version: int,
+) -> ItemsByDayResponse | ItemsResponse:
     item_service: ItemService = request.app.state.item_service
     tz = user.settings.tz
-    kinds = [value.value for value in kind] if kind else None
     items = await item_service.list_period(
-        user.user_id, tz, from_, to, kinds, item_status, MAX_API_ITEMS
+        user.user_id, tz, start, end, kinds, item_status, MAX_API_ITEMS
     )
-    period = ItemsRange(from_=from_, to=to, tz=tz)
-    version = await read_version(request.app.state.redis_client, user.user_id)
+    period = ItemsRange(from_=start, to=end, tz=tz)
     if group == "day":
-        return ItemsByDayResponse(range=period, version=version, days=_by_day(from_, to, items))
+        return ItemsByDayResponse(range=period, version=version, days=_by_day(start, end, items))
     return ItemsResponse(range=period, version=version, items=items)
 
 
