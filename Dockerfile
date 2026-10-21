@@ -13,9 +13,12 @@ COPY pyproject.toml ./
 COPY libs/__init__.py ./libs/
 COPY libs/contracts ./libs/contracts
 COPY libs/core ./libs/core
-COPY services/__init__.py services/http_common.py ./services/
+COPY services/__init__.py services/http_common.py services/http_errors.py ./services/
 COPY services/api ./services/api
 COPY services/mcp ./services/mcp
+# Миграции: их накатывает контейнер migrate (alembic upgrade head).
+COPY alembic.ini ./
+COPY migrations ./migrations
 # Примеры J3: на них отвечает MCP-заглушка.
 COPY contracts/examples ./contracts/examples
 # Установка в режиме -e оставляет код в /app, поэтому пути к contracts/examples

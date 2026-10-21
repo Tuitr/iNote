@@ -9,6 +9,8 @@ x-backend-d: &backend-d
       condition: service_healthy
     redis:
       condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
   restart: unless-stopped
 
 services:
@@ -33,6 +35,16 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Одноразовый контейнер: накатывает миграции и выходит, mcp и api стартуют после него.
+  migrate:
+    build: .
+    image: inote-d
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   mcp:
     <<: *backend-d
