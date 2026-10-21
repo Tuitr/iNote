@@ -74,3 +74,14 @@ def test_consoleFormat(capsys: pytest.CaptureFixture[str]) -> None:
     assert "started" in out
     assert "port=8000" in out
     assert "service=bot" in out
+
+
+# Примечание: HTTP-клиенты (httpx и httpx2 из SDK MCP) на INFO молчат — URL запросов не в логах
+@pytest.mark.parametrize("name", ["httpx", "httpx2"])
+def test_httpClientsQuiet(name: str, capsys: pytest.CaptureFixture[str]) -> None:
+    configureLogging("svc", "INFO", "json")
+    logging.getLogger(name).info("HTTP Request: POST http://mcp:8000/mcp?token=secret")
+    logging.getLogger(name).warning("retrying")
+    out = capsys.readouterr().out
+    assert "token=secret" not in out
+    assert "retrying" in out

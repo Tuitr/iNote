@@ -11,7 +11,8 @@ from common.config import LogFormat, LogLevel
 SERVICE_FIELD: Final = "service"
 # uvicorn.access дублирует наш лог запроса из RequestContextMiddleware
 _QUIET_LOGGERS: Final = ("uvicorn.access",)
-_ROUTED_LOGGERS: Final = ("uvicorn", "uvicorn.error", "httpx", "httpcore")
+_ROUTED_LOGGERS: Final = ("uvicorn", "uvicorn.error", "httpx", "httpcore", "httpx2")
+_HTTP_CLIENT_LOGGERS: Final = ("httpx", "httpx2")
 
 
 # Примечание: процессор structlog, добавляющий имя сервиса в каждую запись
@@ -66,8 +67,9 @@ def configureLogging(
         routed.propagate = True
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
-    # httpx на INFO пишет полный URL каждого запроса — шум и риск утечки параметров
-    logging.getLogger("httpx").setLevel(max(logging.WARNING, root.level))
+    # httpx (и httpx2 из SDK MCP) на INFO пишет полный URL каждого запроса — шум и риск утечки
+    for name in _HTTP_CLIENT_LOGGERS:
+        logging.getLogger(name).setLevel(max(logging.WARNING, root.level))
 
 
 # Примечание: логгер с привязкой к contextvars (trace_id, user_id)
