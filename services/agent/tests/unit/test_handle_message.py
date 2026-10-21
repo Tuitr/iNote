@@ -7,7 +7,8 @@ import structlog
 
 from agent.application.handle_message import HandleMessage, TurnDeps
 from agent.application.ports import DialogContext
-from agent.presentation.basic_renderer import BasicReplyRenderer
+from agent.presentation.reply_renderer import TemplateReplyRenderer
+from agent.presentation.templates import loadTemplates
 from common.errors import AppError, ErrorCode
 from common.trace import traceContext
 from contracts.agent_side import Clarify, ItemBrief, Turn, TurnInput, TurnResult
@@ -60,7 +61,7 @@ class Rig:
                 clock=FixedClock(NOW),
                 brain=brain,
                 tools=self.tools,
-                renderer=BasicReplyRenderer(),
+                renderer=TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)),
             ),
             turnTimeoutS=turnTimeoutS,
             lockWaitS=lockWaitS,

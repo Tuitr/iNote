@@ -24,8 +24,9 @@ from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
 from agent.infrastructure.stub_replies import ExampleReplySource, loadReplyExample
 from agent.infrastructure.system_clock import SystemClock
-from agent.presentation.basic_renderer import BasicReplyRenderer
+from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.routes import buildAgentRouter
+from agent.presentation.templates import loadTemplates
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
 from common.http import RetryPolicy, ServiceHttpClient
@@ -69,6 +70,9 @@ def createApp(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         brain = custom.brain or buildBrain(config.brain)
+        # Шаблоны проверяются здесь: опечатка в ru.toml — агент не стартует
+        templates = loadTemplates()
+        clock = custom.clock or SystemClock()
         actionSource = ExampleReplySource(loadReplyExample(config.stubActionReply))
         async with managedTasks() as tasks:
             redis = (custom.redisFactory or createRedis)(config.redisUrl)
@@ -92,10 +96,10 @@ def createApp(
                 resolver=custom.resolver or HttpUserResolver(mcpHttp, store),
                 lock=RedisUserLock(store),
                 contextStore=RedisDialogContextStore(store),
-                clock=custom.clock or SystemClock(),
+                clock=clock,
                 brain=brain,
                 tools=tools,
-                renderer=custom.renderer or BasicReplyRenderer(),
+                renderer=custom.renderer or TemplateReplyRenderer(templates, clock),
             )
             app.state.redis = redis
             app.state.mcpHttp = mcpHttp

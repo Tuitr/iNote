@@ -1,0 +1,45 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "undo",
+        "args": {
+          "item_id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3"
+        },
+        "kind": "action",
+        "text": "Отменить"
+      },
+      {
+        "action": "reschedule",
+        "args": {
+          "item_id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3"
+        },
+        "kind": "action",
+        "text": "Изменить время"
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "start_param": "item_3d624e4c-3100-5efb-8c97-6435ee0d07e3",
+        "text": "В календаре"
+      }
+    ]
+  ],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": true,
+      "ends_at": null,
+      "id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3",
+      "kind": "task",
+      "starts_at": null,
+      "status": "open",
+      "title": "Купить хлеб"
+    }
+  ],
+  "speak": false,
+  "state": "done",
+  "text": "Задача создана\nКупить хлеб\nбез срока",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}
