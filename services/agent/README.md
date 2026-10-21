@@ -17,8 +17,14 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` пока
 - **Пользователь** (`infrastructure/http_user_resolver.py`): J8 `POST /internal/v1/users/resolve` в mcp-контейнере
   (5 с, 1 повтор с ключом `user-resolve:{max_user_id}`), кеш `va:v1:agent:user:{max_user_id}` на 1 ч.
   J8 недоступен — пользователь получает ответ с кодом ошибки. Readiness: Redis и `/health/live` mcp-контейнера.
-- Пока временно: ответ без шаблонов (`BasicReplyRenderer`, шаг 5), на стенде — MCP-заглушка C из
-  `deploy/stub/mcp` вместо заглушки D.
+- **Ответ** (`presentation/reply_renderer.py`, тексты — `presentation/templates/ru.toml`): подтверждения, списки
+  и поиск строятся из `actions[].result.data`, а не из текста модели (правило 3); даты по-русски в поясе
+  пользователя («Завтра, чт 22 октября, 10:00», год — только у чужого года); названия экранируются под
+  markdown; текст ≤ 4000 символов, хвост списка — «…и ещё N». Свободные ответы и вопросы — текстом модели,
+  без разметки. У каждого кода ошибки свой текст + «Код: <6 символов trace_id>». Шаблоны проверяются
+  при старте: пропущенный текст ошибки или лишний ключ — агент не стартует.
+- Кнопки ответа (`undo`, `reschedule`, `list_period`, `clarify`) обрабатывает `/v1/actions` — с S2; сейчас там
+  заглушка. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
 - Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).
 - Слои: `domain` ← `application` (порты, ход) ← `infrastructure` (Redis, MCP, ScriptedBrain, настройки),
   `presentation` (роуты, рендер); `main.py` — composition root, всё создаётся в `lifespan`.
