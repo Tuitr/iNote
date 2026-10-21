@@ -1,3 +1,4 @@
+# --- зона C ---
 # --- общее ---
 .env
 .env.*
@@ -28,3 +29,4 @@ CLAUDE.md
 !/docs/decisions.md
 !/docs/standards.md
 !/docs/redis-keys.md
+# --- конец зоны C ---

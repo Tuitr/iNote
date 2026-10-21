@@ -3,8 +3,8 @@
 set -euo pipefail
 
 BOT_URL="${BOT_URL:-http://127.0.0.1:${BOT_DEV_PORT:-8001}}"
-FIXTURE="${FIXTURE:-services/bot/tests/fixtures/max_updates/text.json}"
-EXPECTED="${EXPECTED:-Вы написали: }"
+FIXTURE="services/bot/tests/fixtures/max_updates/text.json"
+EXPECTED="Вы написали: "
 
 curl -fsS -X POST "$BOT_URL/dev/max/updates" -H 'content-type: application/json' -d @"$FIXTURE" >/dev/null
 for _ in $(seq 1 50); do

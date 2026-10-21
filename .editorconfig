@@ -1,5 +1,6 @@
 root = true
 
+# --- зона C ---
 [*]
 charset = utf-8
 end_of_line = lf
@@ -13,3 +14,4 @@ indent_size = 2
 
 [Makefile]
 indent_style = tab
+# --- конец зоны C ---
