@@ -1,0 +1,9 @@
+{
+  "text": "Не получилось сохранить — сервис записей не ответил. Попробуй ещё раз через минуту.\nКод: ab12f0",
+  "format": "plain",
+  "state": "error",
+  "buttons": [],
+  "items": [],
+  "speak": false,
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

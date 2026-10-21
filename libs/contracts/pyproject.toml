@@ -3,7 +3,7 @@ name = "va-contracts"
 version = "0.0.0"
 description = "Модели стыков J1–J8 (зона C: Reply, J4, J6, J2-сторона агента)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["va-common"]
+dependencies = ["va-common", "pydantic>=2.11"]
 
 [build-system]
 requires = ["uv_build>=0.8.0,<0.13"]

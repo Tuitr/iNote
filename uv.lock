@@ -873,12 +873,18 @@ name = "va-agent"
 version = "0.0.0"
 source = { editable = "services/agent" }
 dependencies = [
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
     { name = "va-common" },
     { name = "va-contracts" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "uvicorn", specifier = ">=0.32" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },
 ]
@@ -936,11 +942,15 @@ name = "va-contracts"
 version = "0.0.0"
 source = { editable = "libs/contracts" }
 dependencies = [
+    { name = "pydantic" },
     { name = "va-common" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "va-common", editable = "libs/common" }]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "va-common", editable = "libs/common" },
+]
 
 [[package]]
 name = "virtualenv"
