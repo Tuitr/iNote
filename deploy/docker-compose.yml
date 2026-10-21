@@ -86,11 +86,13 @@ services:
       REDIS_URL: redis://redis:6379/0
       BOT_MAX_MODE: ${BOT_MAX_MODE:-fake}
       BOT_AGENT_URL: http://agent:8000
+      BOT_ASR_URL: http://asr:8000
     ports:
       - "127.0.0.1:${BOT_DEV_PORT:-8001}:8000"
     depends_on:
       redis: { condition: service_healthy }
       agent: { condition: service_healthy }
+      asr: { condition: service_healthy }
 
   agent:
     <<: *python-service
@@ -111,9 +113,13 @@ services:
 
   # --- заглушки чужих зон: одна мини-картинка deploy/stub; владелец — в STUB_OWNER ---
   asr:
-    # Владелец A. После мержа заменить на build: services/asr
-    <<: *stub
-    environment: { STUB_NAME: asr, STUB_OWNER: A }
+    # ВРЕМЕННО (S2, C): ASR-заглушка по J1 из deploy/stub/asr («OggS» + текст → текст).
+    # После мержа заменить на ASR_MODE=fake от A, затем на build: services/asr (владелец A)
+    <<: *python-service
+    build:
+      context: stub/asr
+    image: va/stub-asr:local
+    restart: "no"
 
   mcp:
     # ВРЕМЕННО (S1, C): MCP-заглушка с инструментами из deploy/stub/mcp/fixtures.
