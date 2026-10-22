@@ -1,9 +1,14 @@
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 
 type UpdateId = str
 type MaxUserId = int
 type MaxChatId = int
+
+# Заголовок webhook с секретом подписки (dev.max.ru, POST /subscriptions) — имя, а не секрет
+WEBHOOK_SECRET_HEADER: Final = "X-Max-Bot-Api-Secret"  # noqa: S105
 
 
 # Примечание: вид входящего события; command — текст, начинающийся с «/»
@@ -47,3 +52,7 @@ class IncomingUpdate:
 class UpdateBatch:
     updates: tuple[IncomingUpdate, ...]
     marker: int | None
+
+
+# сырой апдейт MAX → событие; None — неподдержанное, чужое или битое (причина — в логе)
+type RawUpdateMapper = Callable[[Mapping[str, object]], IncomingUpdate | None]

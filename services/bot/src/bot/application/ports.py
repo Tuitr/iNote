@@ -21,6 +21,10 @@ class MaxGateway(Protocol):
     # Примечание: «печатает…» в чате (POST /chats/{chat_id}/actions, typing_on)
     async def sendTyping(self, chatId: MaxChatId) -> None: ...
 
+    # Примечание: подписка на webhook (POST /subscriptions) с секретом для X-Max-Bot-Api-Secret;
+    # вызывается при каждом старте в режиме webhook — MAX отписывает бота после 8 ч без 200
+    async def ensureSubscription(self, url: str, secret: str) -> None: ...
+
 
 # Примечание: скачать голосовое сразу — ссылка MAX живёт около суток; ошибка — VoiceFailureError
 class AudioDownloader(Protocol):

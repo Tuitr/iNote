@@ -14,10 +14,12 @@ from redis.asyncio import Redis
 from bot.application.handle_update import BotDeps, HandleUpdate
 from bot.application.reply_mapper import ReplyToMaxMapper
 from bot.application.typing import TypingIndicator
+from bot.application.update_dispatcher import UpdateDispatcher
 from bot.infrastructure.audio_downloader import HttpAudioDownloader
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
 from bot.infrastructure.http_agent import HttpAgentGateway
 from bot.infrastructure.http_asr import HttpAsrGateway
+from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
 from bot.infrastructure.redis_adapters import (
@@ -29,6 +31,7 @@ from bot.infrastructure.settings import BotSettings
 from bot.presentation.dev_routes import buildDevRouter
 from bot.presentation.polling import PollingLoop
 from bot.presentation.templates import RussianTexts
+from bot.presentation.webhook import buildWebhookRouter
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
 from common.http import RetryPolicy, ServiceHttpClient
@@ -53,6 +56,7 @@ def createApp(
     agentTransport: httpx.AsyncBaseTransport | None = None,
     asrTransport: httpx.AsyncBaseTransport | None = None,
     filesTransport: httpx.AsyncBaseTransport | None = None,
+    webhookTransport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or BotSettings()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
@@ -90,6 +94,12 @@ def createApp(
         filesHttp = httpx.AsyncClient(
             timeout=config.voiceDownloadTimeoutS, follow_redirects=True, transport=filesTransport
         )
+        # фейк в режиме webhook стучится на свой адрес подписки (в тестах — ASGI-транспорт)
+        webhookClient = (
+            httpx.AsyncClient(transport=webhookTransport)
+            if config.updatesMode == "webhook" and config.maxMode == "fake"
+            else None
+        )
         callbacks = RedisCallbackStore(store)
         app.state.devConsole = gateway
         app.state.redis = redis
@@ -112,22 +122,34 @@ def createApp(
                         asr=HttpAsrGateway(asrHttp),
                     )
                 )
-                # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить нельзя;
-                # для real здесь будет RedisMarkerStore(store)
-                loop = PollingLoop(
-                    gateway=gateway,
-                    handler=handler,
-                    markerStore=InMemoryMarkerStore(),
-                    pollTimeoutS=config.pollTimeoutS,
-                )
-                _ = tasks.spawn(loop.run(tasks.stopping), name=POLLING_TASK)
-                _log.info("bot_started", max_mode=config.maxMode)
+                dispatcher = UpdateDispatcher(handler, tasks, config.maxConcurrentUpdates)
+                app.state.dispatcher = dispatcher
+                if config.updatesMode == "webhook":
+                    # фейк доставляет апдейты POST-ом на свой же /webhook/max — как MAX
+                    if webhookClient is not None:
+                        gateway.attachWebhook(webhookClient, tasks)
+                    await gateway.ensureSubscription(
+                        config.webhookUrl, config.webhookSecret.get_secret_value()
+                    )
+                else:
+                    # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить
+                    # нельзя; для real здесь будет RedisMarkerStore(store)
+                    loop = PollingLoop(
+                        gateway=gateway,
+                        dispatcher=dispatcher,
+                        markerStore=InMemoryMarkerStore(),
+                        pollTimeoutS=config.pollTimeoutS,
+                    )
+                    _ = tasks.spawn(loop.run(tasks.stopping), name=POLLING_TASK)
+                _log.info("bot_started", max_mode=config.maxMode, updates_mode=config.updatesMode)
                 yield
                 _log.info("bot_stopping")
         finally:
             await agentHttp.aclose()
             await asrHttp.aclose()
             await filesHttp.aclose()
+            if webhookClient is not None:
+                await webhookClient.aclose()
             await redis.aclose()
             _log.info("bot_stopped")
 
@@ -136,6 +158,10 @@ def createApp(
     installMiddleware(app, serviceToken=config.serviceToken)
     # Готов, когда доступны Redis и агент (план зоны C); MAX в readiness не дёргаем
     app.include_router(buildHealthRouter({"redis": _redisCheck(app), "agent": _agentCheck(app)}))
+    if config.updatesMode == "webhook":
+        app.include_router(
+            buildWebhookRouter(config.webhookSecret.get_secret_value(), mapRawUpdate)
+        )
     if config.maxMode == "fake":
         app.include_router(buildDevRouter())
     return app

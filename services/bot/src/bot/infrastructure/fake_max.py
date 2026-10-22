@@ -6,11 +6,19 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
-from bot.application.dev_console import CallbackAnswerRecord, SentMessageRecord, VoiceFileRecord
+import httpx
+
+from bot.application.dev_console import (
+    CallbackAnswerRecord,
+    SentMessageRecord,
+    SubscriptionRecord,
+    VoiceFileRecord,
+)
 from bot.domain.messages import MessageId, OutgoingMessage
-from bot.domain.updates import MaxChatId, UpdateBatch
+from bot.domain.updates import WEBHOOK_SECRET_HEADER, MaxChatId, UpdateBatch
 from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.max_outgoing import attachments
+from common.lifecycle import TaskRegistry
 from common.logging import getLogger
 
 _log = getLogger(__name__)
@@ -19,6 +27,9 @@ _log = getLogger(__name__)
 # Фейковое голосовое = «OggS» + текст в UTF-8: ASR-заглушка возвращает этот текст (deploy/stub/asr)
 FAKE_AUDIO_MAGIC: Final = b"OggS"
 FILES_PATH: Final = "/dev/max/files"
+# Типы апдейтов, на которые подписывается бот (как в схеме MAX)
+UPDATE_TYPES: Final = ("message_created", "message_callback", "bot_started")
+WEBHOOK_TIMEOUT_S: Final = 30.0
 
 
 # Примечание: настройки фейка: sendDelayS — сеть MAX; filesBaseUrl — откуда бот скачает голосовое
@@ -41,13 +52,55 @@ class FakeMaxGateway:
         self._typing: list[MaxChatId] = []
         self._files: dict[str, VoiceFileRecord] = {}
         self._messageIds = itertools.count(1)
+        self._subscriptions: list[SubscriptionRecord] = []
+        self._secret = ""
+        self._webhook: tuple[httpx.AsyncClient, TaskRegistry] | None = None
+        # доставка по webhook — по одной и в порядке подкладывания (asyncio.Lock — FIFO)
+        self._delivery = asyncio.Lock()
+
+    # Примечание: режим webhook: после подписки апдейты не копятся для GET /updates, а уходят
+    # POST-ом на адрес подписки с секретом — как у настоящего MAX; client — HTTP к самому боту
+    def attachWebhook(self, client: httpx.AsyncClient, tasks: TaskRegistry) -> None:
+        self._webhook = (client, tasks)
+
+    # Примечание: POST /subscriptions: запоминаем адрес и секрет; повтор при рестарте — норма
+    async def ensureSubscription(self, url: str, secret: str) -> None:
+        self._subscriptions.append(
+            SubscriptionRecord(url=url, hasSecret=bool(secret), updateTypes=UPDATE_TYPES)
+        )
+        self._secret = secret
+        _log.info("max_subscribed", fake=True, update_types=list(UPDATE_TYPES))
+
+    # Примечание: подписки бота (для /dev/max/subscriptions и тестов)
+    def subscriptions(self) -> tuple[SubscriptionRecord, ...]:
+        return tuple(self._subscriptions)
 
     # Примечание: подложить сырой апдейт MAX; возвращает его позицию (marker = позиция + 1)
     async def pushRaw(self, raw: Mapping[str, object]) -> int:
+        if self._webhook is not None and self._subscriptions:
+            client, tasks = self._webhook
+            _ = tasks.spawn(self._deliver(client, dict(raw)), name="fake-max-webhook")
         async with self._changed:
             self._raw.append(dict(raw))
             self._changed.notify_all()
             return len(self._raw) - 1
+
+    # Примечание: доставка одного апдейта на webhook; не 200 — в лог (MAX повторил бы позже)
+    async def _deliver(self, client: httpx.AsyncClient, raw: dict[str, object]) -> None:
+        url = self._subscriptions[-1].url
+        async with self._delivery:
+            try:
+                response = await client.post(
+                    url,
+                    json=raw,
+                    headers={WEBHOOK_SECRET_HEADER: self._secret},
+                    timeout=WEBHOOK_TIMEOUT_S,
+                )
+            except httpx.HTTPError as exc:
+                _log.warning("fake_webhook_failed", error=type(exc).__name__)
+                return
+        if response.status_code != httpx.codes.OK:
+            _log.warning("fake_webhook_rejected", status=response.status_code)
 
     # Примечание: голосовое от пользователя: файл в памяти + апдейт со ссылкой на него (как в MAX)
     async def pushVoice(self, maxUserId: int, maxChatId: int, text: str) -> int:

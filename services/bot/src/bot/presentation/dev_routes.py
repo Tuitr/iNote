@@ -34,6 +34,13 @@ class CallbackAnswerDto(WireModel):
     notification: str | None
 
 
+# Примечание: подписка webhook (секрет не показываем)
+class SubscriptionDto(WireModel):
+    url: str
+    hasSecret: bool
+    updateTypes: list[str]
+
+
 # Примечание: журнал фейкового MAX
 class SentLog(WireModel):
     messages: list[SentMessageDto]
@@ -70,6 +77,14 @@ def buildDevRouter() -> APIRouter:
         if voice is None:
             raise AppError(ErrorCode.NOT_FOUND, "файла нет")
         return Response(content=voice.content, media_type=voice.mime)
+
+    # Примечание: подписки webhook, которые бот оформил при старте (ensureSubscription)
+    @router.get("/subscriptions")
+    async def subscriptions(request: Request) -> list[SubscriptionDto]:
+        return [
+            SubscriptionDto(url=s.url, hasSecret=s.hasSecret, updateTypes=list(s.updateTypes))
+            for s in _console(request).subscriptions()
+        ]
 
     # Примечание: что бот отправил — сообщения и ответы на кнопки
     @router.get("/sent")

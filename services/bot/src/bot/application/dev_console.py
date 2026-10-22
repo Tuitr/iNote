@@ -28,6 +28,14 @@ class CallbackAnswerRecord:
     notification: str | None
 
 
+# Примечание: подписка webhook фейкового MAX; секрет наружу не показываем — только факт
+@dataclass(frozen=True)
+class SubscriptionRecord:
+    url: str
+    hasSecret: bool
+    updateTypes: tuple[str, ...]
+
+
 # Примечание: dev-порт фейкового MAX для /dev/max/*; в режиме real его нет вовсе
 class DevMaxConsole(Protocol):
     # Примечание: подложить сырой апдейт MAX, вернуть его позицию в очереди
@@ -47,3 +55,6 @@ class DevMaxConsole(Protocol):
 
     # Примечание: файл голосового для скачивания ботом
     def voiceFile(self, fileId: str) -> VoiceFileRecord | None: ...
+
+    # Примечание: подписки webhook, которые оформил бот (по порядку вызовов)
+    def subscriptions(self) -> tuple[SubscriptionRecord, ...]: ...

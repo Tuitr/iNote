@@ -1,14 +1,11 @@
 import asyncio
-from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import Final
 
 from bot.application.ports import MarkerStore, MaxGateway
-from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateBatch
+from bot.application.update_dispatcher import UpdateDispatcher
+from bot.domain.updates import UpdateBatch
 from common.logging import getLogger
-from common.trace import newTraceId, traceContext
-
-type UpdateHandler = Callable[[IncomingUpdate], Awaitable[object]]
 
 INITIAL_BACKOFF_S: Final = 1.0
 MAX_BACKOFF_S: Final = 30.0
@@ -18,19 +15,19 @@ _log = getLogger(__name__)
 
 # Примечание: цикл long polling: тянет апдейты, обрабатывает, marker фиксирует ПОСЛЕ обработки
 class PollingLoop:
-    # Примечание: handler — use case HandleUpdate; loop сам не знает бизнес-логики
+    # Примечание: dispatcher — общая с webhook очередь апдейтов; loop сам не знает бизнес-логики
     def __init__(
         self,
         *,
         gateway: MaxGateway,
-        handler: UpdateHandler,
+        dispatcher: UpdateDispatcher,
         markerStore: MarkerStore,
         pollTimeoutS: int,
         initialBackoffS: float = INITIAL_BACKOFF_S,
         maxBackoffS: float = MAX_BACKOFF_S,
     ) -> None:
         self._gateway = gateway
-        self._handler = handler
+        self._dispatcher = dispatcher
         self._markerStore = markerStore
         self._pollTimeoutS = pollTimeoutS
         self._initialBackoffS = initialBackoffS
@@ -99,22 +96,9 @@ class PollingLoop:
         with suppress(TimeoutError):
             await asyncio.wait_for(stopping.wait(), timeout=delayS)
 
-    # Примечание: апдейты одного пользователя — строго по порядку, разных — параллельно
+    # Примечание: страница → диспетчер (порядок по пользователю, параллельно между разными);
+    # ждём, пока страница обработана целиком, — marker фиксируется после
     async def _processBatch(self, batch: UpdateBatch) -> None:
-        byUser: dict[MaxUserId, list[IncomingUpdate]] = {}
         for update in batch.updates:
-            byUser.setdefault(update.maxUserId, []).append(update)
-        await asyncio.gather(*(self._processSequentially(items) for items in byUser.values()))
-
-    # Примечание: очередь одного пользователя
-    async def _processSequentially(self, updates: list[IncomingUpdate]) -> None:
-        for update in updates:
-            await self._processOne(update)
-
-    # Примечание: бот — начало цепочки: новый trace_id на апдейт; ошибка апдейта не роняет цикл
-    async def _processOne(self, update: IncomingUpdate) -> None:
-        with traceContext(newTraceId()):
-            try:
-                await self._handler(update)
-            except Exception:  # noqa: BLE001
-                _log.exception("update_failed", update_id=update.updateId, kind=update.kind.value)
+            self._dispatcher.submit(update)
+        await self._dispatcher.join()

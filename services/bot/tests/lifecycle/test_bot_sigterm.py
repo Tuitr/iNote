@@ -118,3 +118,68 @@ def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: 
     assert events.index("max_message_sent") < events.index("update_handled")
     assert events.index("update_handled") < events.index("polling_stopped")
     assert "shutdown_tasks_cancelled" not in events
+
+
+# Примечание: webhook: два апдейта приняты (200), SIGTERM, пока первый «отправляется» —
+# оба доработаны до остановки, задачи не отменены, цикла опроса нет
+def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) -> None:
+    port, agentPort = freePort(), freePort()
+    base = f"http://127.0.0.1:{port}"
+    logFile = tmp_path / "bot.log"
+    secret = "lifecycle-secret"
+    agent = subprocess.Popen(  # noqa: S603 — своя заглушка из репо
+        [sys.executable, str(AGENT_STUB)],
+        env={**os.environ, "STUB_NAME": "agent", "STUB_OWNER": "C", "STUB_PORT": str(agentPort)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    env = {
+        **os.environ,
+        "SERVICE_TOKEN": "t" * 32,
+        "REDIS_URL": redisContainerUrl,
+        "BOT_MAX_MODE": "fake",
+        "BOT_UPDATES_MODE": "webhook",
+        "BOT_WEBHOOK_URL": f"{base}/webhook/max",
+        "BOT_WEBHOOK_SECRET": secret,
+        "BOT_SHUTDOWN_TIMEOUT_S": "10",
+        "BOT_FAKE_SEND_DELAY_MS": str(SEND_DELAY_MS),
+        "LOG_FORMAT": "json",
+        "BOT_AGENT_URL": f"http://127.0.0.1:{agentPort}",
+    }
+    command = [sys.executable, "-m", "uvicorn", "bot.main:createApp", "--factory"]
+    with logFile.open("w") as out:
+        proc = subprocess.Popen(  # noqa: S603 — свой сервис текущим интерпретатором
+            [*command, "--host", "127.0.0.1", "--port", str(port)],
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+    try:
+        waitUntil(lambda: isReady(base), 15, "ready")
+        first = loadMaxUpdate("text")
+        second = json.loads(json.dumps(first))
+        second["message"]["body"]["mid"] = "mid.lifecycle.second"
+        for raw in (first, second):
+            response = httpx.post(
+                f"{base}/webhook/max",
+                json=raw,
+                headers={"X-Max-Bot-Api-Secret": secret},
+                timeout=2,
+            )
+            assert response.status_code == 200
+        # оба апдейта приняты, первый сейчас «отправляется» (1,5 с) — SIGTERM посреди обработки
+        waitUntil(lambda: readEvents(logFile).count("webhook_accepted") == 2, 5, "приём")
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=30)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        agent.terminate()
+        agent.wait(timeout=5)
+    events = readEvents(logFile)
+    assert proc.returncode in {0, -signal.SIGTERM}, logFile.read_text()
+    assert events.count("update_handled") == 2
+    assert events.index("bot_stopping") < events.index("max_message_sent")
+    assert events.index("update_handled") < events.index("bot_stopped")
+    assert "shutdown_tasks_cancelled" not in events
+    assert "polling_started" not in events

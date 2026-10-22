@@ -1,9 +1,13 @@
-from typing import ClassVar, Literal
+import re
+from typing import ClassVar, Final, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 
 from bot.application.reply_mapper import OpenAppMode
 from common.config import BaseServiceSettings
+
+# MAX: секрет подписки — 5…256 символов [a-zA-Z0-9_-] (dev.max.ru, POST /subscriptions)
+WEBHOOK_SECRET_RE: Final = re.compile(r"^[a-zA-Z0-9_-]{5,256}$")
 
 
 # Примечание: настройки бота; свои переменные — только с префиксом BOT_
@@ -38,3 +42,30 @@ class BotSettings(BaseServiceSettings):
         default="http://127.0.0.1:8000", validation_alias="BOT_FAKE_FILES_URL"
     )
     typingIntervalS: float = Field(default=4.0, gt=0, validation_alias="BOT_TYPING_INTERVAL_S")
+    # polling — GET /updates в цикле; webhook — POST /webhook/max от MAX (стенд с HTTPS)
+    updatesMode: Literal["polling", "webhook"] = Field(
+        default="polling", validation_alias="BOT_UPDATES_MODE"
+    )
+    # Адрес подписки: у настоящего MAX — только https:// на 443 без порта в URL
+    webhookUrl: str = Field(default="", validation_alias="BOT_WEBHOOK_URL")
+    webhookSecret: SecretStr = Field(default=SecretStr(""), validation_alias="BOT_WEBHOOK_SECRET")
+    # Общий предел одновременных обработок апдейтов (у одного пользователя — всегда по одному)
+    maxConcurrentUpdates: int = Field(
+        default=16, ge=1, le=256, validation_alias="BOT_MAX_CONCURRENT_UPDATES"
+    )
+
+    # Примечание: webhook без адреса или секрета не запускаем; настоящему MAX — только https
+    @model_validator(mode="after")
+    def _webhookConfigured(self) -> Self:
+        if self.updatesMode != "webhook":
+            return self
+        if not self.webhookUrl:
+            msg = "BOT_UPDATES_MODE=webhook требует BOT_WEBHOOK_URL"
+            raise ValueError(msg)
+        if self.maxMode == "real" and not self.webhookUrl.startswith("https://"):
+            msg = "BOT_WEBHOOK_URL для MAX — только https:// (порт 443)"
+            raise ValueError(msg)
+        if not WEBHOOK_SECRET_RE.match(self.webhookSecret.get_secret_value()):
+            msg = "BOT_WEBHOOK_SECRET: 5–256 символов из a-z, A-Z, 0-9, _ и -"
+            raise ValueError(msg)
+        return self
