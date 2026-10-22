@@ -25,7 +25,8 @@
   `BOT_UPDATES_MODE=webhook`. `Caddyfile` пропускает наружу только `POST /webhook/max` → бот, `/api/v1/*` → api
   (префикс `/api` срезается) и остальное → max_app; `/internal`, `/dev`, `/health`, `/v1`, `/mcp`, `/metrics` — 404
   (проверяет `tests/deploy`). Нужны `STAND_DOMAIN`, `ACME_EMAIL`, `BOT_WEBHOOK_SECRET` и токен MAX в `.env`;
-  `make stand-config` — проверить конфиг, `make deploy` — поднять (только по прямой просьбе; пока бот в `real`
+  `make stand-config` — проверить `.env` (`deploy/stand-check.sh`: токен не заглушка, секрет, домен) и конфиг,
+  `make deploy` — поднять (только по прямой просьбе; пока бот в `real`
   не стартует — адаптер MAX не выбран).
 
 Webhook локально, без HTTPS: `BOT_UPDATES_MODE=webhook BOT_WEBHOOK_URL=http://127.0.0.1:8000/webhook/max
