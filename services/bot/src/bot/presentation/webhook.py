@@ -38,18 +38,19 @@ def buildWebhookRouter(secret: str, mapUpdate: RawUpdateMapper) -> APIRouter:
     router = APIRouter(tags=["max"])
     expected = secret.encode()
 
-    # Примечание: чужой секрет — 401 без разбора; битый или неподдержанный апдейт — 200 (иначе
-    # MAX будет повторять его 10 раз); сервис останавливается — 503, MAX пришлёт повторно
+    # Примечание: чужой секрет — 401 без чтения тела; больше 1 МБ — 400 (это не апдейт MAX);
+    # битый или неподдержанный апдейт — 200 (иначе MAX будет повторять его 10 раз);
+    # сервис останавливается — 503, MAX пришлёт повторно
     @router.post(WEBHOOK_PATH)
     async def webhook(request: Request) -> JSONResponse:
         given = request.headers.get(WEBHOOK_SECRET_HEADER, "").encode()
         if not hmac.compare_digest(given, expected):
             _log.warning("webhook_secret_mismatch", has_header=bool(given))
             raise AppError(ErrorCode.UNAUTHORIZED, "неверный секрет webhook")
-        body = await request.body()
-        if len(body) > MAX_BODY_BYTES:
-            _log.warning("webhook_body_too_large", bytes=len(body))
-            return JSONResponse({"ok": True})
+        body = await _readLimited(request)
+        if body is None:
+            _log.warning("webhook_body_too_large", limit=MAX_BODY_BYTES)
+            raise AppError(ErrorCode.VALIDATION_ERROR, "тело больше лимита")
         raw = _parse(body)
         update = mapUpdate(raw) if raw is not None else None
         if update is None:
@@ -63,6 +64,22 @@ def buildWebhookRouter(secret: str, mapUpdate: RawUpdateMapper) -> APIRouter:
         return JSONResponse({"ok": True})
 
     return router
+
+
+# Примечание: тело не больше MAX_BODY_BYTES — читаем потоком и бросаем, не дочитав огромное;
+# None — больше лимита (по Content-Length или по факту)
+async def _readLimited(request: Request) -> bytes | None:
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
+        return None
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY_BYTES:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 # Примечание: тело → JSON-объект; не JSON или не объект — None (с записью в лог)

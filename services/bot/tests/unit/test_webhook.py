@@ -229,3 +229,19 @@ def test_webhookSettingsValidated(hookEnv: pytest.MonkeyPatch, patch: dict[str, 
         hookEnv.setenv(name, value)
     with pytest.raises(ValidationError):
         BotSettings()
+
+
+# Примечание: тело больше 1 МБ — 400 и без обработки: и по Content-Length, и потоком без него
+async def test_bodyTooLarge(running: httpx.AsyncClient, agent: GatedAgent) -> None:
+    big = b'{"update_type": "message_created", "pad": "' + b"x" * (1024 * 1024) + b'"}'
+    response = await running.post("/webhook/max", content=big, headers=HEADERS)
+    assert response.status_code == 400
+
+    # Примечание: тело кусками без Content-Length (chunked)
+    async def chunks() -> AsyncIterator[bytes]:
+        for _ in range(17):
+            yield b"x" * 65536
+
+    streamed = await running.post("/webhook/max", content=chunks(), headers=HEADERS)
+    assert streamed.status_code == 400
+    assert agent.requests == []

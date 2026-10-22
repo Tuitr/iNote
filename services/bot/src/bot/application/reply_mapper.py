@@ -48,7 +48,9 @@ class ReplyToMaxMapper:
     async def toMessage(self, reply: Reply, chatId: MaxChatId) -> OutgoingMessage:
         rows: list[list[KeyboardButton]] = []
         for row in reply.buttons:
-            buttons = [b for b in [await self._button(button) for button in row] if b is not None]
+            buttons = [
+                b for b in [await self._button(button, chatId) for button in row] if b is not None
+            ]
             rows.extend(_splitRow(buttons))
         if len(rows) > MAX_KEYBOARD_ROWS:
             _log.warning("keyboard_rows_trimmed", rows=len(rows), limit=MAX_KEYBOARD_ROWS)
@@ -61,10 +63,12 @@ class ReplyToMaxMapper:
             keyboard=tuple(tuple(row) for row in rows),
         )
 
-    # Примечание: одна кнопка Reply → кнопка MAX; без адреса бота ссылку не построить — пропуск
-    async def _button(self, button: ReplyButton) -> KeyboardButton | None:
+    # Примечание: одна кнопка Reply → кнопка MAX; без адреса бота ссылку не построить — пропуск;
+    # действие кнопки привязано к чату, куда она ушла
+    async def _button(self, button: ReplyButton, chatId: MaxChatId) -> KeyboardButton | None:
         if isinstance(button, ActionButton):
-            key = await self._callbacks.save(StoredAction(button.action, dict(button.args)))
+            stored = StoredAction(button.action, dict(button.args), chatId=chatId)
+            key = await self._callbacks.save(stored)
             return KeyboardButton(ButtonKind.CALLBACK, button.text, payload=key)
         return self._appButton(button)
 

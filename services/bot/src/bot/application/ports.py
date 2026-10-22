@@ -47,11 +47,13 @@ class AgentGateway(Protocol):
     async def sendAction(self, request: ActionRequest) -> Reply: ...
 
 
-# Примечание: что лежит за callback-кнопкой: действие и аргументы для /v1/actions
+# Примечание: что лежит за callback-кнопкой: действие, аргументы для /v1/actions и чат, куда
+# ушла кнопка (нажатие из другого чата — например, пересланное сообщение — не принимаем)
 @dataclass(frozen=True)
 class StoredAction:
     action: str
     args: dict[str, ArgValue]
+    chatId: MaxChatId | None = None
 
 
 # Примечание: payload кнопки MAX — короткий ключ; само действие — в Redis на 24 ч

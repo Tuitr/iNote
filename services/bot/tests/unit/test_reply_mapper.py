@@ -37,7 +37,7 @@ async def test_examples(name: str, mode: OpenAppMode, jsonSnapshot: SnapshotAsse
     assert toNewMessageBody(message) == jsonSnapshot
 
 
-# Примечание: action → callback с коротким ключом; за ключом — ровно action и args из Reply
+# Примечание: action → callback с коротким ключом; за ключом — action и args из Reply и чат
 async def test_actionStoredBehindKey() -> None:
     mapped, store = mapper()
     message = await mapped.toMessage(exampleReply("confirm.json"), chatId=5)
@@ -45,9 +45,10 @@ async def test_actionStoredBehindKey() -> None:
     assert (undo.kind, undo.text) == (ButtonKind.CALLBACK, "Отменить")
     assert undo.payload is not None
     stored = store.saved[undo.payload]
-    assert (stored.action, stored.args) == (
+    assert (stored.action, stored.args, stored.chatId) == (
         "undo",
         {"item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"},
+        5,
     )
     assert reschedule.payload != undo.payload
 

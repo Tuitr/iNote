@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from bot.application.update_dispatcher import UpdateDispatcher
+from bot.application.update_dispatcher import MAX_QUEUE_PER_USER, UpdateDispatcher
 from bot.domain.updates import IncomingUpdate
 from common.lifecycle import ShuttingDownError, TaskRegistry
 from common.trace import currentTraceId, traceContext
@@ -124,3 +124,24 @@ async def test_joinIdleAndReuse() -> None:
     dispatcher.submit(update(1, 1))
     await dispatcher.join()
     assert recorder.order == ["u1-0", "u1-1"]
+
+
+# Примечание: очередь одного пользователя ограничена — лишнее не принимается, остальные целы
+async def test_queueLimitPerUser() -> None:
+    gate = asyncio.Event()
+    handled: list[str] = []
+
+    # Примечание: первый апдейт держит очередь, пока тест не отпустит
+    async def handler(item: IncomingUpdate) -> None:
+        await gate.wait()
+        handled.append(item.updateId)
+
+    dispatcher = UpdateDispatcher(handler, TaskRegistry())
+    for n in range(MAX_QUEUE_PER_USER + 10):
+        dispatcher.submit(update(1, n))
+    dispatcher.submit(update(2, 0))
+    await asyncio.sleep(0)
+    gate.set()
+    await dispatcher.join()
+    assert len([u for u in handled if u.startswith("u1-")]) == MAX_QUEUE_PER_USER
+    assert "u2-0" in handled

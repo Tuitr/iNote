@@ -77,6 +77,23 @@ async def test_agentCrash(handler: HandleUpdate, gateway: FakeMaxGateway, agent:
     assert gateway.sentMessages()[0].text.startswith("Не получилось связаться")
 
 
+# Примечание: кнопку нажали в другом чате (пересланное сообщение) — «Кнопка устарела», агента нет
+async def test_foreignChatButtonRejected(
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    agent: FakeAgent,
+    callbacks: InMemoryCallbackStore,
+) -> None:
+    key = await callbacks.save(StoredAction("undo", {"item_id": "7f3a9c2e"}, chatId=111))
+    update = dataclasses.replace(loadIncoming("callback"), callbackPayload=key)
+    assert await handler(update) is HandleOutcome.BUTTON_EXPIRED
+    assert gateway.callbackAnswers()[0].notification == templates.BUTTON_EXPIRED
+    assert agent.actions == []
+    same = await callbacks.save(StoredAction("undo", {"item_id": "7f3a9c2e"}, chatId=CHAT_ID))
+    pressed = dataclasses.replace(update, callbackPayload=same, updateId="cb-same")
+    assert await handler(pressed) is HandleOutcome.HANDLED
+
+
 # Примечание: кнопка: спиннер гаснет сразу, действие из хранилища уходит в /v1/actions
 async def test_callbackGoesToAgent(
     handler: HandleUpdate,

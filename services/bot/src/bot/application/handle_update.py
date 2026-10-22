@@ -176,7 +176,11 @@ class HandleUpdate:
     async def _onCallback(self, update: IncomingUpdate) -> HandleOutcome:
         callbackId = _callbackId(update)
         stored = await self._d.callbacks.load(update.callbackPayload or "")
-        if stored is None or update.maxChatId is None:
+        foreign = stored is not None and stored.chatId not in {None, update.maxChatId}
+        if foreign:
+            # кнопку нажали не в том чате, куда она ушла (пересланное сообщение) — не выполняем
+            _log.warning("callback_foreign_chat")
+        if stored is None or foreign or update.maxChatId is None:
             await self._d.gateway.answerCallback(callbackId, self._d.texts.buttonExpired())
             return HandleOutcome.BUTTON_EXPIRED
         await self._d.gateway.answerCallback(callbackId, None)

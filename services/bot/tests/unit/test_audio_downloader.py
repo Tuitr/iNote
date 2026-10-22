@@ -85,3 +85,23 @@ class _Stream(httpx.AsyncByteStream):
     async def __aiter__(self) -> AsyncIterator[bytes]:
         async for chunk in chunks(LIMIT + 100):
             yield chunk
+
+
+# Примечание: настоящий MAX — только https: http-ссылка и редирект на http не скачиваются
+@respx.mock
+async def test_httpsOnly() -> None:
+    plain = respx.get("http://internal:8000/x").mock(return_value=httpx.Response(200))
+    respx.get("https://cdn.example/voice").mock(
+        return_value=httpx.Response(302, headers={"location": "http://internal:8000/x"})
+    )
+    async with httpx.AsyncClient(follow_redirects=True) as http:
+        downloader = HttpAudioDownloader(http, httpsOnly=True)
+        for url in ("http://internal:8000/x", "https://cdn.example/voice"):
+            with pytest.raises(VoiceFailureError) as failure:
+                await downloader.download(VoiceRef(url=url, token="t"))
+            assert failure.value.reason is VoiceFailureReason.UNAVAILABLE
+    assert plain.call_count == 0
+    respx.get(URL).mock(return_value=httpx.Response(200, content=b"OggS"))
+    async with httpx.AsyncClient() as http:
+        audio = await HttpAudioDownloader(http, httpsOnly=True).download(VOICE)
+    assert audio.content == b"OggS"

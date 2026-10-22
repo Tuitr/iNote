@@ -20,16 +20,30 @@ _log = getLogger(__name__)
 
 # Примечание: скачивает файл потоком и обрывает на лимите — большое голосовое не держим в памяти
 class HttpAudioDownloader:
-    # Примечание: http — клиент без сервисного токена (ссылка внешняя), создан в lifespan
-    def __init__(self, http: httpx.AsyncClient, *, maxBytes: int = DEFAULT_MAX_BYTES) -> None:
+    # Примечание: http — клиент без сервисного токена (ссылка внешняя), создан в lifespan;
+    # httpsOnly — настоящий MAX: ссылка и все редиректы только https (не ходим во внутреннюю сеть)
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        *,
+        maxBytes: int = DEFAULT_MAX_BYTES,
+        httpsOnly: bool = False,
+    ) -> None:
         self._http = http
         self._maxBytes = maxBytes
+        if httpsOnly:
+            http.event_hooks.setdefault("request", []).append(_requireHttps)
 
     # Примечание: превышение лимита — как audio_too_long; сеть и 5xx — повтор, потом «недоступно»
     async def download(self, voice: VoiceRef) -> AudioFile:
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 return await self._fetch(voice.url)
+            except _InsecureUrlError:
+                _log.warning("voice_url_rejected", reason="not_https")
+                raise VoiceFailureError(
+                    VoiceFailureReason.UNAVAILABLE, "voice_url_rejected"
+                ) from None
             except (httpx.TransportError, _RetryableDownloadError) as exc:
                 _log.warning("voice_download_retry", attempt=attempt, error=type(exc).__name__)
         raise VoiceFailureError(VoiceFailureReason.UNAVAILABLE, "voice_download_failed")
@@ -60,6 +74,17 @@ class HttpAudioDownloader:
     def _tooLarge(self, size: int) -> VoiceFailureError:
         _log.info("voice_too_large", bytes=size, limit=self._maxBytes)
         return VoiceFailureError(VoiceFailureReason.TOO_LONG, "voice_too_large")
+
+
+# Примечание: ссылка или редирект не по https — не идём (в режиме настоящего MAX)
+class _InsecureUrlError(httpx.RequestError):
+    pass
+
+
+# Примечание: хук клиента на каждый запрос, включая редиректы
+async def _requireHttps(request: httpx.Request) -> None:
+    if request.url.scheme != "https":
+        raise _InsecureUrlError("ссылка на голосовое не https", request=request)
 
 
 # Примечание: 5xx от хранилища MAX — временная беда, стоит повторить

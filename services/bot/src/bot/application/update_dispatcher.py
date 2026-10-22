@@ -18,6 +18,9 @@ from common.trace import TraceId, currentTraceId, newTraceId, traceContext
 type UpdateHandler = Callable[[IncomingUpdate], Awaitable[object]]
 
 DEFAULT_MAX_CONCURRENT: Final = 16
+# Очередь одного пользователя: лимит частоты (20 в минуту) всё равно отсечёт лишнее, а память
+# под очередь без предела — риск при шквале апдейтов; сверх предела апдейт не принимается
+MAX_QUEUE_PER_USER: Final = 50
 TASK_PREFIX: Final = "updates"
 
 _log = getLogger(__name__)
@@ -50,6 +53,9 @@ class UpdateDispatcher:
         traceId = currentTraceId() or newTraceId()
         queue = self._queues.get(update.maxUserId)
         if queue is not None:
+            if len(queue) >= MAX_QUEUE_PER_USER:
+                _log.warning("update_dropped_queue_full", update_id=update.updateId)
+                return
             queue.append((update, traceId))
             return
         queue = deque([(update, traceId)])

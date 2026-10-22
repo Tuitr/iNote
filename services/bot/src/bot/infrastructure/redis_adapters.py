@@ -87,7 +87,10 @@ class RedisCallbackStore:
     # Примечание: новый ключ на каждую кнопку — нажатие нельзя подобрать или подделать
     async def save(self, action: StoredAction) -> str:
         key = secrets.token_urlsafe(CALLBACK_KEY_BYTES)
-        payload = json.dumps({"action": action.action, "args": action.args}, ensure_ascii=False)
+        payload = json.dumps(
+            {"action": action.action, "args": action.args, "chat_id": action.chatId},
+            ensure_ascii=False,
+        )
         await self._store.setValue(_callbackKey(key), payload, ttlS=self._ttlS)
         return key
 
@@ -102,12 +105,15 @@ class RedisCallbackStore:
             data = json.loads(raw)
             action = str(data["action"])
             args = _ARGS.validate_python(data.get("args", {}))
+            chatId = data.get("chat_id")
+            if chatId is not None and (isinstance(chatId, bool) or not isinstance(chatId, int)):
+                raise TypeError(chatId)
         except (ValueError, KeyError, TypeError, ValidationError):
             _log.warning("callback_corrupted")
             return None
         if not _ACTION_RE.fullmatch(action):
             return None
-        return StoredAction(action=action, args=args)
+        return StoredAction(action=action, args=args, chatId=chatId)
 
 
 # Примечание: ключ Redis кнопки

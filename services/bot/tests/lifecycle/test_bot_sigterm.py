@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Final
 
@@ -50,6 +51,16 @@ def isReady(base: str) -> bool:
         return False
 
 
+# Примечание: апдейт-текст с уникальным mid: Redis контейнера общий на сессию тестов, и тот же
+# mid из другого теста дедуп отсёк бы как повтор
+def uniqueText() -> dict[str, object]:
+    raw = loadMaxUpdate("text")
+    message = raw["message"]
+    assert isinstance(message, dict)
+    message["body"]["mid"] = f"mid.lifecycle.{uuid.uuid4().hex}"
+    return raw
+
+
 # Примечание: события JSON-логов процесса по порядку
 def readEvents(logFile: Path) -> list[str]:
     events = []
@@ -93,7 +104,7 @@ def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: 
         )
     try:
         waitUntil(lambda: isReady(base), 15, "ready")
-        raw = loadMaxUpdate("text")
+        raw = uniqueText()
         httpx.post(f"{base}/dev/max/updates", json=raw, timeout=2).raise_for_status()
         # Ключ дедупа появился — обработка началась и сейчас «отправляет» ответ (1,5 с)
         message = raw["message"]
@@ -156,9 +167,9 @@ def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) 
         )
     try:
         waitUntil(lambda: isReady(base), 15, "ready")
-        first = loadMaxUpdate("text")
+        first = uniqueText()
         second = json.loads(json.dumps(first))
-        second["message"]["body"]["mid"] = "mid.lifecycle.second"
+        second["message"]["body"]["mid"] = f"mid.lifecycle.{uuid.uuid4().hex}"
         for raw in (first, second):
             response = httpx.post(
                 f"{base}/webhook/max",

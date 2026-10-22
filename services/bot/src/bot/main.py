@@ -118,7 +118,11 @@ def createApp(
                             callbacks, mode=config.openAppMode, botUsername=config.username
                         ),
                         typing=TypingIndicator(gateway, tasks, config.typingIntervalS),
-                        downloader=HttpAudioDownloader(filesHttp, maxBytes=config.voiceMaxBytes),
+                        downloader=HttpAudioDownloader(
+                            filesHttp,
+                            maxBytes=config.voiceMaxBytes,
+                            httpsOnly=config.maxMode == "real",
+                        ),
                         asr=HttpAsrGateway(asrHttp),
                     )
                 )
