@@ -1,4 +1,4 @@
-# Один образ на весь блок роли D: mcp, api (и позже scheduler, migrate)
+# Один образ на весь блок роли D: mcp, api, scheduler и migrate
 # отличаются только командой запуска, которую задаёт compose.
 FROM python:3.12-slim
 
@@ -13,9 +13,10 @@ COPY pyproject.toml ./
 COPY libs/__init__.py ./libs/
 COPY libs/contracts ./libs/contracts
 COPY libs/core ./libs/core
-COPY services/__init__.py services/http_common.py services/http_errors.py ./services/
+COPY services/__init__.py services/http_common.py services/http_errors.py services/seed.py ./services/
 COPY services/api ./services/api
 COPY services/mcp ./services/mcp
+COPY services/scheduler ./services/scheduler
 # Миграции: их накатывает контейнер migrate (alembic upgrade head).
 COPY alembic.ini ./
 COPY migrations ./migrations

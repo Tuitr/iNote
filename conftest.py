@@ -21,13 +21,13 @@ from libs.core.tests.fakes import FakeRedis
 from services.mcp.tools.context import ToolServices
 
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
-POSTGRES_IMAGE = "pgvector/pgvector:pg16"
+POSTGRES_IMAGE = "postgres:16"
 _TRUNCATE_ALL = text("TRUNCATE dialog_log, notifications, items, users RESTART IDENTITY")
 
 
 @pytest.fixture(scope="session")
 def test_database_url() -> Iterator[URL]:
-    """PostgreSQL 16 с pgvector в Docker на время прогона — тот же образ, что в compose.
+    """PostgreSQL 16 в Docker на время прогона — тот же образ, что в compose.
 
     URL, а не строка: pytest печатает аргументы упавшего теста, а URL показывает пароль как ***.
     """

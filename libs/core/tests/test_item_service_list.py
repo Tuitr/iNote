@@ -7,12 +7,12 @@ import pytest
 from libs.contracts.tools import CreateEventArgs, CreateTaskArgs, ListItemsArgs
 from libs.core.errors import InvalidArgumentsError, NotFoundError
 from libs.core.services.items import MAX_LIST_ITEMS, ItemService
-from libs.core.services.time import local_today
+from libs.core.services.time import now_utc, to_user_tz
 
 pytestmark = pytest.mark.anyio
 
 MOSCOW = ZoneInfo("Europe/Moscow")
-TOMORROW = local_today("Europe/Moscow") + timedelta(days=1)
+TOMORROW = to_user_tz(now_utc(), "Europe/Moscow").date() + timedelta(days=1)
 
 
 def _at(clock: str, day: date = TOMORROW) -> str:

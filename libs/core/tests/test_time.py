@@ -7,7 +7,6 @@ from libs.core.services.time import (
     days_range_utc,
     local_midnight_utc,
     local_time_utc,
-    local_today,
     now_utc,
     to_user_tz,
     to_utc,
@@ -85,10 +84,3 @@ def test_local_time_is_converted_to_utc() -> None:
     assert local_time_utc(date(2026, 10, 22), time(8, 0), MOSCOW) == datetime(
         2026, 10, 22, 5, 0, tzinfo=UTC
     )
-
-
-def test_today_depends_on_tz() -> None:
-    # Киритимати (+14) и Паго-Паго (−11) разделяют 25 часов: там всегда разные даты.
-    difference = local_today("Pacific/Kiritimati") - local_today("Pacific/Pago_Pago")
-
-    assert difference in (timedelta(days=1), timedelta(days=2))

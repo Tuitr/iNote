@@ -1,5 +1,6 @@
 """MCP-сервер (J3): 8 инструментов со схемами из libs/contracts, работают через libs/core."""
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -29,6 +30,8 @@ from services.mcp.tools.list_items import list_items
 from services.mcp.tools.search_items import search_items
 from services.mcp.tools.text import error_text
 from services.mcp.tools.update_item import update_item
+
+logger = logging.getLogger(__name__)
 
 ToolHandler = Callable[[ToolServices, Any], Awaitable[CallToolResult]]
 
@@ -73,6 +76,11 @@ def build_server(services: Callable[[], ToolServices]) -> Server[Any]:
             return await handler(services(), args)
         except DomainError as error:
             return _error_result(error.code, error.message, error.details)
+        except Exception:
+            # Ошибка в нашем коде или упала база: модели — internal без подробностей
+            # (в них может быть SQL), в лог — traceback с trace_id агента.
+            logger.exception("Инструмент %s упал, trace_id=%s", params.name, args.caller.trace_id)
+            return _error_result(ErrorCode.INTERNAL, "Внутренняя ошибка", {})
 
     return Server("inote-mcp", on_list_tools=list_tools, on_call_tool=call_tool)
 

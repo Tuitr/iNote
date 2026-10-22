@@ -15,12 +15,14 @@ def signed_init_data(
     signed_at: datetime,
     start_param: str | None = "today",
     bot_token: str = BOT_TOKEN,
+    first_name: str | None = "Степан",
 ) -> str:
+    user: dict[str, object] = {"id": max_user_id}
+    if first_name is not None:
+        user |= {"first_name": first_name, "last_name": "Иванов"}
     fields = {
         "query_id": "AAHdF6IQAAAAAN0XohDhrOrc",
-        "user": json.dumps(
-            {"id": max_user_id, "first_name": "Степан", "last_name": "Иванов"}, ensure_ascii=False
-        ),
+        "user": json.dumps(user, ensure_ascii=False),
         "auth_date": str(int(signed_at.timestamp())),
     }
     if start_param is not None:

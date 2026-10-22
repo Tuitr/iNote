@@ -2,7 +2,13 @@
 
 from fastapi import APIRouter, Request, Response, status
 
-from libs.contracts.internal import DialogTurnsRequest, ResolveUserRequest, ResolveUserResponse
+from libs.contracts.internal import (
+    DialogTurnsRequest,
+    ResolveUserRequest,
+    ResolveUserResponse,
+    UserSettingsPatch,
+)
+from libs.contracts.settings import UserSettings
 from libs.core.services.dialog import DialogService
 from libs.core.services.users import UserService
 
@@ -19,6 +25,16 @@ async def resolve_user(body: ResolveUserRequest, request: Request) -> ResolveUse
         settings=resolved.settings,
         created=resolved.created,
     )
+
+
+@router.patch("/users/{user_id}/settings")
+async def update_user_settings(
+    user_id: int, body: UserSettingsPatch, request: Request
+) -> UserSettings:
+    """Пользователь меняет настройки в разговоре с ботом («у меня теперь Екатеринбург»)."""
+    user_service: UserService = request.app.state.user_service
+    # null в теле значит «не менять» (контракт UserSettingsPatch).
+    return await user_service.update_settings(user_id, body.model_dump(exclude_none=True))
 
 
 @router.post("/dialog-turns", status_code=status.HTTP_202_ACCEPTED)

@@ -33,7 +33,6 @@ iNote/
 │   ├── common/                 # C. Конфиг, логи (structlog), lifecycle, health-роутер,
 │   │                           #    HTTP-клиент, middleware X-Trace-Id и SERVICE_TOKEN
 │   ├── brain/                  # B. Промпт, цикл инструментов, LLM-клиент
-│   ├── embed/                  # A. Embedder и EMBED_DIM (предложение A)
 │   └── core/                   # D. Логика бэкенда: БД, репозитории, сервисы
 │       ├── config.py           # переменные окружения D
 │       ├── resources.py        # подключения к PostgreSQL и Redis
@@ -54,7 +53,7 @@ iNote/
 │   │   ├── errors.py           # общий конверт ошибки, trace_id
 │   │   ├── routes/             # сейчас stub.py — заглушка /v1
 │   │   └── export_openapi.py   # выгрузка contracts/openapi/api.json
-│   ├── scheduler/              # D. (позже) напоминания, досчёт эмбеддингов, вызывает J4
+│   ├── scheduler/              # D. напоминания и сдвиг серий, вызывает J4
 │   ├── http_common.py          # D. lifespan и /health для mcp и api (до libs/common)
 │   └── tests/                  # D. тесты HTTP-слоя mcp и api
 ├── max_app/                    # E. Мини-приложение: TypeScript, React 18, Vite
@@ -95,7 +94,6 @@ iNote/
 /contracts/openapi/       @D @E            # КиП
 /contracts/examples/      @A @B @C @D @E
 /libs/common/             @C
-/libs/embed/              @A
 /libs/core/               @D
 /services/asr/            @A
 /services/agent/          @C

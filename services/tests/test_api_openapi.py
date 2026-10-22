@@ -21,3 +21,18 @@ def test_every_v1_success_response_has_an_example() -> None:
     ]
 
     assert missing == []
+
+
+def test_mini_app_api_is_read_only() -> None:
+    # Мини-приложение только показывает данные; войти — единственный POST (решение 2026-10-22).
+    spec = create_app().openapi()
+    operations = {
+        f"{method.upper()} {path}"
+        for path, methods in spec["paths"].items()
+        if path.startswith("/v1/")
+        for method in methods
+    }
+
+    assert {operation for operation in operations if not operation.startswith("GET ")} == {
+        "POST /v1/auth/max"
+    }

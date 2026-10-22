@@ -10,11 +10,11 @@ from libs.core.db.models import ItemRow
 from libs.core.errors import NotFoundError
 from libs.core.services.items import ItemService
 from libs.core.services.search import RRF_K, SearchService, rrf_scores
-from libs.core.services.time import local_today
+from libs.core.services.time import now_utc, to_user_tz
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
 
-TOMORROW = local_today("Europe/Moscow") + timedelta(days=1)
+TOMORROW = to_user_tz(now_utc(), "Europe/Moscow").date() + timedelta(days=1)
 
 
 def _caller(user_id: int) -> dict[str, Any]:
