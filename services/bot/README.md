@@ -14,6 +14,14 @@ presentation/    PollingLoop (long polling), /dev/max/*, тексты (templates
 main.py          composition root: createApp() и lifespan
 ```
 
+Апдейты MAX приходят двумя путями (`BOT_UPDATES_MODE`): `polling` — цикл `GET /updates`, marker фиксируется
+после обработки страницы; `webhook` — `POST /webhook/max`: секрет подписки в `X-Max-Bot-Api-Secret` (чужой — 401),
+сразу 200, обработка в фоне; битый или неподдержанный апдейт — тоже 200 (иначе MAX повторяет 10 раз). При каждом
+старте в режиме webhook — `ensureSubscription(BOT_WEBHOOK_URL, BOT_WEBHOOK_SECRET)` (MAX отписывает после 8 ч без 200);
+фейковый MAX тогда доставляет `/dev/max/updates` POST-ом на свой же webhook, подписки — `GET /dev/max/subscriptions`.
+Оба пути отдают апдейты в `UpdateDispatcher`: у пользователя — своя очередь (строго по порядку), разные — параллельно,
+не больше `BOT_MAX_CONCURRENT_UPDATES` сразу; опустевшая очередь удаляется. При SIGTERM принятые апдейты дорабатываются.
+
 `HandleUpdate`: дубль пропускается, сверх лимита (20 в минуту) — «Слишком часто». Текст → агент
 `/v1/messages` (с именем и языком из апдейта), пока ждём — «печатает…» (`typing_on` сразу и раз в 4 с).
 Кнопка: payload — ключ `va:v1:bot:cb:{key}` (24 ч), за ним действие → `/v1/actions`; спиннер MAX гасится сразу,
