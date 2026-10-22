@@ -124,8 +124,8 @@ class ItemService:
     async def update_item(self, args: UpdateItemArgs) -> MutationResult:
         """Переданные поля заменяются, null очищает, непереданные не меняются (J3).
 
-        Повтор того же вызова приводит к тому же состоянию, поэтому ключ идемпотентности
-        здесь хранить не нужно.
+        Повтор того же вызова ничего не меняет, поэтому ключ идемпотентности здесь хранить
+        не нужно.
         """
         caller = args.caller
         changed = args.model_fields_set - {"caller", "id", "allow_conflict"}
@@ -134,7 +134,12 @@ class ItemService:
             user = await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _find_one(items, caller, args.id, deleted=False)
-            values = _updated_values(args, changed, row, user, now)
+            values = {
+                field: value
+                for field, value in _updated_values(args, changed, row, user, now).items()
+                # Двойное нажатие кнопки повторяет те же значения: запись не трогаем.
+                if getattr(row, field) != value
+            }
             starts_at = values.get("starts_at", row.starts_at)
             ends_at = values.get("ends_at", row.ends_at)
             moved = bool({"starts_at", "ends_at"} & values.keys())
@@ -142,11 +147,13 @@ class ItemService:
                 conflict = await _conflict(items, caller, starts_at, ends_at, row.id, now)
                 if conflict is not None:
                     return conflict
-            old_remind_at = row.remind_at
-            row = await items.update(caller.user_id, row.id, values)
-            if row.remind_at != old_remind_at:
-                await _reschedule(session, row, now)
-        await bump_version(self._redis, caller.user_id)
+            if values:
+                old_remind_at = row.remind_at
+                row = await items.update(caller.user_id, row.id, values)
+                if row.remind_at != old_remind_at:
+                    await _reschedule(session, row, now)
+        if values:
+            await bump_version(self._redis, caller.user_id)
         return MutationResult(status="updated", item=to_item(row, caller.tz))
 
     async def complete_item(self, args: CompleteItemArgs) -> MutationResult:

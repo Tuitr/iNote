@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from libs.contracts.tools import CreateTaskArgs
+from libs.contracts.tools import CompleteItemArgs, CreateTaskArgs
 from libs.core.db.models import ItemRow, NotificationRow
 from libs.core.services.items import ItemService
 from libs.core.services.reminders import ReminderService
@@ -342,3 +342,33 @@ async def test_parallel_claims_do_not_take_the_same_notification(
     second_ids = {reminder.notification_id for reminder in second}
     assert first_ids.isdisjoint(second_ids)
     assert len(first_ids | second_ids) == 6
+
+
+async def test_done_button_before_due_means_no_reminder(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    # «Выполнено» из уведомления: агент вызывает complete_item с id нажатия как ключом.
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    item_id = await _reminder(item_service, user_id)
+    await item_service.complete_item(
+        CompleteItemArgs.model_validate(
+            {
+                "caller": {
+                    "user_id": user_id,
+                    "tz": "Europe/Moscow",
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80",
+                    "idempotency_key": "callback-1",
+                },
+                "id": str(item_id),
+            }
+        )
+    )
+    await _execute(session_factory, "UPDATE notifications SET fire_at = now() - interval '1 s'")
+    bot = FakeBot()
+
+    await run_cycle(reminders, _notifier(bot))
+
+    assert bot.requests == []
+    assert (await _notification(session_factory)).status == "cancelled"
