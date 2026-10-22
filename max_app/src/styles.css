@@ -1,0 +1,97 @@
+/* Цвета и отступы — токены MAX UI: светлая и тёмная тема переключаются вместе с ним. */
+
+body {
+  margin: 0;
+}
+
+/* Токены MAX UI объявлены на его корне, а не на body: фон тянем на весь экран здесь. */
+.app {
+  min-height: 100vh;
+  /* Карточки CellList — --background-card; surface отличается от них в обеих темах. */
+  background: var(--background-surface);
+  color: var(--text-primary);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.screen-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px 0;
+}
+
+.screen-header h1 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.center--screen {
+  min-height: 100vh;
+  align-items: center;
+  padding: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.empty > button {
+  margin-top: 8px;
+}
+
+.all-done {
+  padding: 8px 4px;
+}
+
+.item-title--done {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.kind-icon--event {
+  background: var(--gradient-blue);
+}
+
+.kind-icon--reminder {
+  background: var(--gradient-orange);
+}
+
+.kind-icon--task {
+  background: var(--gradient-purple);
+}
+
+.kind-icon--done {
+  background: var(--gradient-green);
+}
