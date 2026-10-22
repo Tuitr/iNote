@@ -1,0 +1,41 @@
+# Стенд с HTTPS (зона C) — дополнение к docker-compose.yml, а не замена:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.stand.yml \
+#     --env-file .env --profile full up -d
+# Наружу — только Caddy на 80/443 (Let's Encrypt), бот получает апдейты MAX по webhook.
+# Нужны STAND_DOMAIN, ACME_EMAIL, BOT_WEBHOOK_SECRET и токен MAX в .env. `make deploy` — по просьбе.
+
+services:
+  caddy:
+    image: caddy:2.10.0-alpine
+    profiles: [mock, full]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      STAND_DOMAIN: ${STAND_DOMAIN:?нужен STAND_DOMAIN (домен стенда для сертификата)}
+      ACME_EMAIL: ${ACME_EMAIL:?нужен ACME_EMAIL (почта для Let's Encrypt)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    depends_on:
+      bot: { condition: service_healthy }
+      api: { condition: service_healthy }
+      max_app: { condition: service_healthy }
+
+  bot:
+    environment:
+      # настоящий MAX и webhook; адрес подписки — тот, что Caddy отдаёт наружу
+      BOT_MAX_MODE: real
+      BOT_UPDATES_MODE: webhook
+      BOT_WEBHOOK_URL: https://${STAND_DOMAIN:?нужен STAND_DOMAIN}/webhook/max
+      BOT_WEBHOOK_SECRET: ${BOT_WEBHOOK_SECRET:?нужен BOT_WEBHOOK_SECRET (5–256 символов a-zA-Z0-9_-)}
+    # на стенде /dev/max/* не публикуем: бот доступен только через Caddy
+    ports: !reset []
+
+volumes:
+  caddy_data:
+  caddy_config:

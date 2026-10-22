@@ -5,7 +5,8 @@ UV ?= uv
 
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
-        test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy
+        test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy \
+        stand-config
 
 # Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
 PROFILE ?= mock
@@ -90,6 +91,12 @@ seed: ## тестовые данные — появится в S1 (владел�
 eval: ## LLM eval — платно, только по прямой просьбе (владелец B)
 	@echo "eval появится в S1 у владельца B (tests/eval)"
 
-deploy: ## деплой на стенд — появится в S1 (C)
-	@echo "deploy появится в S1: стенд, Caddy, GitHub Actions"
+STAND_COMPOSE ?= docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.stand.yml \
+	--env-file .env --profile full
+
+stand-config: ## проверить конфиг стенда с HTTPS (compose + Caddy) без запуска
+	$(STAND_COMPOSE) config --quiet
+
+deploy: ## стенд с HTTPS: Caddy + webhook MAX (только по прямой просьбе; нужны STAND_DOMAIN, токен MAX)
+	$(STAND_COMPOSE) up -d --build --wait
 # --- конец зоны C ---
