@@ -25,9 +25,11 @@ from libs.core.services.versioning import bump_version
 
 logger = logging.getLogger(__name__)
 
-CLAIM_LIMIT = 50
+# Пачка отправляется по одному с таймаутом 10 с: аренда должна пережить всю пачку
+# (5 × 10 с) с запасом, иначе вторая реплика заберёт уведомления посреди отправки.
+CLAIM_LIMIT = 5
 SERIES_LIMIT = 50
-LEASE = timedelta(seconds=60)
+LEASE = timedelta(minutes=5)
 # Задержка перед повтором после неудачной попытки с этим номером; после последней — failed.
 RETRY_DELAYS = tuple(timedelta(minutes=minutes) for minutes in (1, 2, 4, 8, 16))
 
@@ -76,7 +78,7 @@ class ReminderService:
                     logger.warning("Уведомление %s: у пользователя нет max_chat_id", row.id)
                     await notifications.mark_failed(row.user_id, row.id, "no max_chat_id")
                 else:
-                    due.append(_due(row, user, items[0]))
+                    due.append(_due(row, user, user.max_chat_id, items[0]))
             return due
 
     async def finish(self, reminder: DueReminder, delivery: Delivery, error: str) -> None:
@@ -114,14 +116,12 @@ class ReminderService:
         return len(moved)
 
 
-def _due(row: NotificationRow, user: UserRow, item: ItemRow) -> DueReminder:
-    if user.max_chat_id is None:
-        raise ValueError("Напоминание без max_chat_id не отправляется")
+def _due(row: NotificationRow, user: UserRow, max_chat_id: int, item: ItemRow) -> DueReminder:
     return DueReminder(
         notification_id=row.id,
         user_id=user.id,
         max_user_id=user.max_user_id,
-        max_chat_id=user.max_chat_id,
+        max_chat_id=max_chat_id,
         tz=user.tz,
         item=to_item(item, user.tz),
         fire_at=to_user_tz(row.fire_at, user.tz),

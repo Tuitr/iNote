@@ -192,6 +192,7 @@ async def test_dialog_pages_from_newest(
         f"/v1/dialog?limit=1&before={first['next_cursor']}", headers=_auth()
     ).json()
     bad = api_client.get("/v1/dialog?before=abc", headers=_auth())
+    too_big = api_client.get(f"/v1/dialog?before={2**63}", headers=_auth())
 
     assert [turn["role"] for turn in first["turns"]] == ["assistant"]
     assert [brief["id"] for brief in first["turns"][0]["items"]] == [reminder_id]
@@ -199,7 +200,7 @@ async def test_dialog_pages_from_newest(
     assert first["next_cursor"] is not None
     assert [turn["text"] for turn in second["turns"]] == ["Напомни позвонить Ивану"]
     assert second["next_cursor"] is None
-    assert bad.status_code == 400
+    assert (bad.status_code, too_big.status_code) == (400, 400)
 
 
 @pytest.mark.parametrize(

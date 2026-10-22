@@ -83,6 +83,8 @@ class NotificationRepo:
                 ),
                 ItemRow.deleted_at.is_(None),
                 ItemRow.status == "open",
+                # Напоминание запись перенесли, пока оно было в отправке: старое не воскрешаем.
+                NotificationRow.fire_at == ItemRow.remind_at,
             )
             .order_by(NotificationRow.fire_at)
             .limit(limit)

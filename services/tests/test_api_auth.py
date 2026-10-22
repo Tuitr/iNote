@@ -135,3 +135,14 @@ def test_dev_auth_is_off_by_default_and_works_when_enabled(api_env: pytest.Monke
     assert accepted.status_code == 200
     token = accepted.json()["token"]
     assert jwt.decode(token, JWT_SECRET, algorithms=["HS256"])["sub"] == "987654321"
+
+
+def test_login_without_name_keeps_stored_name(api_client: TestClient) -> None:
+    api_client.post("/v1/auth/max", json={"init_data": signed_init_data(123456789, _now())})
+    nameless = signed_init_data(123456789, _now(), first_name=None)
+
+    response = api_client.post("/v1/auth/max", json={"init_data": nameless})
+    token = response.json()["token"]
+
+    me = api_client.get("/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.json()["name"] == "Степан Иванов"

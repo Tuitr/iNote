@@ -23,9 +23,11 @@ async def run_cycle(reminders: ReminderService, notifier: BotNotifier) -> None:
     reclaimed = await reminders.reclaim_expired()
     if reclaimed:
         logger.warning("Вернул в очередь %d уведомлений с истёкшей арендой", reclaimed)
-    for reminder in await reminders.claim_due():
-        delivery, reason = await notifier.notify(reminder)
-        await reminders.finish(reminder, delivery, reason)
+    # Маленькими пачками, пока есть созревшие: аренда каждой пачки короткая.
+    while due := await reminders.claim_due():
+        for reminder in due:
+            delivery, reason = await notifier.notify(reminder)
+            await reminders.finish(reminder, delivery, reason)
     # После доставки: созревшее напоминание серии успевает уйти до того, как она переедет.
     moved = await reminders.schedule_next()
     if moved:

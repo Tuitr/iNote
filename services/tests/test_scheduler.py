@@ -20,12 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from libs.contracts.tools import CompleteItemArgs, CreateEventArgs, CreateTaskArgs
 from libs.core.db.models import ItemRow, NotificationRow
 from libs.core.services.items import ItemService
-from libs.core.services.reminders import ReminderService
+from libs.core.services.reminders import CLAIM_LIMIT, LEASE, Delivery, ReminderService
 from libs.core.services.time import now_utc
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
 from services.scheduler.main import run_cycle
-from services.scheduler.notify import BotNotifier
+from services.scheduler.notify import NOTIFY_TIMEOUT_SECONDS, BotNotifier
 
 pytestmark = pytest.mark.anyio
 
@@ -115,6 +115,12 @@ async def _time_passes(
         session_factory,
         "UPDATE notifications SET next_try_at = now() - interval '1 second'"
         " WHERE next_try_at IS NOT NULL",
+    )
+    # Запись напоминает в то же время, что и её уведомление: Scheduler это сверяет.
+    await _execute(
+        session_factory,
+        "UPDATE items SET remind_at = n.fire_at FROM notifications n"
+        " WHERE n.item_id = items.id AND n.status = 'pending'",
     )
 
 
@@ -511,3 +517,44 @@ async def test_passed_item_without_rrule_is_not_moved(
 
     assert moved == 0
     assert (await _item(session_factory, item_id)).remind_at == before.remind_at
+
+
+async def test_reminder_moved_during_delivery_does_not_come_back(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    # Напоминание уже в отправке, пользователь в этот момент жмёт «Отложить», бот отвечает 503.
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    await _reminder(item_service, user_id)
+    await _time_passes(session_factory)
+    (in_flight,) = await reminders.claim_due()
+    await _execute(session_factory, "UPDATE items SET remind_at = remind_at + interval '1 hour'")
+    await reminders.finish(in_flight, Delivery.RETRY, "HTTP 503")
+    await _execute(session_factory, "UPDATE notifications SET next_try_at = now() - interval '1 s'")
+    bot = FakeBot()
+
+    await run_cycle(reminders, _notifier(bot))
+
+    assert bot.requests == []
+
+
+async def test_more_due_than_one_batch_are_all_sent_in_one_cycle(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    for number in range(CLAIM_LIMIT * 2 + 1):
+        await _reminder(item_service, user_id, title=f"Напоминание {number}")
+    await _time_passes(session_factory)
+    bot = FakeBot()
+
+    await run_cycle(reminders, _notifier(bot))
+
+    assert len(bot.requests) == CLAIM_LIMIT * 2 + 1
+    assert len({body["notification_id"] for body in bot.bodies()}) == CLAIM_LIMIT * 2 + 1
+
+
+def test_lease_outlives_a_whole_batch_of_slow_bot_calls() -> None:
+    assert LEASE.total_seconds() > CLAIM_LIMIT * NOTIFY_TIMEOUT_SECONDS * 2

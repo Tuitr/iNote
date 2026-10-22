@@ -69,11 +69,13 @@ class ItemRepo:
         )
 
     async def find_by_ref(
-        self, user_id: int, ref: str, deleted: bool | None, limit: int
+        self, user_id: int, ref: str, deleted: bool | None, limit: int, for_update: bool
     ) -> list[ItemRow]:
         """Записи по полному id или по его первым 8 символам (J3), не больше limit.
 
         deleted: False — только неудалённые, True — только удалённые, None — любые.
+        for_update — запись будут менять: блокируем до конца транзакции, чтобы параллельное
+        изменение (второй вызов агента, сдвиг серии Scheduler) не перетёрло это.
         """
         if len(ref) == len(str(UUID(int=0))):
             matches_ref = ItemRow.id == UUID(ref)
@@ -84,7 +86,10 @@ class ItemRepo:
             statement = statement.where(
                 ItemRow.deleted_at.is_not(None) if deleted else ItemRow.deleted_at.is_(None)
             )
-        return list(await self._session.scalars(statement.order_by(ItemRow.id).limit(limit)))
+        statement = statement.order_by(ItemRow.id).limit(limit)
+        if for_update:
+            statement = statement.with_for_update()
+        return list(await self._session.scalars(statement))
 
     async def update(self, user_id: int, item_id: UUID, values: dict[str, Any]) -> ItemRow:
         """Меняет поля записи пользователя и updated_at; возвращает запись после изменения."""
@@ -216,6 +221,7 @@ class ItemRepo:
             NotificationRow.item_id == ItemRow.id,
             NotificationRow.status.in_(("pending", "sending")),
             NotificationRow.fire_at <= func.now(),
+            NotificationRow.fire_at == ItemRow.remind_at,
         )
         statement = (
             select(ItemRow)
