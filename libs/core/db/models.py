@@ -78,6 +78,12 @@ class ItemRow(Base):
             "starts_at",
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        # Scheduler обходит открытые серии всех пользователей (schedule_next): их единицы.
+        Index(
+            "ix_items_open_series",
+            "id",
+            postgresql_where=text("rrule IS NOT NULL AND deleted_at IS NULL AND status = 'open'"),
+        ),
         Index("ix_items_search_tsv", "search_tsv", postgresql_using="gin"),
         Index(
             "ix_items_search_text_trgm",
@@ -120,6 +126,12 @@ class NotificationRow(Base):
     __table_args__ = (
         UniqueConstraint("item_id", "fire_at"),
         Index("ix_notifications_fire_at", "fire_at", postgresql_where=text("status = 'pending'")),
+        # reclaim_expired: в аренде единицы уведомлений, а всего их — вся история отправок.
+        Index(
+            "ix_notifications_lease_until",
+            "lease_until",
+            postgresql_where=text("status = 'sending'"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -136,7 +148,11 @@ class NotificationRow(Base):
 
 class DialogLogRow(Base):
     __tablename__ = "dialog_log"
-    __table_args__ = (UniqueConstraint("trace_id", "turn_no"),)
+    __table_args__ = (
+        UniqueConstraint("trace_id", "turn_no"),
+        # История пользователя страницами от новых к старым (курсор — id).
+        Index("ix_dialog_log_user_id_id", "user_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
