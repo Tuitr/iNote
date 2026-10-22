@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from libs.contracts.tools import CompleteItemArgs, CreateTaskArgs
+from libs.contracts.tools import CompleteItemArgs, CreateEventArgs, CreateTaskArgs
 from libs.core.db.models import ItemRow, NotificationRow
 from libs.core.services.items import ItemService
 from libs.core.services.reminders import ReminderService
@@ -58,8 +58,10 @@ def _notifier(bot: FakeBot) -> BotNotifier:
 
 
 @pytest.fixture
-def reminders(session_factory: async_sessionmaker[AsyncSession]) -> ReminderService:
-    return ReminderService(session_factory)
+def reminders(
+    session_factory: async_sessionmaker[AsyncSession], fake_redis: FakeRedis
+) -> ReminderService:
+    return ReminderService(session_factory, fake_redis)
 
 
 async def _user(session_factory: async_sessionmaker[AsyncSession], chat_id: int | None) -> int:
@@ -372,3 +374,140 @@ async def test_done_button_before_due_means_no_reminder(
 
     assert bot.requests == []
     assert (await _notification(session_factory)).status == "cancelled"
+
+
+async def _past_standup(
+    item_service: ItemService,
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: int,
+    rrule: str = "FREQ=WEEKLY",
+    reminder_sent: bool = True,
+) -> ItemRow:
+    """Еженедельная планёрка, чьё вхождение было позавчера; «Выполнено» никто не нажал."""
+    starts_at = (now_utc() + timedelta(days=1)).astimezone(MOSCOW).replace(second=0, microsecond=0)
+    result = await item_service.create_event(
+        CreateEventArgs.model_validate(
+            {
+                "caller": {
+                    "user_id": user_id,
+                    "tz": "Europe/Moscow",
+                    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80",
+                },
+                "title": "Планёрка",
+                "starts_at": starts_at.isoformat(),
+                "rrule": rrule,
+            }
+        )
+    )
+    assert result.item is not None
+    shift = timedelta(days=3)
+    await _execute(
+        session_factory,
+        "UPDATE items SET starts_at = starts_at - CAST(:shift AS interval),"
+        " ends_at = ends_at - CAST(:shift AS interval),"
+        " remind_at = remind_at - CAST(:shift AS interval)",
+        shift=shift,
+    )
+    await _execute(
+        session_factory,
+        "UPDATE notifications SET fire_at = fire_at - CAST(:shift AS interval),"
+        " status = CASE WHEN :sent THEN 'sent' ELSE status END",
+        shift=shift,
+        sent=reminder_sent,
+    )
+    return await _item(session_factory, result.item.id)
+
+
+async def _item(session_factory: async_sessionmaker[AsyncSession], item_id: UUID) -> ItemRow:
+    async with session_factory() as session:
+        row = await session.get(ItemRow, item_id)
+    assert row is not None
+    return row
+
+
+async def _all_notifications(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> list[tuple[str, Any]]:
+    async with session_factory() as session:
+        rows = await session.scalars(select(NotificationRow).order_by(NotificationRow.fire_at))
+        return [(row.status, row.fire_at) for row in rows]
+
+
+async def test_passed_standup_moves_to_next_week_without_done(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+    fake_redis: FakeRedis,
+) -> None:
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    past = await _past_standup(item_service, session_factory, user_id)
+    assert past.starts_at is not None and past.remind_at is not None
+    fake_redis.values.clear()
+
+    await run_cycle(reminders, _notifier(FakeBot()))
+
+    moved = await _item(session_factory, past.id)
+    week = timedelta(days=7)
+    assert moved.status == "open"
+    assert (moved.starts_at, moved.ends_at) == (past.starts_at + week, past.ends_at + week)
+    assert await _all_notifications(session_factory) == [
+        ("sent", past.remind_at),
+        ("pending", past.remind_at + week),
+    ]
+    assert fake_redis.values == {f"va:v1:mcp:ver:{user_id}": 1}
+
+
+async def test_series_waits_until_its_due_reminder_is_delivered(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    # Бот лежит: напоминание о прошедшем вхождении ждёт повтора, серия не переезжает,
+    # иначе сдвиг отменил бы недоставленное напоминание.
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    past = await _past_standup(item_service, session_factory, user_id, reminder_sent=False)
+    down = _notifier(FakeBot(lambda _: httpx.Response(503)))
+
+    await run_cycle(reminders, down)
+    still = await _item(session_factory, past.id)
+    await _time_passes(session_factory)
+    await run_cycle(reminders, _notifier(FakeBot()))
+    moved = await _item(session_factory, past.id)
+
+    assert still.starts_at == past.starts_at
+    assert past.starts_at is not None
+    assert moved.starts_at == past.starts_at + timedelta(days=7)
+    assert [status for status, _ in await _all_notifications(session_factory)] == [
+        "sent",
+        "pending",
+    ]
+
+
+async def test_finished_series_becomes_done(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    past = await _past_standup(item_service, session_factory, user_id, rrule="FREQ=WEEKLY;COUNT=1")
+
+    await run_cycle(reminders, _notifier(FakeBot()))
+
+    assert (await _item(session_factory, past.id)).status == "done"
+
+
+async def test_passed_item_without_rrule_is_not_moved(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    item_id = await _reminder(item_service, user_id)
+    await _execute(session_factory, "UPDATE items SET remind_at = now() - interval '1 day'")
+    await _execute(session_factory, "UPDATE notifications SET status = 'sent'")
+    before = await _item(session_factory, item_id)
+
+    moved = await reminders.schedule_next()
+
+    assert moved == 0
+    assert (await _item(session_factory, item_id)).remind_at == before.remind_at

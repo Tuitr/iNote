@@ -1,16 +1,19 @@
-"""Запросы к таблице items: каждый метод принимает user_id первым и видит только его записи."""
+"""Запросы к таблице items: каждый метод принимает user_id первым и видит только его записи.
+
+Исключение — lock_passed_series: Scheduler обходит серии всех пользователей.
+"""
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Text, and_, cast, func, literal, select, update
+from sqlalchemy import ColumnElement, Text, and_, case, cast, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import TSQUERY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.core.db.models import ItemRow
+from libs.core.db.models import ItemRow, NotificationRow
 
 
 @dataclass(frozen=True)
@@ -194,6 +197,40 @@ class ItemRepo:
             .limit(limit)
         )
         return [(row, float(score)) for row, score in await self._session.execute(statement)]
+
+    async def lock_passed_series(self, limit: int) -> list[ItemRow]:
+        """Открытые серии, чьё текущее вхождение уже прошло, — для Scheduler, по всем пользователям.
+
+        Вхождение прошло, когда закончилось: конец встречи, конец дня для «весь день», иначе
+        начало или время напоминания. Серию с ещё не отправленным созревшим напоминанием не
+        трогаем: сдвиг отменил бы его. SKIP LOCKED — запись сейчас меняет пользователь
+        или другая реплика.
+        """
+        occurrence_end = func.coalesce(
+            case((ItemRow.all_day, ItemRow.starts_at + timedelta(days=1))),
+            ItemRow.ends_at,
+            ItemRow.starts_at,
+            ItemRow.remind_at,
+        )
+        unsent_due = exists().where(
+            NotificationRow.item_id == ItemRow.id,
+            NotificationRow.status.in_(("pending", "sending")),
+            NotificationRow.fire_at <= func.now(),
+        )
+        statement = (
+            select(ItemRow)
+            .where(
+                ItemRow.rrule.is_not(None),
+                ItemRow.status == "open",
+                ItemRow.deleted_at.is_(None),
+                occurrence_end <= func.now(),
+                ~unsent_due,
+            )
+            .order_by(occurrence_end)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(await self._session.scalars(statement))
 
 
 def _search_scope(user_id: int, search: SearchFilter) -> ColumnElement[bool]:

@@ -154,7 +154,7 @@ class ItemService:
                 old_remind_at = row.remind_at
                 row = await items.update(caller.user_id, row.id, values)
                 if row.remind_at != old_remind_at:
-                    await _reschedule(session, row, now)
+                    await reschedule(session, row, now)
         if values:
             await bump_version(self._redis, caller.user_id)
         return MutationResult(status="updated", item=to_item(row, caller.tz))
@@ -173,9 +173,9 @@ class ItemService:
                 values = {"status": target}
                 if args.done:
                     # Выполнено вхождение серии: запись переезжает на следующее и остаётся open.
-                    values = _next_in_series(row, caller.tz, now) or values
+                    values = next_in_series(row, caller.tz, now) or values
                 row = await items.update(caller.user_id, row.id, values)
-                await _reschedule(session, row, now)
+                await reschedule(session, row, now)
         if changed:
             await bump_version(self._redis, caller.user_id)
         return MutationResult(
@@ -198,7 +198,7 @@ class ItemService:
             if changed:
                 deleted_at = None if args.restore else now
                 row = await items.update(caller.user_id, row.id, {"deleted_at": deleted_at})
-                await _reschedule(session, row, now)
+                await reschedule(session, row, now)
         if changed:
             await bump_version(self._redis, caller.user_id)
         # В J3 нет статуса «восстановлено»: восстановление — изменение записи.
@@ -444,7 +444,7 @@ def _moved_end(
     return starts_at + timedelta(minutes=user.default_event_min)
 
 
-def _next_in_series(row: ItemRow, tz: str, now: datetime) -> dict[str, Any] | None:
+def next_in_series(row: ItemRow, tz: str, now: datetime) -> dict[str, Any] | None:
     """Даты следующего вхождения серии; None — повтора нет или серия закончилась."""
     current = row.starts_at or row.remind_at
     if row.rrule is None or current is None:
@@ -523,7 +523,7 @@ async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | N
     return rows[0]
 
 
-async def _reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None:
+async def reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None:
     """Уведомления по текущему состоянию записи: неотправленные отменяются, новое ставится,
     только если запись открыта, не удалена и время напоминания впереди.
     """

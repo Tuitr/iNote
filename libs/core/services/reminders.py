@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from uuid import UUID
 
+from redis.asyncio import Redis
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from libs.contracts.items import Item
@@ -17,12 +19,14 @@ from libs.core.db.models import ItemRow, NotificationRow, UserRow
 from libs.core.repositories.items import ItemRepo
 from libs.core.repositories.notifications import NotificationRepo
 from libs.core.repositories.users import UserRepo
-from libs.core.services.items import to_item
+from libs.core.services.items import next_in_series, require_user, reschedule, to_item
 from libs.core.services.time import to_user_tz
+from libs.core.services.versioning import bump_version
 
 logger = logging.getLogger(__name__)
 
 CLAIM_LIMIT = 50
+SERIES_LIMIT = 50
 LEASE = timedelta(seconds=60)
 # Задержка перед повтором после неудачной попытки с этим номером; после последней — failed.
 RETRY_DELAYS = tuple(timedelta(minutes=minutes) for minutes in (1, 2, 4, 8, 16))
@@ -49,8 +53,9 @@ class Delivery(Enum):
 
 
 class ReminderService:
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession], redis: Redis) -> None:
         self._session_factory = session_factory
+        self._redis = redis
 
     async def reclaim_expired(self) -> int:
         async with self._session_factory() as session, session.begin():
@@ -86,6 +91,27 @@ class ReminderService:
                 )
             else:
                 await notifications.mark_failed(reminder.user_id, reminder.notification_id, error)
+
+    async def schedule_next(self) -> int:
+        """Серии, чьё вхождение прошло без «Выполнено», переезжают на следующее вхождение.
+
+        Без этого «каждый понедельник планёрка» напомнила бы один раз: встречу обычно
+        никто не отмечает выполненной. Закончившаяся серия (COUNT, UNTIL) становится done.
+        """
+        async with self._session_factory() as session, session.begin():
+            # «Сейчас» — по часам базы, как и выборка прошедших вхождений.
+            now = await session.scalar(select(func.now()))
+            items = ItemRepo(session)
+            moved: list[ItemRow] = []
+            for row in await items.lock_passed_series(SERIES_LIMIT):
+                user = await require_user(session, row.user_id)
+                values = next_in_series(row, user.tz, now) or {"status": "done"}
+                updated = await items.update(row.user_id, row.id, values)
+                await reschedule(session, updated, now)
+                moved.append(updated)
+        for user_id in {row.user_id for row in moved}:
+            await bump_version(self._redis, user_id)
+        return len(moved)
 
 
 def _due(row: NotificationRow, user: UserRow, item: ItemRow) -> DueReminder:

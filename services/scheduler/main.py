@@ -1,4 +1,4 @@
-"""Контейнер scheduler: цикл reclaim_expired → claim_due → deliver раз в SCHED_INTERVAL_SECONDS.
+"""Контейнер scheduler: reclaim → claim → deliver → schedule_next раз в SCHED_INTERVAL_SECONDS.
 
 Без веб-сервера. Упадёт посреди отправки — аренда истечёт, и уведомление заберёт следующий
 проход этой или другой реплики.
@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from libs.core.config import load_scheduler_settings
 from libs.core.log_setup import configure_logging
-from libs.core.resources import create_db_engine, create_session_factory
+from libs.core.resources import create_db_engine, create_redis_client, create_session_factory
 from libs.core.services.reminders import ReminderService
 from services.scheduler.notify import NOTIFY_TIMEOUT_SECONDS, BotNotifier
 
@@ -26,13 +26,18 @@ async def run_cycle(reminders: ReminderService, notifier: BotNotifier) -> None:
     for reminder in await reminders.claim_due():
         delivery, reason = await notifier.notify(reminder)
         await reminders.finish(reminder, delivery, reason)
+    # После доставки: созревшее напоминание серии успевает уйти до того, как она переедет.
+    moved = await reminders.schedule_next()
+    if moved:
+        logger.info("Серий перенесено на следующее вхождение: %d", moved)
 
 
 async def main() -> None:
     settings = load_scheduler_settings()
     configure_logging(settings.log_level)
     engine = create_db_engine(settings.database_url)
-    reminders = ReminderService(create_session_factory(engine))
+    redis = create_redis_client(settings.redis_url)
+    reminders = ReminderService(create_session_factory(engine), redis)
     try:
         async with httpx.AsyncClient(
             base_url=settings.bot_url, timeout=NOTIFY_TIMEOUT_SECONDS
@@ -46,6 +51,7 @@ async def main() -> None:
                     logger.exception("Проход Scheduler не выполнен")
                 await asyncio.sleep(settings.interval_seconds)
     finally:
+        await redis.aclose()
         await engine.dispose()
 
 

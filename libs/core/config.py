@@ -93,9 +93,10 @@ def _flag(name: str) -> bool:
 
 @dataclass(frozen=True)
 class SchedulerSettings:
-    """Настройки контейнера scheduler: Redis ему не нужен, зато нужен адрес бота (J4)."""
+    """Настройки контейнера scheduler: база, Redis (версия данных при сдвиге серий) и бот (J4)."""
 
     database_url: str
+    redis_url: str
     log_level: str
     bot_url: str
     service_token: str
@@ -105,6 +106,7 @@ class SchedulerSettings:
 def load_scheduler_settings() -> SchedulerSettings:
     return SchedulerSettings(
         database_url=load_database_url(),
+        redis_url=_require("REDIS_URL"),
         log_level=_log_level(),
         bot_url=_require("SCHED_BOT_URL"),
         service_token=load_service_token(),
