@@ -1,8 +1,8 @@
 # services/agent — Agent Back (зона C)
 
 S2 (в работе): `POST /v1/messages` проходит настоящий ход — пользователь → лок → контекст в Redis →
-Brain → инструменты MCP → ответ. `POST /v1/actions` настоящий для уточнений (`pick_option`, `cancel`),
-остальные действия пока отдают фиксированный `Reply` из `contracts/examples/reply/list.json`.
+Brain → инструменты MCP → ответ. `POST /v1/actions` — кнопки и команды без LLM в том же каркасе
+(лок, контекст, `caller`, ключи идемпотентности), каталог — ниже.
 
 - **Ход** (`application/turn_pipeline.py`, шаги — `handle_message.py` и `handle_action.py`): лок на пользователя `va:v1:agent:lock:{user_id}` (60 с), бюджет
   хода 40 с вместе с ожиданием лока, любой сбой → `Reply` с кодом и `trace_id`. Brain получает `TurnInput`
@@ -29,7 +29,16 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` наст
   нет вопроса или номер вне списка — «Вопрос устарел»; `cancel` стирает pending. Ответ на вопрос текстом —
   обычный `/v1/messages`, pending уходит в `TurnInput`. `ScriptedBrain` уточняет время у «напомни …» без
   времени, слот при конфликте встреч и «правильно понял?» при `asr_low_confidence`.
-- Кнопки `undo`, `reschedule`, `list_period` — шаг 4 S2, пока заглушка. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
+- **Действия** (`application/handle_action.py`, каталог — `application/actions.py`):
+  `undo` (`item_id`) → `delete_item`, повтор — «Уже отменено» (`not_found` — не ошибка);
+  `reschedule` с `starts_at` → `update_item`, без него — «На когда перенести?» с кнопками «Через час»,
+  «Завтра в <время записи>», «Завтра в 9:00» (без прошлого и без текущего времени записи) и фокусом на
+  записи — тогда «завтра в 15» текстом разбирает Brain; `list_period` (`today|tomorrow|week`) →
+  `list_items` с `[from, to)` в поясе пользователя; `start`, `help` — приветствие и справка из шаблонов
+  с кнопками периода и «Мой день» (`open_app today`); `pick_option`, `cancel` — уточнения. Из `args`
+  берутся только поля каталога (`user_id` из кнопки до MCP не доходит); незнакомое действие или
+  `args` не по каталогу — `validation_error` в лог и «Не понял кнопку» без лока и вызовов.
+  «Отменить» есть только у созданной записи, у удалённой кнопок нет. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
 - Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).
 - Слои: `domain` ← `application` (порты, ход) ← `infrastructure` (Redis, MCP, ScriptedBrain, настройки),
   `presentation` (роуты, рендер); `main.py` — composition root, всё создаётся в `lifespan`.
@@ -40,7 +49,6 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` наст
 | `AGENT_TURN_TIMEOUT_S` / `AGENT_LOCK_WAIT_S` | `40` / `10` |
 | `AGENT_MCP_URL` / `AGENT_MCP_TIMEOUT_S` | `http://mcp:8000/mcp` / `5` |
 | `AGENT_MCP_INTERNAL_URL` | `http://mcp:8000` |
-| `AGENT_STUB_ACTION_REPLY` | `contracts/examples/reply/list.json` |
 
 ```bash
 export SERVICE_TOKEN=$(openssl rand -hex 16)   # токен не пишем в файлы и команды
