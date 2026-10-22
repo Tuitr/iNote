@@ -1,53 +1,127 @@
 import { MaxUI } from '@maxhub/max-ui';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import meExample from '../../../../contracts/examples/j5/me.response.json';
 import { createApiClient } from '../../api/client';
 import type { Me } from '../../api/types';
+import { addDays, dayLabel, dayLabelLong, startOfWeek, todayIn, weekdayLong } from '../../lib/time';
+import { MOCK_TZ } from '../../mocks/data';
 import { server, TEST_BASE_URL } from '../../test/server';
-import { TodayScreen } from './TodayScreen';
+import { DayScreen } from './DayScreen';
 
-function renderToday() {
+// Моки раскладывают записи относительно настоящего «сегодня» в поясе пользователя из примера.
+const today = todayIn(MOCK_TZ);
+
+function renderDay(initialDate?: string) {
   const client = createApiClient({ baseUrl: TEST_BASE_URL, getInitData: () => 'user=dev' });
   return render(
     <MaxUI>
-      <TodayScreen client={client} me={meExample as Me} />
+      <DayScreen client={client} me={meExample as Me} initialDate={initialDate} />
     </MaxUI>,
   );
 }
 
-describe('TodayScreen', () => {
-  it('открытые записи по порядку, выполненные отдельно, отменённых нет', async () => {
-    renderToday();
-    const items = await screen.findAllByTestId('item');
-    const titles = items.map((item) => item.querySelector('.item-title')?.textContent);
-    expect(titles).toEqual([
+async function titles(): Promise<(string | null | undefined)[]> {
+  const items = await screen.findAllByTestId('item');
+  return items.map((item) => item.querySelector('.item-title')?.textContent);
+}
+
+describe('DayScreen', () => {
+  it('сегодня: открытые записи по порядку, выполненные отдельно, отменённых нет', async () => {
+    renderDay();
+    expect(await titles()).toEqual([
       'День рождения Маши',
       'Позвонить Ивану',
       'Встреча с дизайнером',
       'Купить продукты на неделю',
       'Отправить отчёт',
     ]);
+    expect(screen.getByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
     expect(screen.queryByText('Созвон с командой')).not.toBeInTheDocument();
     expect(screen.getByText('Выполнено · 1')).toBeInTheDocument();
     expect(screen.getByText('11:00–12:00 · Встреча · с Дизайнер')).toBeInTheDocument();
-    expect(screen.getByText('Весь день · Встреча')).toBeInTheDocument();
+    // Кнопка «Сегодня» нужна только на других днях.
+    expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument();
+  });
+
+  it('полоска показывает неделю с понедельника, сегодня выбрано и отмечено точкой', async () => {
+    renderDay();
+    await screen.findAllByTestId('item');
+    const days = screen.getAllByRole('button', { pressed: false }).concat(
+      screen.getAllByRole('button', { pressed: true }),
+    );
+    expect(days).toHaveLength(7);
+    const selected = screen.getByRole('button', { pressed: true });
+    expect(selected).toHaveAccessibleName(dayLabelLong(today));
+    expect(selected.querySelector('.week-strip__dot--on')).not.toBeNull();
+    expect(screen.getByRole('button', { name: dayLabelLong(startOfWeek(today)) })).toBeInTheDocument();
+  });
+
+  it('другой день этой недели открывается из полоски без нового запроса', async () => {
+    let requests = 0;
+    server.events.on('request:start', ({ request }) => {
+      if (new URL(request.url).pathname === '/v1/items') requests += 1;
+    });
+    renderDay();
+    await screen.findAllByTestId('item');
+
+    // Соседний день в той же неделе: вчера, а если сегодня понедельник — завтра.
+    const isMonday = startOfWeek(today) === today;
+    const other = addDays(today, isMonday ? 1 : -1);
+    fireEvent.click(screen.getByRole('button', { name: dayLabelLong(other) }));
+
+    expect(screen.getByRole('heading', { name: isMonday ? 'Завтра' : 'Вчера' })).toBeInTheDocument();
+    expect(await titles()).toEqual(
+      isMonday ? ['Тренировка', 'Оплатить интернет'] : ['Подготовить презентацию'],
+    );
+    expect(requests).toBe(1);
+    server.events.removeAllListeners();
+  });
+
+  it('стрелка открывает следующую неделю: старый ETag не даёт 304 на другой период', async () => {
+    renderDay();
+    await screen.findAllByTestId('item');
+    fireEvent.click(screen.getByRole('button', { name: 'Следующая неделя' }));
+
+    const nextWeekDay = addDays(today, 7);
+    expect(screen.getByRole('heading', { name: weekdayLong(nextWeekDay) })).toBeInTheDocument();
+    expect(screen.getByText(dayLabel(nextWeekDay))).toBeInTheDocument();
+    expect(await titles()).toEqual(['Планёрка']);
+  });
+
+  it('открывается с заданного дня, «Сегодня» возвращает назад', async () => {
+    renderDay(addDays(today, 3));
+    expect(await titles()).toEqual(['Стоматолог']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Сегодня' }));
+    expect(screen.getByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
+    expect(await titles()).toContain('Позвонить Ивану');
   });
 
   it('пустой день', async () => {
+    renderDay(addDays(today, 2));
+    expect(await screen.findByText('На этот день ничего нет')).toBeInTheDocument();
+  });
+
+  it('пустое сегодня', async () => {
     server.use(
-      http.get('*/v1/items', () =>
-        HttpResponse.json({
-          range: { from: '2026-10-22', to: '2026-10-23', tz: 'Europe/Moscow' },
+      http.get('*/v1/items', ({ request }) => {
+        const url = new URL(request.url);
+        const from = url.searchParams.get('from') ?? '';
+        const days = Array.from({ length: 7 }, (_, index) => {
+          const date = addDays(from, index);
+          return { date, label: dayLabel(date), items: [] };
+        });
+        return HttpResponse.json({
+          range: { from, to: addDays(from, 7), tz: MOCK_TZ },
           version: 1,
-          days: [{ date: '2026-10-22', label: 'Чт, 22 октября', items: [] }],
-        }),
-      ),
+          days,
+        });
+      }),
     );
-    renderToday();
+    renderDay();
     expect(await screen.findByText('На сегодня ничего нет')).toBeInTheDocument();
-    expect(screen.getByText('Чт, 22 октября')).toBeInTheDocument();
   });
 
   it('ошибка сервера — текст, код и кнопка «Повторить»', async () => {
@@ -66,7 +140,7 @@ describe('TodayScreen', () => {
         ),
       ),
     );
-    renderToday();
+    renderDay();
     expect(await screen.findByRole('alert')).toHaveTextContent('Не получилось загрузить данные.');
     expect(screen.getByText('Код: abcdef')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeInTheDocument();

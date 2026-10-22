@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Item } from '../api/types';
-import { addDays, itemTimeLabel, todayIn } from './time';
+import {
+  addDays,
+  dayLabel,
+  itemTimeLabel,
+  relativeDayTitle,
+  startOfWeek,
+  todayIn,
+  weekdayShort,
+} from './time';
 
 const base: Item = {
   id: '3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c',
@@ -33,6 +41,29 @@ describe('addDays', () => {
     expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
     expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
+  });
+});
+
+describe('startOfWeek', () => {
+  it('неделя начинается с понедельника', () => {
+    expect(startOfWeek('2026-10-22')).toBe('2026-10-19'); // четверг
+    expect(startOfWeek('2026-10-19')).toBe('2026-10-19'); // понедельник
+    expect(startOfWeek('2026-10-25')).toBe('2026-10-19'); // воскресенье
+    expect(startOfWeek('2026-11-01')).toBe('2026-10-26'); // через конец месяца
+  });
+});
+
+describe('подписи дней', () => {
+  it('как у api и для полоски', () => {
+    expect(dayLabel('2026-10-22')).toBe('Чт, 22 октября');
+    expect(weekdayShort('2026-10-25')).toBe('Вс');
+  });
+
+  it('сегодня, завтра, вчера', () => {
+    expect(relativeDayTitle('2026-10-22', '2026-10-22')).toBe('Сегодня');
+    expect(relativeDayTitle('2026-11-01', '2026-10-31')).toBe('Завтра');
+    expect(relativeDayTitle('2026-10-21', '2026-10-22')).toBe('Вчера');
+    expect(relativeDayTitle('2026-10-24', '2026-10-22')).toBeNull();
   });
 });
 

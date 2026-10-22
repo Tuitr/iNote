@@ -3,8 +3,8 @@ import { http, HttpResponse } from 'msw';
 import authExample from '../../../contracts/examples/j5/auth_max.response.json';
 import meExample from '../../../contracts/examples/j5/me.response.json';
 import type { ItemsByDayResponse } from '../api/types';
-import { addDays } from '../lib/time';
-import { dayLabel, MOCK_TZ, MOCK_VERSION, mockItems } from './data';
+import { addDays, dayLabel } from '../lib/time';
+import { MOCK_TZ, MOCK_VERSION, mockItems } from './data';
 
 const MOCK_TOKEN = 'mock-token';
 

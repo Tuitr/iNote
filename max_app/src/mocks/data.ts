@@ -85,6 +85,38 @@ const DRAFTS: Draft[] = [
     start: '08:00',
     end: '09:30',
   },
+  {
+    id: '1f2e3d4c-5b6a-4978-8a6b-5c4d3e2f1a0b',
+    kind: 'reminder',
+    title: 'Оплатить интернет',
+    dayOffset: 1,
+    remind: '12:00',
+  },
+  {
+    id: '2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d',
+    kind: 'event',
+    title: 'Стоматолог',
+    dayOffset: 3,
+    start: '16:00',
+    end: '17:00',
+    participants: ['Доктор Петрова'],
+  },
+  {
+    id: '4b5c6d7e-8f9a-4b0c-8d1e-2f3a4b5c6d7e',
+    kind: 'task',
+    title: 'Подготовить презентацию',
+    dayOffset: -1,
+    start: '14:00',
+    status: 'done',
+  },
+  {
+    id: '6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f',
+    kind: 'event',
+    title: 'Планёрка',
+    dayOffset: 7,
+    start: '10:00',
+    end: '10:30',
+  },
 ];
 
 /** Записи за дни [from, to) — так же, как их отдаёт api. */
@@ -117,15 +149,4 @@ function toItem(draft: Draft, date: string, now: Date): Item {
     created_at: createdAt,
     updated_at: createdAt,
   };
-}
-
-/** Подпись дня как у api: «Чт, 22 октября». */
-export function dayLabel(date: string): string {
-  const label = new Intl.DateTimeFormat('ru-RU', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  }).format(new Date(`${date}T00:00:00Z`));
-  return label.charAt(0).toUpperCase() + label.slice(1);
 }

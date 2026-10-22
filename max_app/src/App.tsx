@@ -5,7 +5,7 @@ import type { Me } from './api/types';
 import { ErrorState } from './components/ErrorState';
 import { getPlatform, getStartParam, isInsideMax } from './max/bridge';
 import { parseStartParam, type Route } from './navigation/startParam';
-import { TodayScreen } from './screens/today/TodayScreen';
+import { DayScreen } from './screens/day/DayScreen';
 
 type Session =
   | { status: 'loading' }
@@ -50,8 +50,15 @@ function Authorized({ client }: { client: ApiClient }) {
       </main>
     );
   }
-  // Пока готов только экран «Сегодня»: остальные маршруты J6 открывают его же (как неизвестный формат).
-  return <TodayScreen client={client} me={session.me} />;
+  return <DayScreen client={client} me={session.me} initialDate={initialDate(session.route)} />;
+}
+
+/**
+ * С какого дня открыть экран дней. day_… — этот день, week_… — понедельник недели (полоска покажет
+ * всю неделю). Карточки записи и истории диалога ещё нет: они открывают «Сегодня».
+ */
+function initialDate(route: Route): string | undefined {
+  return route.screen === 'day' || route.screen === 'week' ? route.date : undefined;
 }
 
 function OutsideMax() {

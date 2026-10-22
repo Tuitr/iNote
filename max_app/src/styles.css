@@ -95,3 +95,97 @@ body {
 .kind-icon--done {
   background: var(--gradient-green);
 }
+
+.screen-header__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Высота не зависит от кнопки «Сегодня»: иначе полоска недели прыгает. */
+  min-height: 40px;
+}
+
+/* Полоска недели */
+
+.week-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.week-strip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.week-strip__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  height: 56px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--text-secondary) !important;
+}
+
+.week-strip__day {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 12px;
+}
+
+.week-strip button:active {
+  background: var(--states-background-pressed-transparent);
+}
+
+.week-strip__weekday {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+.week-strip__number {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.week-strip__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.week-strip__dot--on {
+  background: var(--text-themed);
+}
+
+.week-strip__day--today .week-strip__number,
+.week-strip__day--today .week-strip__weekday {
+  color: var(--text-themed);
+}
+
+/* Цвет кнопки MAX одинаковый в обеих темах, текст на ней — белый. */
+.week-strip__day--selected,
+.week-strip__day--selected:active {
+  background: var(--button-primary) !important;
+}
+
+.week-strip__day--selected .week-strip__number,
+.week-strip__day--selected .week-strip__weekday {
+  color: #fff;
+}
+
+.week-strip__day--selected .week-strip__dot--on {
+  background: #fff;
+}
