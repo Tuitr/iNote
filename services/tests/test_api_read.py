@@ -87,25 +87,11 @@ async def test_requests_without_valid_token_are_unauthorized(
         assert response.json()["error"]["code"] == "unauthorized"
 
 
-async def test_me_and_patch_me(api_client: TestClient, user_id: int) -> None:
+async def test_me(api_client: TestClient, user_id: int) -> None:
     me = api_client.get("/v1/me", headers=_auth())
-    patched = api_client.patch(
-        "/v1/me", json={"tz": "Asia/Yekaterinburg", "voice_replies": True}, headers=_auth()
-    )
-    bad = api_client.patch("/v1/me", json={"tz": "Mars/Olympus"}, headers=_auth())
 
     assert me.status_code == 200
     assert me.json()["settings"]["tz"] == "Europe/Moscow"
-    assert patched.status_code == 200
-    assert patched.json()["settings"] == {
-        "tz": "Asia/Yekaterinburg",
-        "voice_replies": True,
-        "default_event_min": 60,
-        "remind_before_min": 15,
-    }
-    assert api_client.get("/v1/me", headers=_auth()).json() == patched.json()
-    assert bad.status_code == 400
-    assert bad.json()["error"]["details"] == {"invalid": ["body.tz"]}
 
 
 async def test_group_by_day_reproduces_j5_example(
@@ -214,3 +200,21 @@ async def test_dialog_pages_from_newest(
     assert [turn["text"] for turn in second["turns"]] == ["Напомни позвонить Ивану"]
     assert second["next_cursor"] is None
     assert bad.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PATCH", "/v1/me"),
+        ("PATCH", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+        ("DELETE", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+        ("POST", "/v1/items"),
+        ("PUT", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+    ],
+)
+async def test_writes_from_mini_app_are_not_allowed(
+    api_client: TestClient, user_id: int, method: str, path: str
+) -> None:
+    response = api_client.request(method, path, headers=_auth(), json={})
+
+    assert response.status_code == 405

@@ -11,7 +11,6 @@ from libs.contracts.api import (
     ItemsByDayResponse,
     ItemsResponse,
     Me,
-    MePatch,
 )
 from libs.contracts.items import Item
 from libs.contracts.tools import SearchItemsResult
@@ -22,8 +21,6 @@ MODEL_BY_EXAMPLE: dict[str, type[BaseModel]] = {
     "auth_max.request": AuthMaxRequest,
     "auth_max.response": AuthMaxResponse,
     "me.response": Me,
-    "me_patch.request": MePatch,
-    "me_patch.response": Me,
     "items_by_day.response": ItemsByDayResponse,
     "items.response": ItemsResponse,
     "items_search.response": SearchItemsResult,

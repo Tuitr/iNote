@@ -130,3 +130,50 @@ def test_dialog_turns_without_turns_is_validation_error(client: TestClient) -> N
 
     assert response.status_code == 400
     assert response.json()["error"]["details"] == {"invalid": ["body.turns"]}
+
+
+def test_settings_change_through_bot(client: TestClient) -> None:
+    # «У меня теперь Екатеринбург, и отвечай голосом»
+    user_id = client.post("/internal/v1/users/resolve", json=RESOLVE_BODY, headers=AUTH).json()[
+        "user_id"
+    ]
+
+    changed = client.patch(
+        f"/internal/v1/users/{user_id}/settings",
+        json={"tz": "Asia/Yekaterinburg", "voice_replies": True},
+        headers=AUTH,
+    )
+    again = client.post("/internal/v1/users/resolve", json=RESOLVE_BODY, headers=AUTH)
+
+    assert changed.status_code == 200
+    assert changed.json() == {
+        "tz": "Asia/Yekaterinburg",
+        "voice_replies": True,
+        "default_event_min": 60,
+        "remind_before_min": 15,
+    }
+    assert again.json()["tz"] == "Asia/Yekaterinburg"
+
+
+def test_settings_validation_and_unknown_user(client: TestClient) -> None:
+    user_id = client.post("/internal/v1/users/resolve", json=RESOLVE_BODY, headers=AUTH).json()[
+        "user_id"
+    ]
+
+    bad = client.patch(
+        f"/internal/v1/users/{user_id}/settings", json={"tz": "Mars/Olympus"}, headers=AUTH
+    )
+    unknown = client.patch(
+        f"/internal/v1/users/{user_id + 100}/settings", json={"voice_replies": True}, headers=AUTH
+    )
+
+    assert bad.status_code == 400
+    assert bad.json()["error"]["details"] == {"invalid": ["body.tz"]}
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "not_found"
+
+
+def test_settings_need_service_token(client: TestClient) -> None:
+    response = client.patch("/internal/v1/users/1/settings", json={"voice_replies": True})
+
+    assert response.status_code == 401
