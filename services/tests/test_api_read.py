@@ -219,3 +219,15 @@ async def test_writes_from_mini_app_are_not_allowed(
     response = api_client.request(method, path, headers=_auth(), json={})
 
     assert response.status_code == 405
+
+
+async def test_period_longer_than_62_days_is_rejected(api_client: TestClient, user_id: int) -> None:
+    # Запрос «с 0001 по 9999 год» иначе построил бы миллионы дней в памяти.
+    ok = api_client.get("/v1/items?from=2026-10-01&to=2026-12-02&group=day", headers=_auth())
+    too_long = api_client.get("/v1/items?from=2026-10-01&to=2026-12-03", headers=_auth())
+    absurd = api_client.get("/v1/items?from=0001-01-01&to=9999-12-31&group=day", headers=_auth())
+
+    assert ok.status_code == 200
+    assert len(ok.json()["days"]) == 62
+    assert (too_long.status_code, absurd.status_code) == (400, 400)
+    assert too_long.json()["error"]["details"] == {"invalid": ["query.to"]}
