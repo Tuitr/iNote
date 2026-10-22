@@ -79,7 +79,7 @@ else
 	$(COMPOSE) logs --no-color $(SERVICE) | grep -- "$(TRACE)"
 endif
 
-smoke: ## два сценария S1 через фейковый MAX: список на сегодня и напоминание (нужен make up)
+smoke: ## четыре сценария ТЗ голосом и один текстом через фейковый MAX (нужен make up)
 	./deploy/smoke.sh
 
 e2e: up ## e2e на стенде: tests/e2e (поднимает стенд, если ещё не поднят)
