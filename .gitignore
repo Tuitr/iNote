@@ -7,3 +7,7 @@ build/
 .ruff_cache/
 .idea/
 .env.local
+
+# Данные покрытия pytest-cov
+.coverage
+htmlcov/

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from libs.contracts.settings import UserSettings
 from libs.core.db.models import UserRow
+from libs.core.errors import NotFoundError
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
 
@@ -104,3 +105,10 @@ async def test_unchanged_resolve_does_not_write(
         event.remove(engine, "before_cursor_execute", remember_update)
 
     assert updates == []
+
+
+async def test_unknown_profile_and_settings_of_unknown_user(user_service: UserService) -> None:
+    # Мини-приложение с токеном удалённого пользователя; бот меняет настройки чужому id.
+    assert await user_service.find_profile(MAX_USER_ID) is None
+    with pytest.raises(NotFoundError):
+        await user_service.update_settings(404, {"voice_replies": True})

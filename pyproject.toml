@@ -27,6 +27,8 @@ dev = [
     "pytest>=9.1,<10",
     # PostgreSQL и Redis в Docker для тестов.
     "testcontainers>=4.15,<5",
+    # Покрытие libs/core, порог 80% (критерий готовности D).
+    "pytest-cov>=7.1,<8",
     "ruff>=0.17,<1",
 ]
 
@@ -52,3 +54,8 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["libs", "services"]
+
+[tool.coverage.run]
+# Порог покрытия — только для логики D; тесты сами себя не считают.
+source = ["libs/core"]
+omit = ["libs/core/tests/*"]

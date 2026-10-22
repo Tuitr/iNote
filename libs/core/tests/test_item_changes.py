@@ -344,3 +344,56 @@ async def test_check_conflicts(service: ItemService, user_id: int) -> None:
     assert itself.conflicts == []
     with pytest.raises(InvalidArgumentsError):
         await service.check_conflicts(check("16:00", "15:00"))
+
+
+async def test_rename_add_participants_and_turn_task_into_reminder(
+    service: ItemService, user_id: int, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    # «Переименуй в „Позвонить Ивану Петровичу“», «добавь Олега», «и напомни в 11»
+    task = await service.create_task(
+        CreateTaskArgs.model_validate({"caller": _caller(user_id), "title": "Позвонить Ивану"})
+    )
+    assert task.item is not None
+
+    result = await _update(
+        service,
+        user_id,
+        str(task.item.id),
+        title="Позвонить Ивану Петровичу",
+        participants=["Олег"],
+        kind="reminder",
+        remind_at=_at("11:00").isoformat(),
+    )
+
+    assert result.item is not None
+    assert (result.item.title, result.item.participants, result.item.kind) == (
+        "Позвонить Ивану Петровичу",
+        ["Олег"],
+        "reminder",
+    )
+    assert await _notifications(session_factory) == [(_at("11:00"), "pending")]
+
+
+async def test_meeting_time_rules_on_update(service: ItemService, user_id: int) -> None:
+    event_id = await _event(service, user_id, "Встреча с Иваном", "15:00")
+    task = await service.create_task(
+        CreateTaskArgs.model_validate({"caller": _caller(user_id), "title": "Купить молоко"})
+    )
+    assert task.item is not None
+
+    # Перенос встречи на весь день: конца у неё больше нет.
+    all_day = await _update(service, user_id, event_id, starts_at="2026-10-23")
+    with pytest.raises(InvalidArgumentsError) as end_of_all_day:
+        await _update(service, user_id, event_id, ends_at=_at("16:00", day=23).isoformat())
+    with pytest.raises(PastTimeError):
+        await _update(service, user_id, event_id, starts_at="2026-10-20")
+    with pytest.raises(InvalidArgumentsError) as no_start_to_count_from:
+        await _update(service, user_id, str(task.item.id), remind_before_min=15)
+    with pytest.raises(InvalidArgumentsError) as meeting_without_start:
+        await _update(service, user_id, event_id, starts_at=None)
+
+    assert all_day.item is not None
+    assert (all_day.item.all_day, all_day.item.ends_at) == (True, None)
+    assert end_of_all_day.value.details == {"invalid": ["ends_at"]}
+    assert no_start_to_count_from.value.details == {"missing": ["starts_at"]}
+    assert meeting_without_start.value.details == {"missing": ["starts_at"]}
