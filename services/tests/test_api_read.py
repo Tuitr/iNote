@@ -15,6 +15,7 @@ from libs.core.services.dialog import DialogService
 from libs.core.services.items import ItemService
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
+from services.api.app import create_app
 from services.api.auth import issue_token
 from services.tests.init_data import JWT_SECRET
 
@@ -231,3 +232,28 @@ async def test_period_longer_than_62_days_is_rejected(api_client: TestClient, us
     assert len(ok.json()["days"]) == 62
     assert (too_long.status_code, absurd.status_code) == (400, 400)
     assert too_long.json()["error"]["details"] == {"invalid": ["query.to"]}
+
+
+async def test_unexpected_failure_is_internal_error_envelope(
+    api_env: pytest.MonkeyPatch, user_id: int
+) -> None:
+    async def broken(*args: Any) -> None:
+        raise RuntimeError("SELECT * FROM секреты")
+
+    trace_id = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        api_env.setattr(client.app.state.item_service, "get_item", broken)
+        response = client.get(
+            "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+            headers={**_auth(), "X-Trace-Id": trace_id},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "internal",
+            "message": "Внутренняя ошибка",
+            "details": {},
+            "trace_id": trace_id,
+        }
+    }

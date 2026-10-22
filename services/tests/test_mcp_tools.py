@@ -308,3 +308,29 @@ async def test_done_on_weekly_standup_says_when_next(
     assert result.structured_content["item"]["starts_at"] == f"{next_monday}T09:00:00+03:00"
     assert result.content[0].text.startswith(f"Выполнено, следующий раз: [{short}] ")
     assert result.content[0].text.endswith(" 09:00–10:00 Планёрка")
+
+
+async def test_unexpected_failure_is_internal_tool_error(
+    tool_services: ToolServices, user_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def broken(*args: Any) -> None:
+        raise RuntimeError("SELECT * FROM секреты")
+
+    monkeypatch.setattr(tool_services.items, "list_items", broken)
+    today = now_utc().astimezone(MOSCOW).date()
+
+    result = await _call(
+        tool_services,
+        "list_items",
+        {
+            "caller": _caller(user_id),
+            "from": today.isoformat(),
+            "to": (today + timedelta(days=1)).isoformat(),
+        },
+    )
+
+    assert result.is_error is True
+    assert result.structured_content == {
+        "error": {"code": "internal", "message": "Внутренняя ошибка", "details": {}}
+    }
+    assert "SELECT" not in result.content[0].text
