@@ -69,5 +69,10 @@ services:
       - "8000:8000"
     healthcheck: *ready-check
 
+  # Цикл напоминаний (J4): без портов и веб-сервера, ходит в бота роли C.
+  scheduler:
+    <<: *backend-d
+    command: ["python", "-m", "services.scheduler.main"]
+
 volumes:
   postgres-data:

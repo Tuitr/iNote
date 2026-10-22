@@ -48,7 +48,7 @@ def load_default_tz() -> str:
 
 
 def load_service_token() -> str:
-    """Токен, с которым другие сервисы ходят в mcp (КиП: Authorization: Bearer <SERVICE_TOKEN>)."""
+    """Общий токен внутренних вызовов: mcp его проверяет, scheduler им ходит в бота (КиП)."""
     return _require("SERVICE_TOKEN")
 
 
@@ -89,3 +89,35 @@ def _flag(name: str) -> bool:
     if value not in ("true", "false"):
         raise ConfigError(f"{name}={value!r}, допустимо: true или false")
     return value == "true"
+
+
+@dataclass(frozen=True)
+class SchedulerSettings:
+    """Настройки контейнера scheduler: Redis ему не нужен, зато нужен адрес бота (J4)."""
+
+    database_url: str
+    log_level: str
+    bot_url: str
+    service_token: str
+    interval_seconds: float
+
+
+def load_scheduler_settings() -> SchedulerSettings:
+    return SchedulerSettings(
+        database_url=load_database_url(),
+        log_level=_log_level(),
+        bot_url=_require("SCHED_BOT_URL"),
+        service_token=load_service_token(),
+        interval_seconds=_positive_number("SCHED_INTERVAL_SECONDS", default="15"),
+    )
+
+
+def _positive_number(name: str, default: str) -> float:
+    value = os.environ.get(name, default).strip()
+    try:
+        number = float(value)
+    except ValueError as error:
+        raise ConfigError(f"{name}={value!r}: нужно число секунд") from error
+    if number <= 0:
+        raise ConfigError(f"{name}={value!r}: нужно больше нуля")
+    return number
