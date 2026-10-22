@@ -16,12 +16,15 @@ dependencies = [
     "mcp>=2.3,<3",
     # База часовых поясов для zoneinfo: на Windows и в slim-образах системной базы может не быть.
     "tzdata>=2026.5",
+    # Scheduler вызывает бота (J4) асинхронным HTTP-клиентом.
+    "httpx>=0.28,<1",
+    # Проверка rrule (RFC 5545) и расчёт следующей даты серии.
+    "python-dateutil>=2.9,<3",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.1,<10",
-    "httpx>=0.28,<1",
     # PostgreSQL с pgvector и Redis в Docker для тестов.
     "testcontainers>=4.15,<5",
     "ruff>=0.17,<1",
