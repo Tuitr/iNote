@@ -279,3 +279,32 @@ async def test_search_hints_written_on_create_are_used_by_search(
     result = await _call(tool_services, "search_items", {"caller": caller, "query": "зубной врач"})
 
     assert result.content[0].text.endswith("] Записаться к стоматологу")
+
+
+async def test_done_on_weekly_standup_says_when_next(
+    tool_services: ToolServices, user_id: int
+) -> None:
+    # «Каждый понедельник в 9 планёрка», потом «Выполнено».
+    caller = {**_caller(user_id), "idempotency_key": None}
+    today = now_utc().astimezone(MOSCOW).date()
+    monday = today + timedelta(days=7 - today.weekday())
+    created = await _call(
+        tool_services,
+        "create_event",
+        {
+            "caller": caller,
+            "title": "Планёрка",
+            "starts_at": f"{monday.isoformat()}T09:00:00+03:00",
+            "rrule": "FREQ=WEEKLY;BYDAY=MO",
+        },
+    )
+    short = created.structured_content["item"]["id"][:8]
+
+    result = await _call(tool_services, "complete_item", {"caller": caller, "id": short})
+
+    next_monday = monday + timedelta(days=7)
+    assert result.structured_content["status"] == "completed"
+    assert result.structured_content["item"]["status"] == "open"
+    assert result.structured_content["item"]["starts_at"] == f"{next_monday}T09:00:00+03:00"
+    assert result.content[0].text.startswith(f"Выполнено, следующий раз: [{short}] ")
+    assert result.content[0].text.endswith(" 09:00–10:00 Планёрка")

@@ -32,6 +32,7 @@ from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.repositories.items import ItemRepo, NewItem
 from libs.core.repositories.notifications import NotificationRepo
 from libs.core.repositories.users import UserRepo
+from libs.core.services.recurrence import check_rrule, next_occurrence
 from libs.core.services.time import (
     days_range_utc,
     local_midnight_utc,
@@ -85,6 +86,8 @@ class ItemService:
             idempotency_key=caller.idempotency_key,
             search_hints=args.search_hints,
         )
+        if task.rrule is not None:
+            check_rrule(task.rrule, task.starts_at or task.remind_at, caller.tz)
         now = self._clock()
         created = False
         async with self._session_factory() as session, session.begin():
@@ -167,7 +170,11 @@ class ItemService:
             row = await _find_one(items, caller, args.id, deleted=False)
             changed = row.status != target
             if changed:
-                row = await items.update(caller.user_id, row.id, {"status": target})
+                values = {"status": target}
+                if args.done:
+                    # Выполнено вхождение серии: запись переезжает на следующее и остаётся open.
+                    values = _next_in_series(row, caller.tz, now) or values
+                row = await items.update(caller.user_id, row.id, values)
                 await _reschedule(session, row, now)
         if changed:
             await bump_version(self._redis, caller.user_id)
@@ -333,6 +340,8 @@ def _new_event(args: CreateEventArgs, user: UserRow, now: datetime) -> NewItem:
         all_day = True
         # У встречи на весь день нет автонапоминания, только явное (план S1, решение 10).
         remind_before = args.remind_before_min
+    if args.rrule is not None:
+        check_rrule(args.rrule, starts_at, tz)
     return NewItem(
         kind="event",
         title=args.title,
@@ -406,6 +415,9 @@ def _updated_values(
         raise InvalidArgumentsError("Для напоминания нужно время", {"missing": ["remind_at"]})
     if row.kind == "event" and starts_at is None:
         raise InvalidArgumentsError("У встречи должно быть начало", {"missing": ["starts_at"]})
+    rule = values.get("rrule", row.rrule)
+    if rule is not None and changed & {"rrule", "starts_at", "remind_at", "remind_before_min"}:
+        check_rrule(rule, starts_at or remind_at, tz)
     for field, value in (
         ("starts_at", starts_at),
         ("all_day", all_day),
@@ -430,6 +442,24 @@ def _moved_end(
     if row.ends_at is not None and shift is not None and not row.all_day:
         return row.ends_at + shift
     return starts_at + timedelta(minutes=user.default_event_min)
+
+
+def _next_in_series(row: ItemRow, tz: str, now: datetime) -> dict[str, Any] | None:
+    """Даты следующего вхождения серии; None — повтора нет или серия закончилась."""
+    current = row.starts_at or row.remind_at
+    if row.rrule is None or current is None:
+        return None
+    following = next_occurrence(row.rrule, current, tz, now)
+    if following is None:
+        return None
+    # Длительность встречи и «за сколько напомнить» сохраняются.
+    shift_of = following.starts_at - current
+    values: dict[str, Any] = {"rrule": following.rrule}
+    for field in ("starts_at", "ends_at", "remind_at"):
+        value = getattr(row, field)
+        if value is not None:
+            values[field] = value + shift_of
+    return values
 
 
 def _reminder(starts_at: datetime, remind_before_min: int | None, now: datetime) -> datetime | None:
