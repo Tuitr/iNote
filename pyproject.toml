@@ -25,7 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.1,<10",
-    # PostgreSQL с pgvector и Redis в Docker для тестов.
+    # PostgreSQL и Redis в Docker для тестов.
     "testcontainers>=4.15,<5",
     "ruff>=0.17,<1",
 ]

@@ -27,7 +27,7 @@ iNote — голосовой ассистент задач и встреч: бо
 - `mcp` — `/health`, `/internal/v1` (J8) и MCP на `/mcp`: 8 инструментов проверяют аргументы; настоящие
   (`create_task`, `create_event`, `list_items`) работают с базой, остальные до S2 отвечают примерами. Всё, кроме `/health`, — по `SERVICE_TOKEN`.
 - `api` — `/health` и заглушка `/v1`: отвечает примерами J5, умеет ETag/304.
-- `compose.yaml` — postgres (pgvector), redis, mcp, api.
+- `compose.yaml` — postgres, redis, migrate, mcp, api, scheduler.
 
 Настоящей логики (запись в БД, поиск, напоминания) ещё нет: это S1–S3.
 
@@ -48,7 +48,7 @@ flowchart LR
         mcp --> contracts
         api --> contracts
     end
-    core --> pg[("PostgreSQL + pgvector")]
+    core --> pg[("PostgreSQL")]
     core --> redis[("Redis")]
 ```
 
@@ -113,7 +113,7 @@ flowchart LR
 | `alembic.ini`, `migrations/` | Миграции Alembic; `env.py` берёт адрес из `DATABASE_URL` | Архитектура D, раздел 7; пароля нет в репо | контейнер `migrate`, тесты |
 | `migrations/versions/0001_initial.py` | Схема БД v0: `users`, `items`, `notifications`, `dialog_log`, `pg_trgm`, индексы | План S1, раздел 3; без `embedding` до `EMBED_DIM` от A | `migrate` |
 | `Dockerfile` | Один образ на блок D: только код D, контракты, примеры и миграции | Решение Никиты (развилка А) | compose |
-| `compose.yaml` | postgres (pgvector), redis, migrate, mcp, api | Шаг 2 S0, шаг 7 S1; общий с C | все |
+| `compose.yaml` | postgres, redis, migrate, mcp, api, scheduler | Шаг 2 S0, шаг 7 S1; общий с C | все |
 | `pyproject.toml` | Зависимости, сборка, ruff, pytest | Один файл вместо `requirements.txt` + конфигов | D |
 | `.env.example` | Переменные окружения без значений | Правило «секреты только в `.env`» | все |
 | `.gitignore`, `.dockerignore` | Не коммитить `.env`, `.venv`, `.idea`; не тащить тесты и docs в образ | Секреты и мусор не попадают в git и образ | git, Docker |
@@ -220,7 +220,7 @@ curl localhost:8001/health/ready   # mcp
 | httpx | вызов бота из Scheduler (J4) и `fastapi.testclient` | dev — одобрил Никита 2026-10-20; рантайм — 2026-10-22 |
 | python-dateutil | проверка `rrule` и следующая дата серии | план D; одобрил Никита 2026-10-22 |
 
-Образы в compose: `pgvector/pgvector:pg16` (план D), `redis:7-alpine` (в плане не указан, выбран D).
+Образы в compose: `postgres:16` (план D; pgvector после отказа от эмбеддера не нужен), `redis:7-alpine` (в плане не указан, выбран D).
 Python 3.12 в Docker (план D); локально работает и на 3.13.
 
 ### Соглашения
@@ -400,6 +400,11 @@ Python 3.12 в Docker (план D); локально работает и на 3.
 | 2026-10-22 | Ответ 405 — стандартный Starlette `{"detail": …}`, не конверт КиП | Свой обработчик 405 | В КиП нет кода ошибки для 405; приложение не должно слать такие запросы вовсе | агент |
 | 2026-10-22 | Код ошибки `stale` в `libs/contracts/errors.py` остаётся | Удалить вместе с записью из приложения | Перечень кодов общий для всех стыков (КиП), не только J5 | агент |
 | 2026-10-22 | Шаг 30: 18 демо-записей (`libs/core/seed.py`) кладутся через `ItemRepo`, а не `ItemService`; ключи `seed:<n>`; запуск `python -m services.seed --max-user-id <id>` (локально или `docker compose run --rm mcp …`); уведомления — только у будущих открытых записей | Через `ItemService` | Сервис отклоняет время в прошлом, а демо нужна история за месяц | агент |
+| 2026-10-22 | По ревью: Scheduler берёт по 5 уведомлений с арендой 5 минут и крутит пачки, пока есть созревшие; отправляется только уведомление с `fire_at = items.remind_at`; изменения записи — с `FOR UPDATE`; вход без имени не стирает имя; курсор истории ≤ bigint | Как было | Аренда 60 с была короче пачки 50 × 10 с; старое напоминание воскресало после «Отложить» во время отправки; гонка с Scheduler | Никита |
+| 2026-10-22 | `GET /v1/items`: период не длиннее 62 дней, иначе 400 `invalid: ["query.to"]` | Без предела | Запрос «0001–9999» строил миллионы дней в памяти | Никита, сказать E |
+| 2026-10-22 | Непойманное исключение: HTTP — 500 `internal` в конверте КиП с `trace_id`, инструмент MCP — ошибка инструмента `internal`; подробности только в лог | Голый 500 / ошибка протокола MCP | Клиенту не уходит SQL, по `trace_id` ошибку находят в логе | Никита |
+| 2026-10-22 | Миграция `0003` (embedding) удалена, `0004` идёт сразу после `0002` и только добавляет `search_hints`; номер 0004 сохранён, поэтому уже накатанные базы пересоздавать не нужно; образ PostgreSQL — `postgres:16` вместо `pgvector/pgvector:pg16` | Оставить цепочку | Миграция туда-обратно ради удалённой фичи и лишний образ с pgvector | Никита |
+| 2026-10-22 | `local_today()` удалена (была нужна только тестам); `BACKEND_D_EXPLAINED.md` помечен как снимок S0; из `STRUCTURE_DRAFT.md` убран `libs/embed` | Обновлять всё | Мёртвый код и устаревшие тексты | Никита |
 
 ---
 
