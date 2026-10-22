@@ -6,7 +6,8 @@ Streamable HTTP на /mcp, четыре обязательных инструм�
 list → {items, range, truncated}, search → {results: [{item, score}], best_match_confident},
 ошибка → isError + конверт {"error": {code, message, details}}.
 Повтор с тем же (user_id, idempotency_key) возвращает тот же ответ. В лог — caller, без текста.
-J8: POST /internal/v1/users/resolve — user_id по max_user_id (в памяти, с 17), под SERVICE_TOKEN.
+J8: POST /internal/v1/users/resolve — user_id по max_user_id (в памяти, с 17), под SERVICE_TOKEN;
+POST /internal/v1/dialog-turns — ход в памяти по trace_id, повтор — 202 без дубля.
 """
 
 import hmac
@@ -529,6 +530,56 @@ def buildResolveRoute(users: StubUsers) -> Route:
     return Route("/internal/v1/users/resolve", resolveUser, methods=["POST"])
 
 
+# Примечание: история диалога J8 в памяти: trace_id → ход; повтор с тем же trace_id — не дубль
+class StubDialogLog:
+    # Примечание: ходы по trace_id (как уникальный ключ dialog_log у D)
+    def __init__(self) -> None:
+        self.turns: dict[str, Json] = {}
+
+    # Примечание: True — записан впервые, False — повтор (тот же ответ 202)
+    def store(self, traceId: str, body: Json) -> bool:
+        if traceId in self.turns:
+            return False
+        self.turns[traceId] = body
+        return True
+
+
+# Примечание: POST /internal/v1/dialog-turns (J8): проверка формы, 202; тексты в лог не пишем
+def buildDialogTurnsRoute(dialog: StubDialogLog) -> Route:
+    # Примечание: user_id > 0, trace_id, две реплики user → assistant
+    async def dialogTurns(request: Request) -> JSONResponse:
+        if (denied := _authError(request)) is not None:
+            return denied
+        try:
+            body = await request.json()
+        except ValueError:
+            return _errorResponse(request, 400, "validation_error", "тело не JSON")
+        if not isinstance(body, dict) or not _validTurns(body):
+            return _errorResponse(request, 400, "validation_error", "ход не по контракту J8")
+        traceId = str(body["trace_id"])
+        created = dialog.store(traceId, body)
+        log(
+            "dialog_turns_stored" if created else "dialog_turns_duplicate",
+            user_id=body["user_id"],
+            trace_id=traceId,
+            latency_ms=body.get("latency_ms"),
+        )
+        return JSONResponse({"accepted": True, "duplicate": not created}, status_code=202)
+
+    return Route("/internal/v1/dialog-turns", dialogTurns, methods=["POST"])
+
+
+# Примечание: форма хода как в contracts/dialog_turns.py
+def _validTurns(body: Json) -> bool:
+    userId, traceId, turns = body.get("user_id"), body.get("trace_id"), body.get("turns")
+    if not isinstance(userId, int) or isinstance(userId, bool) or userId <= 0:
+        return False
+    if not isinstance(traceId, str) or not traceId or not isinstance(turns, list):
+        return False
+    roles = [t.get("role") for t in turns if isinstance(t, dict)]
+    return roles == ["user", "assistant"]
+
+
 # Примечание: health для compose; ready = live — данных у заглушки нет
 async def _health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "checks": {}, "stub": NAME, "owner": OWNER})
@@ -544,6 +595,7 @@ def main() -> None:
             Route("/health/live", _health, methods=["GET"]),
             Route("/health/ready", _health, methods=["GET"]),
             buildResolveRoute(StubUsers()),
+            buildDialogTurnsRoute(StubDialogLog()),
         ],
     )
     log("stub_started", port=PORT)

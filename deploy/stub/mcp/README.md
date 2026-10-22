@@ -24,6 +24,8 @@
 - повтор с тем же `(user_id, idempotency_key)` возвращает тот же ответ (id записи — от ключа);
 - J8 `POST /internal/v1/users/resolve`: `user_id` по `max_user_id` в памяти (с 17, повтор — тот же, `created=false`),
   пояс `Europe/Moscow`; с `SERVICE_TOKEN` в окружении требует `Authorization: Bearer` (иначе 401/403);
+- J8 `POST /internal/v1/dialog-turns`: ход хранится в памяти по `trace_id`, повтор — 202 без дубля
+  (`dialog_turns_stored` / `dialog_turns_duplicate` в логе, без текстов); под тем же токеном;
 - в stdout — JSON-строка `tool_called` с полученным `caller` (без текста пользователя).
 
 Запуск без Docker: `uv run python deploy/stub/mcp/server.py` (порт — `STUB_PORT`, по умолчанию 8000).
