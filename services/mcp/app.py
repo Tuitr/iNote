@@ -12,7 +12,7 @@ from libs.core.services.dialog import DialogService
 from libs.core.services.items import ItemService
 from libs.core.services.search import SearchService
 from libs.core.services.users import UserService
-from services.http_common import health_router
+from services.http_common import RequestLogMiddleware, health_router
 from services.http_common import lifespan as common_lifespan
 from services.http_errors import install_error_handlers
 from services.mcp.internal import router as internal_router
@@ -54,6 +54,8 @@ def create_app() -> FastAPI:
     app = FastAPI(title="iNote MCP", lifespan=lifespan)
     install_error_handlers(app)
     app.add_middleware(ServiceTokenMiddleware)
+    # Добавлен последним — значит, внешний: в лог попадают и отказы по токену.
+    app.add_middleware(RequestLogMiddleware)
     app.include_router(health_router)
     app.include_router(internal_router)
     # Монтируется последним: запросы, которые не совпали с маршрутами выше, уходят в MCP.

@@ -16,7 +16,7 @@ from services.api.routes.auth import router as auth_router
 from services.api.routes.dialog import router as dialog_router
 from services.api.routes.items import router as items_router
 from services.api.routes.me import router as me_router
-from services.http_common import health_router
+from services.http_common import RequestLogMiddleware, health_router
 from services.http_common import lifespan as common_lifespan
 from services.http_errors import install_error_handlers
 
@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(title="iNote API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
+    app.add_middleware(RequestLogMiddleware)
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(me_router)

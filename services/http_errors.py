@@ -28,11 +28,19 @@ class HttpError(Exception):
         self.details = details or {}
 
 
+def incoming_trace_id(header: str) -> str:
+    """trace_id из X-Trace-Id или новый.
+
+    По КиП цепочку начинает тот, к кому запрос пришёл первым (API — для запросов фронта),
+    поэтому без корректного X-Trace-Id trace_id создаётся здесь.
+    """
+    return header if _TRACE_ID.fullmatch(header) else uuid.uuid4().hex
+
+
 def _trace_id(request: Request) -> str:
-    # По КиП цепочку начинает тот, к кому запрос пришёл первым (API — для запросов фронта),
-    # поэтому без корректного X-Trace-Id trace_id создаётся здесь.
-    incoming = request.headers.get("X-Trace-Id", "")
-    return incoming if _TRACE_ID.fullmatch(incoming) else uuid.uuid4().hex
+    # Лог запроса уже выбрал trace_id (RequestLogMiddleware): в ответе должен быть тот же.
+    chosen: str | None = getattr(request.state, "trace_id", None)
+    return chosen or incoming_trace_id(request.headers.get("X-Trace-Id", ""))
 
 
 def error_response(

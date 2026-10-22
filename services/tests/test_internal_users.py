@@ -1,3 +1,4 @@
+import logging
 import secrets
 from collections.abc import Iterator
 
@@ -177,3 +178,16 @@ def test_settings_need_service_token(client: TestClient) -> None:
     response = client.patch("/internal/v1/users/1/settings", json={"voice_replies": True})
 
     assert response.status_code == 401
+
+
+def test_rejected_token_is_logged_with_the_same_trace_id(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="services.http_common")
+
+    response = client.post("/internal/v1/users/resolve", json=RESOLVE_BODY)
+
+    trace_id = response.json()["error"]["trace_id"]
+    lines = [r.getMessage() for r in caplog.records if r.name == "services.http_common"]
+    assert lines and lines[-1].startswith("POST /internal/v1/users/resolve 401 ")
+    assert lines[-1].endswith(f"trace_id={trace_id}")
