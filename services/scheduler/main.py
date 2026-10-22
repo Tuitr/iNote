@@ -1,7 +1,7 @@
-"""Контейнер scheduler: reclaim → claim → deliver → schedule_next раз в SCHED_INTERVAL_SECONDS.
+"""Контейнер scheduler: reclaim → отмена устаревших → claim → deliver → schedule_next.
 
-Без веб-сервера. Упадёт посреди отправки — аренда истечёт, и уведомление заберёт следующий
-проход этой или другой реплики.
+Проход раз в SCHED_INTERVAL_SECONDS, без веб-сервера. Упадёт посреди отправки — аренда
+истечёт, и уведомление заберёт следующий проход этой или другой реплики.
 """
 
 import asyncio
@@ -23,9 +23,12 @@ async def run_cycle(reminders: ReminderService, notifier: BotNotifier) -> None:
     reclaimed = await reminders.reclaim_expired()
     if reclaimed:
         logger.warning("Вернул в очередь %d уведомлений с истёкшей арендой", reclaimed)
+    stale = await reminders.cancel_stale()
+    if stale:
+        logger.info("Отменено устаревших уведомлений: %d", stale)
     # Маленькими пачками, пока есть созревшие: аренда каждой пачки короткая.
-    while due := await reminders.claim_due():
-        for reminder in due:
+    while (batch := await reminders.claim_due()).claimed:
+        for reminder in batch.due:
             delivery, reason = await notifier.notify(reminder)
             await reminders.finish(reminder, delivery, reason)
     # После доставки: созревшее напоминание серии успевает уйти до того, как она переедет.

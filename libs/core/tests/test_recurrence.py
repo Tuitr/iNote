@@ -143,7 +143,15 @@ class TestNextOccurrence:
         assert next_occurrence(rule, first.starts_at, "Europe/Moscow", now=first.starts_at) is None
 
     @pytest.mark.parametrize(
-        "rule", ["ерунда", "", "FREQ=WEEKLY;BYDAY=XX", "FREQ=DAILY\nFREQ=WEEKLY"]
+        "rule",
+        [
+            "ерунда",
+            "",
+            "FREQ=WEEKLY;BYDAY=XX",
+            "FREQ=DAILY\nFREQ=WEEKLY",
+            # Начало серии берётся из записи, не из строки.
+            "DTSTART:20200101T090000\nRRULE:FREQ=WEEKLY",
+        ],
     )
     def test_invalid_rule_is_a_validation_error(self, rule: str) -> None:
         with pytest.raises(InvalidArgumentsError) as error:

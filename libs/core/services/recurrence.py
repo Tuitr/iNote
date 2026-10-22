@@ -52,6 +52,9 @@ def next_occurrence(rule: str, current: datetime, tz: str, now: datetime) -> Nex
 
 
 def _parse(rule: str, series_start: datetime, tz: str) -> rrule:
+    # Начало серии — дата записи; DTSTART в строке dateutil предпочёл бы ей, и даты бы уехали.
+    if "DTSTART" in rule.upper():
+        raise _invalid()
     zone = ZoneInfo(tz)
     try:
         # Модели часто пишут UNTIL в UTC («…Z»); серия считается в местном времени без пояса.

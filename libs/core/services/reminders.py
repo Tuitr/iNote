@@ -46,6 +46,14 @@ class DueReminder:
     attempt: int
 
 
+@dataclass(frozen=True)
+class ClaimedBatch:
+    # Сколько взято в аренду. Отправлять бывает нечего (нет чата, запись удалили),
+    # но пока пачка не пустая, созревшие ещё могут быть.
+    claimed: int
+    due: list[DueReminder]
+
+
 class Delivery(Enum):
     SENT = "sent"
     # Повторять бесполезно: чат недоступен или бот отверг запрос.
@@ -63,12 +71,17 @@ class ReminderService:
         async with self._session_factory() as session, session.begin():
             return await NotificationRepo(session).reclaim_expired()
 
-    async def claim_due(self) -> list[DueReminder]:
+    async def cancel_stale(self) -> int:
+        async with self._session_factory() as session, session.begin():
+            return await NotificationRepo(session).cancel_stale()
+
+    async def claim_due(self) -> ClaimedBatch:
         """Созревшие напоминания в аренду; без чата сразу failed — бот их не доставит."""
         async with self._session_factory() as session, session.begin():
             notifications = NotificationRepo(session)
             due: list[DueReminder] = []
-            for row in await notifications.claim_due(CLAIM_LIMIT, LEASE):
+            claimed = await notifications.claim_due(CLAIM_LIMIT, LEASE)
+            for row in claimed:
                 user = await UserRepo(session).get(row.user_id)
                 items = await ItemRepo(session).find_by_ids(row.user_id, [row.item_id])
                 if not items:
@@ -79,7 +92,7 @@ class ReminderService:
                     await notifications.mark_failed(row.user_id, row.id, "no max_chat_id")
                 else:
                     due.append(_due(row, user, user.max_chat_id, items[0]))
-            return due
+            return ClaimedBatch(claimed=len(claimed), due=due)
 
     async def finish(self, reminder: DueReminder, delivery: Delivery, error: str) -> None:
         async with self._session_factory() as session, session.begin():

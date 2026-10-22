@@ -63,6 +63,37 @@ class NotificationRepo:
         )
         return result.rowcount
 
+    async def cancel_stale(self) -> int:
+        """Отменить созревшие уведомления, которые уже не про текущее состояние записи.
+
+        Так бывает, когда запись перенесли, выполнили или удалили, пока её уведомление было
+        в отправке: после неудачной попытки оно вернулось в pending, а отправлять его нельзя.
+        """
+        stale = (
+            select(NotificationRow.id)
+            .join(
+                ItemRow,
+                (ItemRow.id == NotificationRow.item_id)
+                & (ItemRow.user_id == NotificationRow.user_id),
+            )
+            .where(
+                NotificationRow.status == "pending",
+                NotificationRow.fire_at <= func.now(),
+                or_(
+                    ItemRow.deleted_at.is_not(None),
+                    ItemRow.status != "open",
+                    ItemRow.remind_at.is_(None),
+                    NotificationRow.fire_at != ItemRow.remind_at,
+                ),
+            )
+        )
+        result = await self._session.execute(
+            update(NotificationRow)
+            .where(NotificationRow.id.in_(stale.scalar_subquery()))
+            .values(status="cancelled")
+        )
+        return result.rowcount
+
     async def claim_due(self, limit: int, lease: timedelta) -> list[NotificationRow]:
         """Забрать созревшие уведомления открытых неудалённых записей и взять их в аренду.
 

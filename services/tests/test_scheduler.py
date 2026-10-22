@@ -217,7 +217,7 @@ async def test_deleted_done_or_cancelled_item_does_not_remind(
     await run_cycle(reminders, _notifier(bot))
 
     assert bot.requests == []
-    assert (await _notification(session_factory)).status == "pending"
+    assert (await _notification(session_factory)).status == "cancelled"
 
 
 async def test_bot_errors_are_retried_after_1_2_4_8_16_minutes_then_failed(
@@ -346,8 +346,8 @@ async def test_parallel_claims_do_not_take_the_same_notification(
 
     first, second = await asyncio.gather(reminders.claim_due(), reminders.claim_due())
 
-    first_ids = {reminder.notification_id for reminder in first}
-    second_ids = {reminder.notification_id for reminder in second}
+    first_ids = {reminder.notification_id for reminder in first.due}
+    second_ids = {reminder.notification_id for reminder in second.due}
     assert first_ids.isdisjoint(second_ids)
     assert len(first_ids | second_ids) == 6
 
@@ -528,7 +528,7 @@ async def test_reminder_moved_during_delivery_does_not_come_back(
     user_id = await _user(session_factory, MAX_CHAT_ID)
     await _reminder(item_service, user_id)
     await _time_passes(session_factory)
-    (in_flight,) = await reminders.claim_due()
+    (in_flight,) = (await reminders.claim_due()).due
     await _execute(session_factory, "UPDATE items SET remind_at = remind_at + interval '1 hour'")
     await reminders.finish(in_flight, Delivery.RETRY, "HTTP 503")
     await _execute(session_factory, "UPDATE notifications SET next_try_at = now() - interval '1 s'")
@@ -536,7 +536,9 @@ async def test_reminder_moved_during_delivery_does_not_come_back(
 
     await run_cycle(reminders, _notifier(bot))
 
+    statuses = [status for status, _ in await _all_notifications(session_factory)]
     assert bot.requests == []
+    assert statuses == ["cancelled"]
 
 
 async def test_more_due_than_one_batch_are_all_sent_in_one_cycle(
@@ -558,3 +560,25 @@ async def test_more_due_than_one_batch_are_all_sent_in_one_cycle(
 
 def test_lease_outlives_a_whole_batch_of_slow_bot_calls() -> None:
     assert LEASE.total_seconds() > CLAIM_LIMIT * NOTIFY_TIMEOUT_SECONDS * 2
+
+
+async def test_batch_of_undeliverable_does_not_stop_the_cycle(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    # Первые CLAIM_LIMIT созревших — у пользователя без чата, следом — обычные.
+    chatless = await _user(session_factory, chat_id=None)
+    for number in range(CLAIM_LIMIT):
+        await _reminder(item_service, chatless, title=f"Без чата {number}")
+    await _time_passes(session_factory, late=timedelta(minutes=10))
+    other = await UserService(session_factory, "Europe/Moscow", FakeRedis()).resolve(
+        MAX_USER_ID + 1, MAX_CHAT_ID, "Ольга"
+    )
+    await _reminder(item_service, other.user_id)
+    await _time_passes(session_factory)
+    bot = FakeBot()
+
+    await run_cycle(reminders, _notifier(bot))
+
+    assert len(bot.requests) == 1
