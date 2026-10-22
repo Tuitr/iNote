@@ -39,6 +39,10 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` — кн
   берутся только поля каталога (`user_id` из кнопки до MCP не доходит); незнакомое действие или
   `args` не по каталогу — `validation_error` в лог и «Не понял кнопку» без лока и вызовов.
   «Отменить» есть только у созданной записи, у удалённой кнопок нет. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
+- **История диалога** (`infrastructure/http_dialog_log.py`, J8): после каждого хода и действия — фоновая задача
+  `POST /internal/v1/dialog-turns` в mcp-контейнере (реплика пользователя с `input_type` text/voice/action, ответ
+  и `item_ids`, `latency_ms`). Ответ её не ждёт; ключ `dialog-turns:<trace_id>`, 2 повтора; сбой — только
+  `warning` с `trace_id`. При SIGTERM агент дожидается начатых записей до закрытия HTTP-клиента.
 - Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).
 - Слои: `domain` ← `application` (порты, ход) ← `infrastructure` (Redis, MCP, ScriptedBrain, настройки),
   `presentation` (роуты, рендер); `main.py` — composition root, всё создаётся в `lifespan`.
