@@ -1,6 +1,7 @@
 """ВРЕМЕННАЯ MCP-заглушка зоны C (S1). После мержа заменить на заглушку D, затем на services/mcp.
 
-Streamable HTTP на /mcp, четыре обязательных инструмента с полем caller в схеме — как у D.
+Streamable HTTP на /mcp, четыре обязательных инструмента + update_item и delete_item
+с полем caller в схеме — как у D.
 Ответы — из fixtures/ по формам плана: изменяющие → {status, item, conflicts, free_slots},
 list → {items, range, truncated}, search → {results: [{item, score}], best_match_confident},
 ошибка → isError + конверт {"error": {code, message, details}}.
@@ -43,6 +44,8 @@ STEM: Final = 4
 FIRST_SLOT_HOUR: Final = 9
 LAST_SLOT_HOUR: Final = 20
 MAX_FREE_SLOTS: Final = 3
+# id записи: целиком или первые 8 символов (как у D)
+MIN_ID: Final = 8
 # caller в схеме — как у D: агент вырезает его для LLM и заполняет сам (J3)
 CALLER_SCHEMA: Final[dict[str, object]] = {
     "type": "object",
@@ -107,6 +110,8 @@ class StubTools:
         self._replies: dict[tuple[int, str], types.CallToolResult] = {}
         # созданное пользователем — видно в list и search, встречи участвуют в конфликтах
         self._created: dict[int, list[Json]] = {}
+        # правки update_item / delete_item поверх фикстур и созданного: id → поля или None (удалено)
+        self._edits: dict[int, dict[str, Json | None]] = {}
 
     # Примечание: вызов инструмента: проверка caller, ответ из фикстур, ошибка → isError
     def call(self, name: str, arguments: Mapping[str, object] | None) -> types.CallToolResult:
@@ -147,7 +152,67 @@ class StubTools:
             return self._create(name, args, zone, key, userId)
         if name == "list_items":
             return self._list(args, zone, userId)
+        if name == "update_item":
+            return self._update(args, zone, userId)
+        if name == "delete_item":
+            return self._delete(args, zone, userId)
         return self._search(args, zone, userId)
+
+    # Примечание: update_item: новое время (встреча сохраняет длительность) и/или название
+    def _update(self, args: Json, zone: ZoneInfo, userId: int) -> types.CallToolResult:
+        item = self._find(args, zone, userId)
+        patch: Json = {}
+        if (title := str(args.get("title") or "").strip()) != "":
+            patch["title"] = title
+        starts = _optionalTime(args, "starts_at")
+        if starts is not None:
+            if starts < self._clock():
+                raise ToolFailureError("past_time", "Время уже прошло", {"starts_at": str(starts)})
+            patch["starts_at"] = starts.astimezone(zone).isoformat()
+            patch["all_day"] = False
+            if item["kind"] == "event":
+                ends = _optionalTime(args, "ends_at") or starts + (_itemEnd(item) - _itemTime(item))
+                patch["ends_at"] = ends.astimezone(zone).isoformat()
+        if not patch:
+            raise ToolFailureError("validation_error", "Нечего менять", {"field": "starts_at"})
+        edits = self._edits.setdefault(userId, {})
+        edits[str(item["id"])] = {**(edits.get(str(item["id"])) or {}), **patch}
+        updated = {**item, **patch}
+        data: Json = {"status": "updated", "item": updated, "conflicts": [], "free_slots": []}
+        return _ok(f"Изменено: {_brief(updated)}", data)
+
+    # Примечание: delete_item: мягкое удаление; повтор по уже удалённой — not_found
+    def _delete(self, args: Json, zone: ZoneInfo, userId: int) -> types.CallToolResult:
+        item = self._find(args, zone, userId)
+        self._edits.setdefault(userId, {})[str(item["id"])] = None
+        data: Json = {"status": "deleted", "item": item, "conflicts": [], "free_slots": []}
+        return _ok(f"Удалено: {_brief(item)}", data)
+
+    # Примечание: запись пользователя по id целиком или по первым 8 символам, если однозначно
+    def _find(self, args: Json, zone: ZoneInfo, userId: int) -> Json:
+        wanted = str(args.get("id") or "").lower()
+        if len(wanted) < MIN_ID:
+            raise ToolFailureError("validation_error", "Нужен id записи", {"field": "id"})
+        today = self._clock().astimezone(zone).date()
+        found = [
+            item
+            for item in self._visible(self._materialize(today, zone), userId)
+            if str(item["id"]).startswith(wanted)
+        ]
+        if len(found) != 1:
+            raise ToolFailureError("not_found", "Запись не найдена", {"id": wanted})
+        return found[0]
+
+    # Примечание: фикстуры + созданное пользователем с его правками; удалённые не видны
+    def _visible(self, fixtures: list[Json], userId: int) -> list[Json]:
+        edits = self._edits.get(userId, {})
+        items: list[Json] = []
+        for item in [*fixtures, *self._created.get(userId, [])]:
+            itemId = str(item["id"])
+            if itemId in edits and edits[itemId] is None:
+                continue
+            items.append({**item, **(edits.get(itemId) or {})})
+        return items
 
     # Примечание: create_task / create_event: запись из аргументов, id детерминирован от ключа
     def _create(
@@ -195,7 +260,7 @@ class StubTools:
     # Примечание: встречи с концом: фикстуры от «сегодня» и созданные пользователем
     def _knownEvents(self, zone: ZoneInfo, userId: int) -> list[Json]:
         today = self._clock().astimezone(zone).date()
-        items = [*self._materialize(today, zone), *self._created.get(userId, [])]
+        items = self._visible(self._materialize(today, zone), userId)
         return [i for i in items if i["kind"] == "event" and i.get("starts_at")]
 
     # Примечание: конфликт — не ошибка (J3): status=conflict, что мешает и до 3 свободных окон
@@ -231,10 +296,9 @@ class StubTools:
         kinds = args.get("kinds")
         items = [
             item
-            for item in [
-                *self._materialize(start.astimezone(zone).date(), zone),
-                *self._created.get(userId, []),
-            ]
+            for item in self._visible(
+                self._materialize(start.astimezone(zone).date(), zone), userId
+            )
             if item.get("starts_at")
             and start <= _itemTime(item) < end
             and (not kinds or item["kind"] in _asList(kinds))
@@ -257,7 +321,7 @@ class StubTools:
         today = self._clock().astimezone(zone).date()
         found = [
             {"item": item, "score": 0.9}
-            for item in [*self._materialize(today, zone), *self._created.get(userId, [])]
+            for item in self._visible(self._materialize(today, zone), userId)
             if any(stem in str(item["title"]).lower() for stem in stems)
         ][:limit]
         data: Json = {"results": found, "best_match_confident": bool(found)}
@@ -419,7 +483,7 @@ class StubUsers:
 
 # Примечание: конверт ошибки стандарта с trace_id запроса
 def _errorResponse(request: Request, status: int, code: str, message: str) -> JSONResponse:
-    error = {
+    error: Json = {
         "code": code,
         "message": message,
         "details": {},

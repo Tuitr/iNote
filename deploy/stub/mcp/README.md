@@ -7,7 +7,7 @@
 Что умеет:
 
 - Streamable HTTP на `/mcp` (официальный SDK `mcp` 2.3, low-level `Server`), `/health/live` и `/health/ready`;
-- четыре обязательных инструмента — схемы в `fixtures/tools.json`, в каждую добавляется обязательный `caller`
+- четыре обязательных инструмента и `update_item`, `delete_item` — схемы в `fixtures/tools.json`, в каждую добавляется обязательный `caller`
   (`user_id`, `tz`, `trace_id`, `idempotency_key`), как у D;
 - ответы по формам плана: изменяющие → `{status, item, conflicts, free_slots}`, `list_items` →
   `{items, range, truncated}`, `search_items` → `{results: [{item, score}], best_match_confident}`,
@@ -16,6 +16,9 @@
 - `create_event` без `force: true` проверяет пересечения с записями из фикстур и созданными: при конфликте —
   `status: conflict`, `item: null`, `conflicts` и до трёх `free_slots` той же длины в пределах 9:00–20:00;
 - созданные записи хранятся в памяти по `user_id` и видны в `list_items` и `search_items`;
+- `update_item` (`id` целиком или 8 символов, `starts_at`, `ends_at`, `title`): встреча сохраняет длительность,
+  время в прошлом — `past_time`; `delete_item` — мягкое удаление, повтор по удалённой — `not_found`
+  (правки — в памяти поверх фикстур, без проверки пересечений);
 - поиск — по началу слов (первые 4 буквы слова запроса длиной от 4): «звонок» найдёт «Позвонить»;
 - время без смещения → `validation_error`, в прошлом → `past_time`, нет `caller` → `validation_error`;
 - повтор с тем же `(user_id, idempotency_key)` возвращает тот же ответ (id записи — от ключа);

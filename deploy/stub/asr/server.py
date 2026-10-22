@@ -42,7 +42,12 @@ def log(event: str, **fields: object) -> None:
 
 # Примечание: конверт ошибки стандарта с trace_id запроса
 def errorResponse(status: int, code: str, message: str, traceId: str | None) -> JSONResponse:
-    error = {"code": code, "message": message, "details": {}, "trace_id": traceId}
+    error: dict[str, object] = {
+        "code": code,
+        "message": message,
+        "details": {},
+        "trace_id": traceId,
+    }
     headers = {"X-Trace-Id": traceId} if traceId else None
     return JSONResponse({"error": error}, status_code=status, headers=headers)
 
