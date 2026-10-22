@@ -1,16 +1,22 @@
 # services/bot — бот MAX (зона C)
 
-Единственный, кто разговаривает с MAX. С S1 — тонкий клиент агента на **фейковом MAX**: доступа к API MAX
+Единственный, кто разговаривает с MAX. Тонкий клиент агента на **фейковом MAX**: доступа к API MAX
 пока нет, а реальный адаптер (`maxapi` или своя обёртка над `platform-api2.max.ru`) — открытое решение.
+
+S2: голосовые (скачать → ASR → агент), кнопки и команды через `/v1/actions`, webhook и `UpdateDispatcher`.
+Сценарии голосом — `POST /dev/max/voice {max_user_id, max_chat_id, text}`: фейковый MAX кладёт файл
+«OggS» + текст, ASR-заглушка возвращает этот текст (`""` — no_speech, `~low~ …` — неуверенно,
+`~long~` — слишком длинное, `~down~` — ASR недоступен). Режимы `BOT_UPDATES_MODE=polling|webhook` — ниже.
 
 ## Слои
 
 ```
 domain/          IncomingUpdate, UpdateKind, VoiceRef, UpdateBatch, OutgoingMessage (4000 символов, клавиатура)
-application/     порты MaxGateway, AgentGateway, CallbackStore, …; HandleUpdate, ReplyToMaxMapper, TypingIndicator
+application/     порты MaxGateway, AgentGateway, AsrGateway, CallbackStore, …; HandleUpdate, UpdateDispatcher,
+                 ReplyToMaxMapper, TypingIndicator
 infrastructure/  FakeMaxGateway, MAX → IncomingUpdate, OutgoingMessage → NewMessageBody, HttpAgentGateway,
                  Redis: дедуп, лимит, кнопки; BotSettings
-presentation/    PollingLoop (long polling), /dev/max/*, тексты (templates.py)
+presentation/    PollingLoop (long polling), POST /webhook/max, /dev/max/*, тексты (templates.py)
 main.py          composition root: createApp() и lifespan
 ```
 

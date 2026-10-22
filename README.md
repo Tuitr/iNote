@@ -22,14 +22,21 @@ curl -s -X POST localhost:8001/dev/max/updates -H 'content-type: application/jso
 curl -s localhost:8001/dev/max/sent
 ```
 
-## Путь сообщения (S1)
+## Путь сообщения (S2)
 
 ```
-фейковый MAX → bot (дедуп, лимит, «печатает…») → agent POST /v1/messages
-  → J8 users/resolve (кеш Redis) → лок пользователя → контекст в Redis
-  → Brain (сейчас ScriptedBrain; LLM — B) → MCP-инструменты (caller подставляет агент)
-  → шаблон ответа (данные инструмента, даты по-русски) → Reply → bot → кнопки MAX
+фейковый MAX (polling или webhook) → bot (дедуп, лимит, очередь пользователя, «печатает…»)
+  → голосовое: скачать → ASR POST /v1/transcribe (J1) → текст
+  → agent POST /v1/messages (кнопки и команды — /v1/actions, без LLM)
+  → J8 users/resolve (кеш Redis) → лок пользователя → контекст и pending в Redis
+  → Brain (сейчас ScriptedBrain; LLM — B): run, или resume по кнопке уточнения
+  → MCP-инструменты (caller подставляет агент) → шаблон ответа («Распознал: …», данные инструмента)
+  → Reply → bot → сообщение и кнопки MAX; история хода — в фоне J8 dialog-turns
 ```
+
+Голосом на стенде: `make up`, затем `make smoke` (четыре сценария ТЗ) или `make e2e` (с кнопками,
+уточнениями, конфликтом встреч, `no_speech`); вручную — `curl -X POST localhost:8001/dev/max/voice
+-H 'content-type: application/json' -d '{"max_user_id": 1, "max_chat_id": 1, "text": "что у меня завтра"}'`.
 
 | Путь | Что | Зона |
 |---|---|---|

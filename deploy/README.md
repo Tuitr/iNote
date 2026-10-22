@@ -1,16 +1,18 @@
 # deploy — стенд (зона C)
 
 `make up` поднимает стенд (профиль `mock`, всё на фейках, без ключей) и ждёт, пока все сервисы станут healthy;
-`make smoke` — два сценария S1 через фейковый MAX («что у меня сегодня», «напомни завтра в 10 …»);
-`make e2e` — `tests/e2e` на стенде (то же плюс кнопка и дедуп); `make logs TRACE=<6 символов trace_id>` —
-путь запроса через все сервисы; `make down` — остановка (данные Postgres остаются в volume `pgdata`).
+`make smoke` — четыре сценария ТЗ голосом через фейковый MAX и ASR-заглушку («напомни завтра в 10 …»,
+«встреча с Иваном завтра в 15», «что у меня завтра», «найди звонок Ивану») и «что у меня сегодня» текстом;
+`make e2e` — `tests/e2e` на стенде (S1 текстом и S2 голосом: кнопки, уточнения, конфликт встреч, `no_speech`,
+`/week`); `make logs TRACE=<trace_id>` — путь голосового через bot → asr → agent → mcp одним `trace_id`; `make down` — остановка (данные Postgres остаются в volume `pgdata`).
 
 | Файл | Что это |
 |---|---|
 | `docker-compose.yml` | postgres (pgvector:pg16), redis (256 МБ, `volatile-lru`, без персистентности), bot, agent; заглушки asr (A), api, scheduler, migrate (D), max_app (E); mcp — временная MCP-заглушка C (`stub/mcp`, см. её README) |
 | `docker/python.Dockerfile` | общий образ Python-сервисов: `uv sync --frozen` без dev, пакеты не editable, пользователь `app`, uvicorn — PID 1 |
 | `stub/` | заглушка чужого сервиса на stdlib: `/health/*` → 200, остальное → 404 в конверте ошибки |
-| `stub/mcp/` | **временная** MCP-заглушка C: 4 инструмента, J8 `users/resolve`, ответы из фикстур — до заглушки D |
+| `stub/mcp/` | **временная** MCP-заглушка C: инструменты J3 с конфликтами, J8 `users/resolve` и `dialog-turns` — до заглушки D |
+| `stub/asr/` | **временная** ASR-заглушка C по J1: «OggS» + текст → текст — до `ASR_MODE=fake` у A |
 | `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX (override) |
 | `Caddyfile` | что видно снаружи: webhook MAX, `/api/v1/*`, статика мини-приложения; служебное — 404 |
 | `smoke.sh` | смоук: два апдейта через `/dev/max/*` → ответы агента |
