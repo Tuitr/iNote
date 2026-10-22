@@ -123,11 +123,18 @@ def callerFor(uniqueId: str) -> Caller:
     return Caller(userId=int(uniqueId[:8], 16), tz=TZ, traceId=uniqueId)
 
 
-# Примечание: схемы по HTTP — четыре обязательных инструмента, caller вырезан
+# Примечание: схемы по HTTP — четыре обязательных инструмента и правка/удаление, caller вырезан
 async def test_listToolsOverHttp(stub: StubProcess, uniqueId: str) -> None:
     async with connection(stub.url) as mcp:
         tools = await McpToolExecutor(mcp, callerFor(uniqueId)).listTools()
-    assert {t.name for t in tools} == {"create_task", "create_event", "list_items", "search_items"}
+    assert {t.name for t in tools} == {
+        "create_task",
+        "create_event",
+        "list_items",
+        "search_items",
+        "update_item",
+        "delete_item",
+    }
     for tool in tools:
         assert "caller" not in json.dumps(tool.inputSchema)
 
@@ -333,3 +340,67 @@ async def test_searchFindsByStem(stub: StubProcess, uniqueId: str) -> None:
     titles = [r["item"]["title"] for r in reply.data["results"]]  # type: ignore[attr-defined]
     assert "Позвонить Ивану" in titles
     assert "Позвонить" in titles
+
+
+# Примечание: caller в аргументах сырого вызова — как его ставит исполнитель хода
+def withCaller(caller: Caller, key: str, **args: object) -> dict[str, object]:
+    return {
+        **args,
+        "caller": {
+            "user_id": caller.userId,
+            "tz": caller.tz,
+            "trace_id": caller.traceId,
+            "idempotency_key": key,
+        },
+    }
+
+
+# Примечание: перенос (встреча сохраняет длительность) и удаление; повтор с тем же ключом —
+# тот же ответ, новое нажатие «Отменить» — not_found; удалённое не видно в списке
+async def test_rescheduleAndUndo(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    start = datetime.now(ZoneInfo(TZ)).replace(hour=8, minute=0, second=0, microsecond=0)
+    start += timedelta(days=2)
+    async with connection(stub.url) as mcp:
+        created = await mcp.callTool("create_event", eventArgs(caller, f"{uniqueId}:0", start), 5)
+        eventId = itemId(created)
+        moved = await mcp.callTool(
+            "update_item",
+            withCaller(
+                caller,
+                f"{uniqueId}:1",
+                id=eventId[:8],
+                starts_at=(start + timedelta(hours=10)).isoformat(),
+            ),
+            5,
+        )
+        assert moved.structured is not None
+        item = moved.structured["item"]
+        assert isinstance(item, dict)
+        assert moved.structured["status"] == "updated"
+        moments = [datetime.fromisoformat(str(item[k])) for k in ("starts_at", "ends_at")]
+        assert moments == [start + timedelta(hours=10), start + timedelta(hours=11)]
+        deleteArgs = withCaller(caller, f"{uniqueId}:2", id=eventId)
+        deleted = await mcp.callTool("delete_item", deleteArgs, 5)
+        replay = await mcp.callTool("delete_item", deleteArgs, 5)
+        second = await mcp.callTool(
+            "delete_item", withCaller(caller, f"{uniqueId}:3", id=eventId), 5
+        )
+        day = start.replace(hour=0)
+        listed = await mcp.callTool(
+            "list_items",
+            withCaller(
+                caller,
+                f"{uniqueId}:4",
+                **{"from": day.isoformat(), "to": (day + timedelta(days=1)).isoformat()},
+            ),
+            5,
+        )
+    assert deleted.structured is not None
+    assert deleted.structured["status"] == "deleted"
+    assert replay.structured == deleted.structured
+    assert second.isError
+    assert second.structured is not None
+    assert second.structured["error"]["code"] == "not_found"  # type: ignore[index]
+    assert listed.structured is not None
+    assert eventId not in json.dumps(listed.structured)

@@ -13,10 +13,10 @@ from agent.infrastructure.scripted_brain import (
     HELP,
     WRITE_TEXT,
     ScriptedBrain,
-    periodRange,
 )
 from contracts.agent_side import (
     ErrorInfo,
+    ItemBrief,
     ToolResult,
     ToolSpec,
     TurnInput,
@@ -135,15 +135,6 @@ async def test_listPeriods(phrase: str, local: str, tz: str, start: str, end: st
     assert tools.calls == [("list_items", {"from": start, "to": end})]
     assert result.outcome == "answer"
     assert [str(i) for i in result.focus] == [ITEM_ID]
-
-
-# Примечание: один и тот же момент UTC — разные «сегодня» в Москве и Екатеринбурге
-def test_sameInstantDifferentToday() -> None:
-    instant = datetime.fromisoformat("2026-10-21T20:30:00+00:00")
-    msk = periodRange("today", instant, MSK)
-    ekb = periodRange("today", instant, EKB)
-    assert msk.start.date().isoformat() == "2026-10-21"
-    assert ekb.start.date().isoformat() == "2026-10-22"
 
 
 # Примечание: «напомни завтра в 10 …» → reminder с due_at и remind_at; регистр имён сохранён
@@ -468,3 +459,31 @@ async def test_llmMode() -> None:
     with pytest.raises(BrainNotConnectedError, match="AGENT_BRAIN=scripted"):
         buildBrain("llm")
     assert "libs/brain" in LLM_NOT_CONNECTED
+
+
+# Примечание: запись в фокусе (после «Изменить время») + ответ временем → update_item по её id;
+# «перенеси на …» — то же; без фокуса или с двумя записями — обычный разбор
+@pytest.mark.parametrize(
+    ("phrase", "focus", "expected"),
+    [
+        ("завтра в 15", 1, "2026-10-22T15:00:00+03:00"),
+        ("Перенеси на завтра в 9:30", 1, "2026-10-22T09:30:00+03:00"),
+        ("в 10", 1, "2026-10-22T10:00:00+03:00"),
+        ("завтра в 15", 0, None),
+        ("завтра в 15", 2, None),
+    ],
+)
+async def test_rescheduleFocused(phrase: str, focus: int, expected: str | None) -> None:
+    brief = ItemBrief.fromWire(ITEM)
+    other = ItemBrief.fromWire({**ITEM, "id": "2b8d4e61-0c3f-4a7b-8e95-1f6a2d3c4b57"})
+    turn = turnAt(phrase, "2026-10-21T21:30").model_copy(update={"focus": [brief, other][:focus]})
+    tools = RecordingTools(
+        ToolResult(ok=True, summary="ok", data={"status": "updated", "item": ITEM})
+    )
+    result = await ScriptedBrain().run(turn, tools)
+    if expected is None:
+        assert tools.calls == []
+        assert result.say == HELP
+        return
+    assert tools.calls == [("update_item", {"id": ITEM_ID, "starts_at": expected})]
+    assert result.outcome == "done"

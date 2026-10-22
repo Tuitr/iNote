@@ -348,4 +348,5 @@ def test_heardKeepsLimit() -> None:
 def test_notices(notice: Notice) -> None:
     reply = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)).notice(notice, TRACE)
     assert reply.text
-    assert (reply.state, reply.format.value) == (ReplyState.ANSWER, "plain")
+    expected = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
+    assert (reply.state, reply.format.value) == (expected, "plain")

@@ -23,7 +23,6 @@ from agent.infrastructure.mcp_executor import McpToolExecutorFactory
 from agent.infrastructure.redis_context import RedisDialogContextStore
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
-from agent.infrastructure.stub_replies import ExampleReplySource, loadReplyExample
 from agent.infrastructure.system_clock import SystemClock
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.routes import buildAgentRouter
@@ -67,14 +66,13 @@ def createApp(
     custom = overrides or AgentOverrides()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
 
-    # Примечание: Redis, MCP-сессия, ход и заглушка /v1/actions; всё закрывается при остановке
+    # Примечание: Redis, MCP-сессия, ход и действия; всё закрывается при остановке
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         brain = custom.brain or buildBrain(config.brain)
         # Шаблоны проверяются здесь: опечатка в ru.toml — агент не стартует
         templates = loadTemplates()
         clock = custom.clock or SystemClock()
-        actionSource = ExampleReplySource(loadReplyExample(config.stubActionReply))
         async with managedTasks() as tasks:
             redis = (custom.redisFactory or createRedis)(config.redisUrl)
             store = KeyedRedis(redis)
@@ -108,7 +106,7 @@ def createApp(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
             app.state.handleMessage = HandleMessage(pipeline)
-            app.state.handleAction = HandleAction(pipeline, actionSource)
+            app.state.handleAction = HandleAction(pipeline)
             _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
             try:
                 yield

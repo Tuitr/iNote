@@ -1,11 +1,13 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from agent.application.reschedule import RescheduleOption
 from agent.domain.user import Caller, UserContext, UserId
 from contracts.agent_side import ItemBrief, JsonObject, ToolExecutor, Turn, TurnResult
-from contracts.reply import ActionRequest, Reply
+from contracts.reply import Reply
 
 
 # Примечание: контекст диалога между ходами: история, фокус и непрозрачный pending (формат B)
@@ -58,6 +60,14 @@ class ToolExecutorFactory(Protocol):
 class Notice(StrEnum):
     PENDING_EXPIRED = "pending_expired"
     CANCELLED = "cancelled"
+    ALREADY_UNDONE = "already_undone"
+    UNKNOWN_ACTION = "unknown_action"
+
+
+# Примечание: приветствие («Начать», /start) или справка (/help)
+class Welcome(StrEnum):
+    START = "start"
+    HELP = "help"
 
 
 # Примечание: перевод итога хода в Reply; все тексты — в шаблонах presentation
@@ -73,11 +83,13 @@ class ReplyRenderer(Protocol):
     # Примечание: короткий ответ действия без LLM («Вопрос устарел», «Хорошо, отменил»)
     def notice(self, notice: Notice, traceId: str) -> Reply: ...
 
+    # Примечание: вопрос «На когда перенести?» с вариантами-кнопками reschedule и «Отмена»
+    def rescheduleQuestion(
+        self, itemId: str, options: Sequence[RescheduleOption], user: UserContext, traceId: str
+    ) -> Reply: ...
+
+    # Примечание: приветствие или справка с примерами фраз и кнопкой «Мой день» (open_app today)
+    def welcome(self, kind: Welcome, traceId: str) -> Reply: ...
+
     # Примечание: Reply-ошибка по коду (upstream_timeout, internal, …)
     def failure(self, errorCode: str, traceId: str) -> Reply: ...
-
-
-# Примечание: источник фиксированных ответов для /v1/actions — заглушка S0 до S2
-class ReplySource(Protocol):
-    # Примечание: ответ на кнопку или команду без LLM
-    async def forAction(self, request: ActionRequest) -> Reply: ...

@@ -1,7 +1,8 @@
 """ScriptedBrain — правила вместо LLM (C): реализация Brain из J2 для моков и e2e, без сети.
 
 Понимает только: «что у меня сегодня / завтра / на неделе», «напомни … (завтра в 10)»,
-«создай задачу …», «встреча с … завтра в 15», «найди …».
+«создай задачу …», «встреча с … завтра в 15», «найди …», «перенеси на завтра в 15»
+(запись в фокусе — после кнопки «Изменить время» или только что созданная).
 Всё остальное — outcome=answer с подсказкой.
 Уточняет (S2): время у «напомни» и встречи без времени; «правильно понял?» при неуверенном ASR;
 свободный слот при конфликте встреч. pending — свой формат (kind: time | confirm | slot),
@@ -12,11 +13,11 @@ import re
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
+from agent.domain.periods import Period, periodRange
 from contracts.agent_side import (
     Clarify,
     ExecutedAction,
@@ -44,7 +45,6 @@ BAD_CHOICE: Final = "Не понял выбор — повтори просьб�
 # Варианты времени по таблице толкования: утро, день, вечер
 TIME_OPTIONS: Final = (9, 13, 19)
 
-type Period = Literal["today", "tomorrow", "week"]
 type DayWord = Literal["today", "tomorrow"]
 
 _LIST_RE: Final = re.compile(
@@ -61,6 +61,8 @@ _TIME_ANSWER_RE: Final = re.compile(
     r"^(?:(?P<day>сегодня|завтра)\s+)?(?:в\s+)?(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?$",
     re.IGNORECASE,
 )
+# «перенеси (на) завтра в 15» — перенос записи в фокусе
+_RESCHEDULE_RE: Final = re.compile(r"^(?:перенеси|передвинь)(?:\s+на)?\s+", re.IGNORECASE)
 _DAY_RE: Final = re.compile(r"\b(?P<day>сегодня|завтра)\b", re.IGNORECASE)
 # Только простое время: «сегодня/завтра в 10» или «в 10:30»
 _WHEN_RE: Final = re.compile(
@@ -70,37 +72,12 @@ _WHEN_RE: Final = re.compile(
 _TOOL_ERRORS: Final = frozenset(get_args(ToolErrorCode.__value__))
 
 
-# Примечание: начало и конец периода в поясе пользователя; [from, to) — конец не включается
-@dataclass(frozen=True)
-class Range:
-    start: datetime
-    end: datetime
-
-
-# Примечание: границы «сегодня / завтра / неделя» от now пользователя; неделя — с понедельника
-def periodRange(period: Period, now: datetime, tz: str) -> Range:
-    zone = ZoneInfo(tz)
-    today = now.astimezone(zone).date()
-    if period == "today":
-        first, days = today, 1
-    elif period == "tomorrow":
-        first, days = today + timedelta(days=1), 1
-    else:
-        first, days = today - timedelta(days=today.weekday()), 7
-    return Range(start=_midnight(first, zone), end=_midnight(first + timedelta(days=days), zone))
-
-
-# Примечание: полночь даты в поясе — смещение берётся у пояса на эту дату
-def _midnight(day: date, zone: ZoneInfo) -> datetime:
-    return datetime(day.year, day.month, day.day, tzinfo=zone)
-
-
 # Примечание: фраза без лишних пробелов и знаков в конце; регистр сохраняется — он нужен в названии
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip(" .!?…")
 
 
-# Примечание: Brain на правилах; resume — S2
+# Примечание: Brain на правилах: разбор фраз, уточнения и resume по кнопке
 class ScriptedBrain:
     # Примечание: разбор фразы → один вызов инструмента, уточнение или ответ без инструментов
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
@@ -114,10 +91,16 @@ class ScriptedBrain:
                 {"kind": "confirm", "text": turn.text},
                 started=started,
             )
-        answered = self._answerToTimeQuestion(turn, text)
-        if answered is not None:
-            pending, when = answered
-            return await self._completeWithTime(turn, tools, pending, when, started)
+        pending = turn.pending
+        if pending and pending.get("kind") == "time":
+            if (when := _timeAnswer(turn, text)) is not None:
+                return await self._completeWithTime(turn, tools, pending, when, started)
+        elif not pending and len(turn.focus) == 1:
+            # «На когда перенести?» (кнопка агента) или «перенеси на завтра в 15» — запись в фокусе
+            moved = _RESCHEDULE_RE.sub("", text)
+            if (when := _timeAnswer(turn, moved)) is not None:
+                args = {"id": str(turn.focus[0].id), "starts_at": when.isoformat()}
+                return await self._call(tools, "update_item", args, "done", started)
         return await self._parse(turn, tools, text, started)
 
     # Примечание: выбор варианта по кнопке; choice — номер варианта из clarify.options
@@ -255,25 +238,6 @@ class ScriptedBrain:
         labels = [_momentLabel(m, turn.now, turn.tz) for m in moments]
         return _clarify(ASK_TIME, [field], labels, pending, started=started)
 
-    # Примечание: живой вопрос о времени и ответ текстом «в 15» → (pending, момент)
-    def _answerToTimeQuestion(
-        self, turn: TurnInput, text: str
-    ) -> tuple[Mapping[str, object], datetime] | None:
-        pending = turn.pending
-        if not pending or pending.get("kind") != "time":
-            return None
-        match = _TIME_ANSWER_RE.match(text)
-        if match is None:
-            return None
-        zone = ZoneInfo(turn.tz)
-        local = turn.now.astimezone(zone)
-        hour, minute = int(match["hour"]), int(match["minute"] or 0)
-        day = local.date() + timedelta(days=1 if (match["day"] or "").lower() == "завтра" else 0)
-        moment = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
-        if match["day"] is None and moment <= local:
-            moment += timedelta(days=1)
-        return pending, moment
-
     # Примечание: время выбрано — дособираем вызов из pending и выполняем
     async def _completeWithTime(
         self,
@@ -313,6 +277,21 @@ class ScriptedBrain:
         return TurnResult(
             outcome=success, actions=[action], focus=_focusIds(result.data), usage=usage
         )
+
+
+# Примечание: ответ временем: «в 15», «15:30», «завтра в 10»; без дня и уже прошло — завтра
+def _timeAnswer(turn: TurnInput, text: str) -> datetime | None:
+    match = _TIME_ANSWER_RE.match(text)
+    if match is None:
+        return None
+    zone = ZoneInfo(turn.tz)
+    local = turn.now.astimezone(zone)
+    hour, minute = int(match["hour"]), int(match["minute"] or 0)
+    day = local.date() + timedelta(days=1 if (match["day"] or "").lower() == "завтра" else 0)
+    moment = datetime(day.year, day.month, day.day, hour, minute, tzinfo=zone)
+    if match["day"] is None and moment <= local:
+        moment += timedelta(days=1)
+    return moment
 
 
 # Примечание: «сегодня» / «завтра» / «неделе» → период

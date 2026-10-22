@@ -1,6 +1,5 @@
 import json
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Final
 
 import fakeredis
@@ -8,14 +7,14 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from pydantic import ValidationError
 
 from agent.infrastructure.brains import BrainNotConnectedError
 from agent.infrastructure.scripted_brain import HELP
 from agent.infrastructure.settings import AgentSettings
 from agent.main import AgentOverrides, createApp
+from agent.presentation.templates import loadTemplates
 from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
-from services.agent.tests.fakes import FakeMcpHttp
+from services.agent.tests.fakes import ITEM_ID, FakeMcpHttp, RecordingToolFactory, mutation
 
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
 AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
@@ -25,7 +24,6 @@ AUTH: Final = {"Authorization": f"Bearer {SERVICE_TOKEN}"}
 @pytest.fixture
 def agentEnv(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
-    monkeypatch.setenv("AGENT_STUB_ACTION_REPLY", str(EXAMPLES / "reply" / "list.json"))
     return monkeypatch
 
 
@@ -35,10 +33,16 @@ def mcpHttp() -> FakeMcpHttp:
     return FakeMcpHttp(userId=17)
 
 
-# Примечание: приложение агента: fakeredis, фейковый J8; MCP-сессия поднимается в фоне и не нужна
+# Примечание: инструменты хода — фейк: delete_item удаляет запись из примеров
 @pytest.fixture
-def app(agentEnv: pytest.MonkeyPatch, mcpHttp: FakeMcpHttp) -> FastAPI:
-    overrides = AgentOverrides(redisFactory=fakeRedis, mcpTransport=mcpHttp.transport)
+def tools() -> RecordingToolFactory:
+    return RecordingToolFactory({"delete_item": mutation("deleted")})
+
+
+# Примечание: приложение агента: fakeredis, фейковый J8 и фейковые инструменты
+@pytest.fixture
+def app(agentEnv: pytest.MonkeyPatch, mcpHttp: FakeMcpHttp, tools: RecordingToolFactory) -> FastAPI:
+    overrides = AgentOverrides(redisFactory=fakeRedis, mcpTransport=mcpHttp.transport, tools=tools)
     return createApp(AgentSettings(), overrides)
 
 
@@ -113,13 +117,28 @@ async def test_userResolveDown(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) 
     assert TRACE[:6] in body["text"]
 
 
-# Примечание: /v1/actions → свой фиксированный Reply
-async def test_actionReturnsStubReply(client: httpx.AsyncClient) -> None:
-    response = await client.post("/v1/actions", json=example("action_request.json"), headers=AUTH)
+# Примечание: /v1/actions: «Отменить» из примера бота → delete_item под пользователем J8
+async def test_actionUndo(client: httpx.AsyncClient, tools: RecordingToolFactory) -> None:
+    response = await client.post(
+        "/v1/actions", json=example("action_request.json"), headers={**AUTH, "X-Trace-Id": TRACE}
+    )
     assert response.status_code == 200
     body = response.json()
-    assert body.pop("trace_id") == response.headers["X-Trace-Id"]
-    assert body == expectedReply("list.json")
+    assert (body["trace_id"], body["state"]) == (TRACE, "done")
+    assert body["text"].startswith(loadTemplates().changed.deleted)
+    assert tools.calls == [("delete_item", {"id": ITEM_ID})]
+    assert [c.userId for c in tools.callers] == [17]
+
+
+# Примечание: незнакомое действие — 200 и «Не понял кнопку», а не 4xx (бот покажет текст)
+async def test_unknownActionAnswered(client: httpx.AsyncClient) -> None:
+    request = example("action_request.json")
+    assert isinstance(request, dict)
+    response = await client.post(
+        "/v1/actions", json={**request, "action": "teleport"}, headers=AUTH
+    )
+    assert response.status_code == 200
+    assert response.json()["text"] == loadTemplates().notices.unknownAction
 
 
 # Примечание: без токена 401, с неверным 403 — на обоих путях
@@ -157,17 +176,6 @@ async def test_notReadyWithoutMcp(client: httpx.AsyncClient, mcpHttp: FakeMcpHtt
     ready = await client.get("/health/ready")
     assert ready.status_code == 503
     assert ready.json()["checks"] == {"redis": "ok", "mcp": "fail"}
-
-
-# Примечание: пример ответа не по контракту — агент не стартует
-async def test_invalidStubFailsStartup(agentEnv: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    broken = tmp_path / "broken.json"
-    broken.write_text(json.dumps({"text": "", "state": "done", "trace_id": TRACE}))
-    agentEnv.setenv("AGENT_STUB_ACTION_REPLY", str(broken))
-    app = createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
-    with pytest.raises(ValidationError):
-        async with app.router.lifespan_context(app):
-            pass
 
 
 # Примечание: AGENT_BRAIN=llm до мержа с B — агент не стартует, причина в ошибке

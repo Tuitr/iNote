@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import ClassVar, Literal
 
 from pydantic import Field
@@ -23,8 +22,3 @@ class AgentSettings(BaseServiceSettings):
     )
     # Стандарт: 5 с на вызов и 1 повтор (только с ключом идемпотентности)
     mcpTimeoutS: float = Field(default=5.0, gt=0, le=10, validation_alias="AGENT_MCP_TIMEOUT_S")
-    # /v1/actions — заглушка до S2; путь относительно рабочего каталога (корень репо, /app)
-    stubActionReply: Path = Field(
-        default=Path("contracts/examples/reply/list.json"),
-        validation_alias="AGENT_STUB_ACTION_REPLY",
-    )

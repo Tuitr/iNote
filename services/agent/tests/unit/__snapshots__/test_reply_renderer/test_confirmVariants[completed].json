@@ -2,16 +2,6 @@
   "buttons": [
     [
       {
-        "action": "undo",
-        "args": {
-          "item_id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c"
-        },
-        "kind": "action",
-        "text": "Отменить"
-      }
-    ],
-    [
-      {
         "kind": "open_app",
         "start_param": "item_8c28d0ad-059f-525a-b049-f97cfd7ce54c",
         "text": "В календаре"

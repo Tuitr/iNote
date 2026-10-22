@@ -13,8 +13,19 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 
-from agent.application.actions import CANCEL, PICK_OPTION
-from agent.application.ports import Clock, Notice
+from agent.application.actions import (
+    CANCEL,
+    CHOICE_ARG,
+    ITEM_ID_ARG,
+    LIST_PERIOD,
+    PERIOD_ARG,
+    PICK_OPTION,
+    RESCHEDULE,
+    STARTS_AT_ARG,
+    UNDO,
+)
+from agent.application.ports import Clock, Notice, Welcome
+from agent.application.reschedule import RescheduleChoice, RescheduleOption
 from agent.application.turn_rules import successfulMutations
 from agent.domain.user import UserContext
 from agent.presentation.dates import DateFormatter
@@ -91,13 +102,47 @@ class TemplateReplyRenderer:
             update={"text": _cut(f"{line}\n{reply.text}", REPLY_TEXT_MAX_LENGTH)}
         )
 
-    # Примечание: короткий ответ действия без LLM по имени шаблона
+    # Примечание: короткий ответ действия без LLM по имени шаблона; «Не понял кнопку» — ошибка
     def notice(self, notice: Notice, traceId: str) -> Reply:
+        n = self._t.notices
         texts = {
-            Notice.PENDING_EXPIRED: self._t.notices.pendingExpired,
-            Notice.CANCELLED: self._t.notices.cancelled,
+            Notice.PENDING_EXPIRED: n.pendingExpired,
+            Notice.CANCELLED: n.cancelled,
+            Notice.ALREADY_UNDONE: n.alreadyUndone,
+            Notice.UNKNOWN_ACTION: n.unknownAction,
         }
-        return _plain(texts[notice], ReplyState.ANSWER, traceId)
+        state = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
+        return _plain(texts[notice], state, traceId)
+
+    # Примечание: «На когда перенести?»: по варианту в ряд (подписи длинные) и «Отмена»
+    def rescheduleQuestion(
+        self, itemId: str, options: Sequence[RescheduleOption], user: UserContext, traceId: str
+    ) -> Reply:
+        t = self._t.reschedule
+        zone = ZoneInfo(user.tz)
+        rows: Rows = []
+        for option in options:
+            local = option.startsAt.astimezone(zone)
+            label = {
+                RescheduleChoice.IN_HOUR: t.inHour,
+                RescheduleChoice.SAME_TIME_TOMORROW: t.sameTimeTomorrow,
+                RescheduleChoice.TOMORROW_MORNING: t.tomorrowMorning,
+            }[option.choice].format(time=f"{local:%H:%M}".removeprefix("0"))
+            args: dict[str, str | int | bool] = {
+                ITEM_ID_ARG: itemId,
+                STARTS_AT_ARG: local.isoformat(),
+            }
+            rows.append([ActionButton(text=label, action=RESCHEDULE, args=args)])
+        rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
+        return _plain(t.question, ReplyState.CLARIFY, traceId, buttons=rows)
+
+    # Примечание: приветствие / справка: тексты агента, кнопки периода и «Мой день» (J6 today)
+    def welcome(self, kind: Welcome, traceId: str) -> Reply:
+        w, b = self._t.welcome, self._t.buttons
+        text = w.start if kind is Welcome.START else w.help
+        rows = _periodRow([("today", b.today), ("tomorrow", b.tomorrow), ("week", b.week)])
+        rows.append([OpenAppButton(text=w.openToday, startParam=str(StartParam.today()))])
+        return _plain(text, ReplyState.ANSWER, traceId, buttons=rows)
 
     # Примечание: лок пользователя занят другим ходом
     def busy(self, traceId: str) -> Reply:
@@ -121,7 +166,7 @@ class TemplateReplyRenderer:
             ActionButton(
                 text=_cut(option, BUTTON_TEXT_MAX_LENGTH),
                 action=PICK_OPTION,
-                args={"choice": i},
+                args={CHOICE_ARG: i},
             )
             for i, option in enumerate(options)
             if option.strip()
@@ -138,13 +183,15 @@ class TemplateReplyRenderer:
     def _confirm(self, mutations: Sequence[ExecutedAction], scope: _Scope) -> Reply:
         blocks: list[str] = []
         items: list[ReplyItem] = []
+        statuses: list[str] = []
         for action in mutations:
             data = action.result.data or {}
             item = _replyItem(data.get("item"))
             blocks.append(self._confirmBlock(data, item, scope))
             if item is not None:
                 items.append(item)
-        rows = self._itemButtons(items[0]) if len(items) == 1 else []
+                statuses.append(str(data.get("status") or "created"))
+        rows = self._itemButtons(items[0], statuses[0]) if len(items) == 1 else []
         text = _fit("\n\n".join(blocks), [], "")
         return _markdown(text, ReplyState.DONE, scope.traceId, buttons=rows, items=items)
 
@@ -191,15 +238,20 @@ class TemplateReplyRenderer:
         start, end = _moment(raw.get("starts_at"), scope), _moment(raw.get("ends_at"), scope)
         return scope.dates.timeSpan(start, end) if start is not None else ""
 
-    # Примечание: «Отменить» и «Изменить время» + запись в календаре мини-приложения
-    def _itemButtons(self, item: ReplyItem) -> Rows:
+    # Примечание: «Отменить» — только у созданного (undo = удалить), «Изменить время» — у открытого;
+    # у удалённой записи кнопок нет
+    def _itemButtons(self, item: ReplyItem, status: str) -> Rows:
+        if status == "deleted":
+            return []
         b = self._t.buttons
-        args: dict[str, str | int | bool] = {"item_id": str(item.id)}
-        actions: list[ReplyButton] = [ActionButton(text=b.undo, action="undo", args=args)]
+        args: dict[str, str | int | bool] = {ITEM_ID_ARG: str(item.id)}
+        actions: list[ReplyButton] = []
+        if status == "created":
+            actions.append(ActionButton(text=b.undo, action=UNDO, args=args))
         if item.status == "open":
-            actions.append(ActionButton(text=b.reschedule, action="reschedule", args=args))
+            actions.append(ActionButton(text=b.reschedule, action=RESCHEDULE, args=args))
         app = OpenAppButton(text=b.openItem, startParam=str(StartParam.forItem(item.id)))
-        return [actions, [app]]
+        return [actions, [app]] if actions else [[app]]
 
     # Примечание: список за день, неделю (с понедельника) или период [from, to)
     def _list(self, action: ExecutedAction, scope: _Scope) -> Reply:
@@ -334,10 +386,10 @@ def _moment(raw: object, scope: _Scope) -> datetime | None:
     return value.astimezone(scope.zone) if value.utcoffset() is not None else None
 
 
-# Примечание: ряд кнопок переключения периода (list_period без LLM, обработка — S2)
+# Примечание: ряд кнопок переключения периода (list_period без LLM)
 def _periodRow(periods: Sequence[tuple[str, str]]) -> Rows:
     row: list[ReplyButton] = [
-        ActionButton(text=text, action="list_period", args={"period": period})
+        ActionButton(text=text, action=LIST_PERIOD, args={PERIOD_ARG: period})
         for period, text in periods
     ]
     return [row] if row else []

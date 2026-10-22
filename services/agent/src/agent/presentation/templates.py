@@ -104,6 +104,23 @@ class ButtonTemplates(_Section):
 class NoticeTemplates(_Section):
     pendingExpired: str
     cancelled: str
+    alreadyUndone: str
+    unknownAction: str
+
+
+# Примечание: вопрос «На когда перенести?» и подписи вариантов (RescheduleChoice)
+class RescheduleTemplates(_Section):
+    question: str
+    inHour: str
+    sameTimeTomorrow: str
+    tomorrowMorning: str
+
+
+# Примечание: приветствие на «Начать» и /start, справка на /help (раньше были в боте)
+class WelcomeTemplates(_Section):
+    start: str
+    help: str
+    openToday: str
 
 
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
@@ -116,6 +133,8 @@ class ReplyTemplates(_Section):
     answer: AnswerTemplates
     buttons: ButtonTemplates
     notices: NoticeTemplates
+    reschedule: RescheduleTemplates
+    welcome: WelcomeTemplates
     errors: dict[str, str]
 
     # Примечание: у каждого возможного кода ошибки — свой текст, иначе пользователь увидит «default»

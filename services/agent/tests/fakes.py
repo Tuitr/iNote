@@ -120,31 +120,53 @@ class FixedClock:
         return self.moment
 
 
-# Примечание: исполнитель, который только запоминает caller хода
+# Примечание: исполнитель хода: запоминает caller и вызовы, отвечает заготовкой по имени
 class RecordingToolExecutor:
-    # Примечание: caller приходит от фабрики
-    def __init__(self, caller: Caller) -> None:
+    # Примечание: caller приходит от фабрики; общие с фабрикой calls и responses
+    def __init__(
+        self,
+        caller: Caller,
+        calls: list[tuple[str, dict[str, object]]],
+        responses: Mapping[str, ToolResult],
+    ) -> None:
         self.caller = caller
+        self._calls = calls
+        self._responses = responses
 
     # Примечание: инструментов нет — сценарий Brain задаёт тест
     async def listTools(self) -> list[ToolSpec]:
         return []
 
-    # Примечание: вызовы в этих тестах не нужны
+    # Примечание: ответ из responses; не задан — ошибка internal
     async def call(self, name: str, args: Mapping[str, object]) -> ToolResult:
-        return ToolResult(ok=False, summary="", error=ErrorInfo(code="internal", message="нет"))
+        self._calls.append((name, dict(args)))
+        missing = ToolResult(ok=False, summary="", error=ErrorInfo(code="internal", message="нет"))
+        return self._responses.get(name, missing)
 
 
-# Примечание: фабрика, запоминающая caller каждого хода
+# Примечание: фабрика, запоминающая caller каждого хода и все вызовы инструментов
 class RecordingToolFactory:
-    # Примечание: callers — по одному на ход
-    def __init__(self) -> None:
+    # Примечание: callers — по одному на ход; responses — ответы инструментов по имени
+    def __init__(self, responses: Mapping[str, ToolResult] | None = None) -> None:
         self.callers: list[Caller] = []
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.responses: dict[str, ToolResult] = dict(responses or {})
 
     # Примечание: новый исполнитель на ход
     def forTurn(self, caller: Caller) -> ToolExecutor:
         self.callers.append(caller)
-        return RecordingToolExecutor(caller)
+        return RecordingToolExecutor(caller, self.calls, self.responses)
+
+
+# Примечание: успешный ответ изменяющего инструмента со статусом и записью
+def mutation(status: str, item: Mapping[str, object] | None = None) -> ToolResult:
+    data: dict[str, object] = {"status": status, "item": dict(item or ITEM)}
+    return ToolResult(ok=True, summary=status, data=data)
+
+
+# Примечание: ответ-ошибка инструмента с кодом стандарта
+def toolError(code: str) -> ToolResult:
+    return ToolResult(ok=False, summary=code, error=ErrorInfo(code=code, message=code))
 
 
 type Script = Callable[[TurnInput], TurnResult]

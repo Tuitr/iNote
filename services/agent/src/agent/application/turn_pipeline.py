@@ -162,6 +162,10 @@ class TurnPipeline:
         )
         return StepOutcome(reply, _nextContext(session.context, turn, result, reply))
 
+    # Примечание: Reply по итогу действия без LLM: вызовы сделал сам агент, правило 3 соблюдено
+    def render(self, session: Session, result: TurnResult) -> Reply:
+        return self.deps.renderer.render(result, session.user, session.traceId)
+
     # Примечание: лок держим только на время шага; снимаем в finally — и при таймауте тоже
     async def _withUser(
         self, maxUserId: int, maxChatId: int, name: str | None, step: Step, traceId: str
@@ -212,14 +216,14 @@ def _nextContext(
     clarify = result.clarify
     return DialogContext(
         history=tuple(history),
-        focus=tuple(_nextFocus(context, result)),
+        focus=nextFocus(context, result),
         pending=clarify.pending if clarify is not None else None,
         options=tuple(clarify.options) if clarify is not None else (),
     )
 
 
 # Примечание: фокус — id из TurnResult.focus; данные — из ответов инструментов или прошлого фокуса
-def _nextFocus(context: DialogContext, result: TurnResult) -> list[ItemBrief]:
+def nextFocus(context: DialogContext, result: TurnResult) -> tuple[ItemBrief, ...]:
     known = {brief.id: brief for brief in context.focus}
     known.update(briefsFromActions(result.actions))
-    return [known[itemId] for itemId in result.focus if itemId in known]
+    return tuple(known[itemId] for itemId in result.focus if itemId in known)
