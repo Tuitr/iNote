@@ -92,9 +92,6 @@ class BotTexts(Protocol):
     # Примечание: голосовое не распознано; code — первые 6 символов trace_id
     def voiceFailed(self, reason: VoiceFailureReason, code: str) -> str: ...
 
-    # Примечание: приветствие на «Начать»
-    def greeting(self) -> str: ...
-
     # Примечание: превышен лимит частоты
     def tooOften(self) -> str: ...
 
@@ -106,6 +103,3 @@ class BotTexts(Protocol):
 
     # Примечание: неизвестная команда — подсказка со списком команд
     def unknownCommand(self, name: str) -> str: ...
-
-    # Примечание: справка на /start и /help
-    def help(self) -> str: ...

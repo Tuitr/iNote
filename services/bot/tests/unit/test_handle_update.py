@@ -12,6 +12,7 @@ from bot.infrastructure.fake_max import FakeMaxGateway
 from bot.presentation import templates
 from common.errors import AppError, ErrorCode
 from common.trace import traceContext
+from contracts.reply import ActionRequest, Reply
 from services.bot.tests.fakes import (
     FakeAgent,
     FakeAsr,
@@ -41,7 +42,7 @@ async def test_textGoesToAgent(
     assert keyboard["type"] == "inline_keyboard"
 
 
-# Примечание: пока агент думает — «печатает…» уходит сразу и повторяется; после ответа — тишина
+# Примечание: пока агент думает — «печатает…» уходит сразу и повторяется; свой текст бота — без него
 async def test_typingWhileAgentThinks(
     handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent
 ) -> None:
@@ -51,7 +52,7 @@ async def test_typingWhileAgentThinks(
     assert len(typing) >= 3
     assert set(typing) == {CHAT_ID}
     after = len(typing)
-    await handler(dataclasses.replace(loadIncoming("bot_started"), updateId="start-2"))
+    await handler(dataclasses.replace(loadIncoming("command"), updateId="cmd-2", commandName="lol"))
     assert len(gateway.typingActions()) == after
 
 
@@ -105,33 +106,71 @@ async def test_expiredButton(
     assert gateway.sentMessages() == ()
 
 
-# Примечание: /today → действие list_period без LLM
-async def test_commandGoesToActions(
-    handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent
+# Примечание: все команды каталога → /v1/actions; @имя_бота отрезается, регистр не важен
+@pytest.mark.parametrize(
+    ("command", "action", "args"),
+    [
+        ("start", "start", {}),
+        ("help", "help", {}),
+        ("today", "list_period", {"period": "today"}),
+        ("Tomorrow", "list_period", {"period": "tomorrow"}),
+        ("week@va_bot", "list_period", {"period": "week"}),
+    ],
+)
+async def test_commandsGoToActions(
+    *,
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    agent: FakeAgent,
+    command: str,
+    action: str,
+    args: dict[str, str],
 ) -> None:
-    await handler(loadIncoming("command"))
+    await handler(dataclasses.replace(loadIncoming("command"), commandName=command))
     [request] = agent.actions
-    assert (request.action, request.args) == ("list_period", {"period": "today"})
+    assert (request.action, request.args, request.callbackId) == (action, args, None)
     assert len(gateway.sentMessages()) == 1
 
 
-# Примечание: /help и незнакомая команда — тексты бота, агент не вызывается
-async def test_localCommands(
+# Примечание: незнакомая команда — подсказка бота, агент не вызывается
+async def test_unknownCommand(
     handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent
 ) -> None:
-    base = loadIncoming("command")
-    await handler(dataclasses.replace(base, updateId="c-1", commandName="help"))
-    await handler(dataclasses.replace(base, updateId="c-2", commandName="lol"))
-    texts = [m.text for m in gateway.sentMessages()]
-    assert texts == [templates.HELP, templates.UNKNOWN_COMMAND.format(name="lol")]
+    await handler(dataclasses.replace(loadIncoming("command"), commandName="lol"))
+    assert [m.text for m in gateway.sentMessages()] == [
+        templates.UNKNOWN_COMMAND.format(name="lol")
+    ]
     assert agent.actions == []
 
 
-# Примечание: «Начать» → приветствие бота, агент не нужен
+# Примечание: «Начать» → действие start у агента (приветствие — его шаблон), ответ — в чат
 async def test_botStarted(handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent) -> None:
     await handler(loadIncoming("bot_started"))
-    assert [m.text for m in gateway.sentMessages()] == [templates.GREETING]
+    [request] = agent.actions
+    assert request.action == "start"
     assert agent.messages == []
+    assert [m.text for m in gateway.sentMessages()] == [exampleReply("confirm.json").text]
+
+
+# Примечание: спиннер кнопки гаснет до вызова агента — даже если агент думает долго
+async def test_callbackAnsweredBeforeAgent(
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    agent: FakeAgent,
+    callbacks: InMemoryCallbackStore,
+) -> None:
+    key = await callbacks.save(StoredAction("list_period", {"period": "week"}))
+    seen: list[int] = []
+    original = agent.sendAction
+
+    # Примечание: в момент вызова агента ответ на нажатие уже ушёл
+    async def spy(request: ActionRequest) -> Reply:
+        seen.append(len(gateway.callbackAnswers()))
+        return await original(request)
+
+    agent.sendAction = spy  # type: ignore[method-assign]
+    await handler(dataclasses.replace(loadIncoming("callback"), callbackPayload=key))
+    assert seen == [1]
 
 
 # Примечание: голос: скачать → ASR → агенту распознанный текст с source=voice и флагами ASR

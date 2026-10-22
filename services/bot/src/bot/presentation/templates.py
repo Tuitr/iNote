@@ -3,21 +3,13 @@ from typing import Final
 from bot.domain.voice import VoiceFailureReason
 
 # Тексты бота для пользователя — здесь, а не в use case (CLAUDE.md, «Стандарты»).
-# Ответы по существу (подтверждения, списки) строит агент по своим шаблонам.
+# Ответы по существу (подтверждения, списки, приветствие и справка) строит агент по своим шаблонам.
 # Ошибки голосового бот отвечает сам, не доходя до агента
 VOICE_NO_SPEECH: Final = "Не расслышал — повтори или напиши текстом.\nКод: {code}"
 VOICE_TOO_LONG: Final = (
     "Слишком длинное голосовое — уложись в минуту или напиши текстом.\nКод: {code}"
 )
 VOICE_FAILED: Final = "Не получилось распознать голосовое — напиши текстом.\nКод: {code}"
-GREETING: Final = (
-    "Привет! Я помогу с задачами, напоминаниями и встречами. Напиши, например: "
-    "«что у меня сегодня» или «напомни завтра в 10 позвонить Ивану»."
-)
-HELP: Final = (
-    "Пиши обычным текстом: «что у меня завтра», «создай задачу купить хлеб», «найди договор».\n"
-    "Команды: /today — сегодня, /tomorrow — завтра, /week — неделя."
-)
 UNKNOWN_COMMAND: Final = "Не знаю команду /{name}. Есть /today, /tomorrow, /week и /help."
 TOO_OFTEN: Final = "Слишком часто. Подожди минуту и попробуй снова."
 AGENT_FAILED: Final = (
@@ -39,10 +31,6 @@ class RussianTexts:
             return VOICE_TOO_LONG.format(code=code)
         return VOICE_FAILED.format(code=code)
 
-    # Примечание: приветствие на «Начать»
-    def greeting(self) -> str:
-        return GREETING
-
     # Примечание: превышен лимит 20 сообщений в минуту
     def tooOften(self) -> str:
         return TOO_OFTEN
@@ -58,7 +46,3 @@ class RussianTexts:
     # Примечание: имя команды обрезаем — это текст пользователя
     def unknownCommand(self, name: str) -> str:
         return UNKNOWN_COMMAND.format(name=name[:COMMAND_NAME_LIMIT])
-
-    # Примечание: справка на /start и /help
-    def help(self) -> str:
-        return HELP

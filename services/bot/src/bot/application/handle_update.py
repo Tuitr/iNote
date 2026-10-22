@@ -30,13 +30,15 @@ from contracts.reply import (
     Reply,
 )
 
-# Команды без LLM → POST /v1/actions (обработку действий агент получает в S2)
+# Команды без LLM → POST /v1/actions; тексты приветствия и справки — у агента
+START_ACTION: Final = "start"
 COMMAND_ACTIONS: Final[dict[str, tuple[str, dict[str, ArgValue]]]] = {
+    "start": (START_ACTION, {}),
+    "help": ("help", {}),
     "today": ("list_period", {"period": "today"}),
     "tomorrow": ("list_period", {"period": "tomorrow"}),
     "week": ("list_period", {"period": "week"}),
 }
-LOCAL_COMMANDS: Final = frozenset({"start", "help"})
 
 _log = getLogger(__name__)
 
@@ -107,7 +109,7 @@ class HandleUpdate:
             case UpdateKind.VOICE:
                 return await self._onVoice(update, chatId)
             case UpdateKind.BOT_STARTED | UpdateKind.CALLBACK:
-                return await self._sendText(chatId, self._d.texts.greeting())
+                return await self._sendAction(update, chatId, START_ACTION, {})
             case _:
                 assert_never(update.kind)
 
@@ -153,16 +155,20 @@ class HandleUpdate:
         audio = await self._d.downloader.download(voice)
         return await self._d.asr.transcribe(audio)
 
-    # Примечание: /today, /tomorrow, /week → /v1/actions; /start и /help — справка; иначе подсказка
+    # Примечание: /start, /help, /today, /tomorrow, /week → /v1/actions; иначе подсказка бота
     async def _onCommand(self, update: IncomingUpdate, chatId: MaxChatId) -> HandleOutcome:
         name = (update.commandName or "").lower().split("@", 1)[0]
-        if name in LOCAL_COMMANDS:
-            return await self._sendText(chatId, self._d.texts.help())
         if name not in COMMAND_ACTIONS:
             return await self._sendText(chatId, self._d.texts.unknownCommand(name))
         action, args = COMMAND_ACTIONS[name]
+        return await self._sendAction(update, chatId, action, args)
+
+    # Примечание: действие без LLM → /v1/actions под «печатает…»
+    async def _sendAction(
+        self, update: IncomingUpdate, chatId: MaxChatId, action: str, args: dict[str, ArgValue]
+    ) -> HandleOutcome:
         request = ActionRequest(
-            maxUserId=update.maxUserId, maxChatId=chatId, action=action, args=args
+            maxUserId=update.maxUserId, maxChatId=chatId, action=action, args=dict(args)
         )
         return await self._askAgent(chatId, lambda: self._d.agent.sendAction(request))
 

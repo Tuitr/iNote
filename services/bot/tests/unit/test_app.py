@@ -14,7 +14,6 @@ from redis.asyncio import Redis
 from bot.infrastructure.real_max import ADAPTER_NOT_CHOSEN, MaxAdapterNotChosenError
 from bot.infrastructure.settings import BotSettings
 from bot.main import createApp
-from bot.presentation import templates
 from bot.presentation.dev_routes import SentLog, SentMessageDto
 from common.redis import createRedis
 from services.bot.tests.fakes import REPLY_EXAMPLES, loadMaxUpdate
@@ -193,14 +192,19 @@ async def test_devVoice(running: httpx.AsyncClient) -> None:
     assert missing.json()["error"]["code"] == "not_found"
 
 
-# Примечание: один и тот же апдейт дважды — одно приветствие (дедуп через Redis)
-async def test_duplicatePushHandledOnce(running: httpx.AsyncClient) -> None:
+# Примечание: один и тот же апдейт дважды — один вызов start у агента (дедуп через Redis)
+async def test_duplicatePushHandledOnce(
+    running: httpx.AsyncClient, agentHttp: FakeAgentHttp
+) -> None:
     raw = loadMaxUpdate("bot_started")
     await running.post("/dev/max/updates", json=raw)
     await running.post("/dev/max/updates", json=raw)
     await waitSent(running, 1)
     await asyncio.sleep(0.2)
-    assert [m.text for m in (await sentLog(running, 1)).messages] == [templates.GREETING]
+    assert len((await sentLog(running, 1)).messages) == 1
+    [request] = agentHttp.requests
+    assert request.url.path == "/v1/actions"
+    assert json.loads(request.content)["action"] == "start"
 
 
 # Примечание: голосовое через /dev/max/voice: скачать по ссылке → ASR (multipart) → агенту текст
