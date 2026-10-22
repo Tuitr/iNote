@@ -12,6 +12,7 @@ from syrupy.extensions.json import JSONSnapshotExtension
 
 from contracts.agent_side import TurnInput, TurnResult
 from contracts.asr import TranscribeResponse
+from contracts.dialog_turns import DialogTurnsRequest
 from contracts.notify import NotifyDelivered, NotifyRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
 from contracts.users import ResolveUserRequest, ResolveUserResponse
@@ -30,6 +31,7 @@ MODELS: list[type[BaseModel]] = [
     ResolveUserRequest,
     ResolveUserResponse,
     TranscribeResponse,
+    DialogTurnsRequest,
 ]
 
 

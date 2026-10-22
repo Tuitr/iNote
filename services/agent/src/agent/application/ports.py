@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Protocol
 from agent.application.reschedule import RescheduleOption
 from agent.domain.user import Caller, UserContext, UserId
 from contracts.agent_side import ItemBrief, JsonObject, ToolExecutor, Turn, TurnResult
+from contracts.dialog_turns import DialogInputType
 from contracts.reply import Reply
 
 
@@ -54,6 +56,30 @@ class Clock(Protocol):
 class ToolExecutorFactory(Protocol):
     # Примечание: новый ToolExecutor с caller этого хода
     def forTurn(self, caller: Caller) -> ToolExecutor: ...
+
+
+# Примечание: что сказал пользователь: текст (как есть), голос (распознанный текст) или кнопка
+@dataclass(frozen=True)
+class UserInput:
+    text: str
+    inputType: DialogInputType
+
+
+# Примечание: запись истории диалога после хода (J8 dialog-turns): пара реплик и время ответа
+@dataclass(frozen=True)
+class DialogEntry:
+    userId: UserId
+    traceId: str
+    said: UserInput
+    answer: str
+    itemIds: tuple[uuid.UUID, ...]
+    latencyMs: int
+
+
+# Примечание: история диалога у D; запись — в фоне, ответ пользователю её не ждёт
+class DialogLog(Protocol):
+    # Примечание: не бросает и не блокирует: сбой записи — только лог (история не критична)
+    def record(self, entry: DialogEntry) -> None: ...
 
 
 # Примечание: короткие ответы действий без LLM; тексты — в шаблонах ([notices] в ru.toml)

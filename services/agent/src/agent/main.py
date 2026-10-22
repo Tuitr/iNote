@@ -14,9 +14,17 @@ from redis.asyncio import Redis
 
 from agent.application.handle_action import HandleAction
 from agent.application.handle_message import HandleMessage
-from agent.application.ports import Clock, ReplyRenderer, ToolExecutorFactory, UserResolver
+from agent.application.ports import (
+    Clock,
+    DialogLog,
+    ReplyRenderer,
+    ToolExecutorFactory,
+    UserResolver,
+)
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
 from agent.infrastructure.brains import buildBrain
+from agent.infrastructure.http_dialog_log import TASK_PREFIX as DIALOG_TASK_PREFIX
+from agent.infrastructure.http_dialog_log import HttpDialogLogWriter
 from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutorFactory
@@ -54,6 +62,7 @@ class AgentOverrides:
     tools: ToolExecutorFactory | None = None
     clock: Clock | None = None
     renderer: ReplyRenderer | None = None
+    dialogLog: DialogLog | None = None
     # транспорт к служебному REST mcp-контейнера (J8, health) — httpx.MockTransport в тестах
     mcpTransport: httpx.AsyncBaseTransport | None = None
 
@@ -91,6 +100,15 @@ def createApp(
                 mcp = McpConnection(httpSessionFactory(config.mcpUrl, config.serviceToken))
                 mcp.start(tasks)
                 tools = McpToolExecutorFactory(mcp, timeoutS=config.mcpTimeoutS)
+            # J8 dialog-turns идемпотентен по trace_id: 2 повтора, ответ пользователю не ждёт
+            dialogHttp = ServiceHttpClient(
+                baseUrl=config.mcpInternalUrl,
+                timeoutS=config.mcpTimeoutS,
+                serviceToken=config.serviceToken,
+                retry=RetryPolicy(retries=2),
+                upstreamName="mcp",
+                transport=custom.mcpTransport,
+            )
             deps = TurnDeps(
                 resolver=custom.resolver or HttpUserResolver(mcpHttp, store),
                 lock=RedisUserLock(store),
@@ -99,6 +117,7 @@ def createApp(
                 brain=brain,
                 tools=tools,
                 renderer=custom.renderer or TemplateReplyRenderer(templates, clock),
+                dialogLog=custom.dialogLog or HttpDialogLogWriter(dialogHttp, tasks),
             )
             app.state.redis = redis
             app.state.mcpHttp = mcpHttp
@@ -115,6 +134,12 @@ def createApp(
                 # MCP-сессию закрываем до остановки реестра: её хозяин — фоновая задача в нём
                 if mcp is not None:
                     await mcp.close()
+                # затем дожидаемся записей истории диалога — им ещё нужен HTTP-клиент
+                report = await tasks.shutdown()
+                lost = [n for n in report.cancelled if n.startswith(f"{DIALOG_TASK_PREFIX}:")]
+                if lost:
+                    _log.warning("dialog_turns_lost", tasks=lost, reason="shutdown_timeout")
+                await dialogHttp.aclose()
                 await mcpHttp.aclose()
                 await redis.aclose()
                 _log.info("agent_stopped")

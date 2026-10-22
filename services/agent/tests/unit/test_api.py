@@ -185,3 +185,23 @@ async def test_llmBrainFailsStartup(agentEnv: pytest.MonkeyPatch) -> None:
     with pytest.raises(BrainNotConnectedError, match="libs/brain"):
         async with app.router.lifespan_context(app):
             pass
+
+
+# Примечание: ход через HTTP пишет историю J8 в фоне: тот же trace_id, внутренний user_id;
+# при остановке агента запись дописывается до закрытия клиента
+async def test_dialogTurnsWrittenInBackground(app: FastAPI, mcpHttp: FakeMcpHttp) -> None:
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://agent") as client:
+            response = await client.post(
+                "/v1/actions",
+                json=example("action_request.json"),
+                headers={**AUTH, "X-Trace-Id": TRACE},
+            )
+    assert response.status_code == 200
+    [written] = mcpHttp.dialogTurns
+    body = json.loads(written.content)
+    assert (body["user_id"], body["trace_id"]) == (17, TRACE)
+    assert [t["role"] for t in body["turns"]] == ["user", "assistant"]
+    assert body["turns"][0] == {"role": "user", "text": "undo", "input_type": "action"}
+    assert written.headers["Idempotency-Key"] == f"dialog-turns:{TRACE}"

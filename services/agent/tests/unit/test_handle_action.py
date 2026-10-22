@@ -19,6 +19,7 @@ from services.agent.tests.fakes import (
     FixedClock,
     InMemoryContextStore,
     InMemoryUserLock,
+    RecordingDialogLog,
     RecordingToolFactory,
     ScenarioBrain,
     createdAction,
@@ -48,6 +49,7 @@ class Rig:
         self.store = InMemoryContextStore()
         if context is not None:
             self.store.contexts[USER_ID] = context
+        self.dialog = RecordingDialogLog()
         self.tools = RecordingToolFactory(responses)
         pipeline = TurnPipeline(
             TurnDeps(
@@ -58,6 +60,7 @@ class Rig:
                 brain=brain,
                 tools=self.tools,
                 renderer=TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)),
+                dialogLog=self.dialog,
             ),
             lockWaitS=0.05,
         )
@@ -274,3 +277,15 @@ async def test_unknownAction() -> None:
         assert (reply.text, reply.state) == (TEMPLATES.notices.unknownAction, ReplyState.ERROR)
         assert reply.traceId == TRACE
         assert (rig.lock.acquired, rig.tools.calls) == (0, [])
+
+
+# Примечание: в историю: кнопка — код действия, выбор варианта — подпись кнопки; input_type=action;
+# незнакомая кнопка (без хода) — без записи
+async def test_dialogEntries() -> None:
+    rig = Rig(context=asked(), responses={"delete_item": mutation("deleted")})
+    await rig.press("pick_option", {"choice": 1})
+    await rig.press("undo", {"item_id": ITEM_ID})
+    await rig.press("teleport")
+    said = [(e.said.text, e.said.inputType) for e in rig.dialog.entries]
+    assert said == [("сегодня 19:00", "action"), ("undo", "action")]
+    assert {e.traceId for e in rig.dialog.entries} == {TRACE}

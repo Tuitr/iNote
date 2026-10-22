@@ -1,5 +1,6 @@
 """POST /v1/messages: текст или распознанное голосовое → ход Brain внутри общего каркаса хода."""
 
+from agent.application.ports import UserInput
 from agent.application.turn_pipeline import Session, StepOutcome, TurnPipeline
 from contracts.reply import MessageRequest, Reply
 
@@ -26,5 +27,10 @@ class HandleMessage:
             return self._pipeline.finish(session, turn, raw, heard=heard)
 
         return await self._pipeline.execute(
-            request.maxUserId, request.maxChatId, request.name, step, kind="message"
+            request.maxUserId,
+            request.maxChatId,
+            request.name,
+            step,
+            kind="message",
+            said=UserInput(request.text, request.source),
         )

@@ -7,7 +7,7 @@ from typing import Final
 
 import httpx
 
-from agent.application.ports import DialogContext
+from agent.application.ports import DialogContext, DialogEntry
 from agent.domain.user import Caller, UserContext, UserId
 from common.errors import AppError
 from contracts.agent_side import (
@@ -227,11 +227,18 @@ class FakeMcpHttp:
     def resolves(self) -> list[httpx.Request]:
         return [r for r in self.requests if r.url.path == "/internal/v1/users/resolve"]
 
-    # Примечание: /health/live и /internal/v1/users/resolve; остальное — 404
+    # Примечание: записи истории диалога (J8 dialog-turns)
+    @property
+    def dialogTurns(self) -> list[httpx.Request]:
+        return [r for r in self.requests if r.url.path == "/internal/v1/dialog-turns"]
+
+    # Примечание: /health/live, users/resolve и dialog-turns (202); остальное — 404
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.url.path == "/health/live":
             return httpx.Response(200 if self.healthy else 503, json={"status": "ok"})
+        if request.url.path == "/internal/v1/dialog-turns":
+            return httpx.Response(202, json={"accepted": True})
         if request.url.path != "/internal/v1/users/resolve":
             return httpx.Response(404, json={"error": {"code": "not_found", "message": "-"}})
         if self.down or self.failures > 0:
@@ -242,3 +249,18 @@ class FakeMcpHttp:
             return httpx.Response(200, json=self.body)
         user = {"user_id": self.userId, "tz": self.tz, "settings": {}, "created": True}
         return httpx.Response(200, json=user)
+
+
+# Примечание: история диалога в памяти; failing — record падает (ответ всё равно уходит)
+class RecordingDialogLog:
+    # Примечание: entries — по одной записи на ход
+    def __init__(self, *, failing: bool = False) -> None:
+        self.entries: list[DialogEntry] = []
+        self.failing = failing
+
+    # Примечание: синхронно, как порт: запись в фон делает настоящий адаптер
+    def record(self, entry: DialogEntry) -> None:
+        if self.failing:
+            msg = "dialog log down"
+            raise RuntimeError(msg)
+        self.entries.append(entry)

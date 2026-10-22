@@ -22,6 +22,7 @@ from services.agent.tests.fakes import (
     FixedClock,
     InMemoryContextStore,
     InMemoryUserLock,
+    RecordingDialogLog,
     RecordingToolFactory,
     ScenarioBrain,
     createdAction,
@@ -53,6 +54,7 @@ class Rig:
         self.resolver = resolver or FakeUserResolver()
         self.lock = InMemoryUserLock()
         self.store = store or InMemoryContextStore()
+        self.dialog = RecordingDialogLog()
         self.tools = RecordingToolFactory()
         self.pipeline = TurnPipeline(
             TurnDeps(
@@ -63,6 +65,7 @@ class Rig:
                 brain=brain,
                 tools=self.tools,
                 renderer=TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)),
+                dialogLog=self.dialog,
             ),
             turnTimeoutS=turnTimeoutS,
             lockWaitS=lockWaitS,
@@ -286,3 +289,45 @@ async def test_lowConfidenceIgnoredForText() -> None:
     [turn] = rig.brain.turns
     assert turn.asrLowConfidence is False
     assert not reply.text.startswith("Распознал")
+
+
+# Примечание: после хода — запись в историю: внутренний user_id, trace, реплика пользователя,
+# текст ответа и id записей из Reply.items; голосовое — с input_type=voice
+async def test_dialogEntryRecorded() -> None:
+    rig = Rig(ScenarioBrain(done))
+    reply = await rig.run()
+    voice = await rig.run(REQUEST.model_copy(update={"source": "voice"}))
+    first, second = rig.dialog.entries
+    assert (first.userId, first.traceId) == (USER_ID, TRACE)
+    assert (first.said.text, first.said.inputType) == (REQUEST.text, "text")
+    assert first.answer == reply.text
+    assert first.itemIds == tuple(item.id for item in reply.items)
+    assert first.itemIds
+    assert first.latencyMs >= 0
+    assert (second.said.inputType, second.answer) == ("voice", voice.text)
+
+
+# Примечание: запись — только если шаг дошёл до ответа: падение Brain, занятый лок и
+# недоступный J8 в историю не попадают
+async def test_dialogEntryOnlyForHandledTurns() -> None:
+    crashed = Rig(ScenarioBrain(done, error=RuntimeError("boom")))
+    await crashed.run()
+    busy = Rig(ScenarioBrain(done))
+    busy.lock.held[USER_ID] = "чужой"
+    await busy.run()
+    down = Rig(
+        ScenarioBrain(done),
+        resolver=FakeUserResolver(error=AppError(ErrorCode.UPSTREAM_UNAVAILABLE, "J8 down")),
+    )
+    await down.run()
+    assert (len(crashed.dialog.entries), busy.dialog.entries, down.dialog.entries) == (0, [], [])
+
+
+# Примечание: история упала — пользователь всё равно получает ответ
+async def test_dialogLogFailureStillReplies() -> None:
+    rig = Rig(ScenarioBrain(done))
+    rig.dialog.failing = True
+    with structlog.testing.capture_logs() as logs:
+        reply = await rig.run()
+    assert reply.state is ReplyState.DONE
+    assert any(e["event"] == "dialog_log_failed" for e in logs)

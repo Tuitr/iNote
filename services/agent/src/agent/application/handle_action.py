@@ -26,7 +26,7 @@ from agent.application.actions import (
     STARTS_AT_ARG,
     UNDO,
 )
-from agent.application.ports import Notice, Welcome
+from agent.application.ports import Notice, UserInput, Welcome
 from agent.application.reschedule import rescheduleOptions
 from agent.application.turn_pipeline import (
     Session,
@@ -74,8 +74,14 @@ class HandleAction:
             )
             traceId = currentTraceId() or newTraceId()
             return self._pipeline.deps.renderer.notice(Notice.UNKNOWN_ACTION, traceId)
+        # в историю — код действия (args не пишем: там id записей и время, не слова пользователя)
         return await self._pipeline.execute(
-            request.maxUserId, request.maxChatId, None, step, kind="action"
+            request.maxUserId,
+            request.maxChatId,
+            None,
+            step,
+            kind="action",
+            said=UserInput(request.action, "action"),
         )
 
     # Примечание: каталог действий; None — незнакомое действие или args не по каталогу
@@ -104,7 +110,9 @@ class HandleAction:
             options = session.context.options
             turn = self._pipeline.turnInput(session, options[choice])
             raw = await self._pipeline.deps.brain.resume(turn, str(choice), session.tools)
-            return self._pipeline.finish(session, turn, raw)
+            # в историю — подпись выбранной кнопки: это и есть ответ пользователя на вопрос
+            outcome = self._pipeline.finish(session, turn, raw)
+            return dataclasses.replace(outcome, said=UserInput(options[choice], "action"))
 
         return step
 

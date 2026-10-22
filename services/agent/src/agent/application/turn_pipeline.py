@@ -16,13 +16,16 @@ from agent.application.ports import (
     Clock,
     DialogContext,
     DialogContextStore,
+    DialogEntry,
+    DialogLog,
     ReplyRenderer,
     ToolExecutorFactory,
+    UserInput,
     UserLock,
     UserResolver,
 )
 from agent.application.turn_rules import briefsFromActions, enforceActionRule
-from agent.domain.user import Caller, UserContext
+from agent.domain.user import Caller, UserContext, UserId
 from common.errors import AppError, ErrorCode
 from common.logging import bindUserId, getLogger
 from common.trace import currentTraceId, newTraceId
@@ -55,6 +58,7 @@ class TurnDeps:
     brain: Brain
     tools: ToolExecutorFactory
     renderer: ReplyRenderer
+    dialogLog: DialogLog
 
 
 # Примечание: что получает шаг: пользователь, контекст, «сейчас» в его поясе и инструменты хода
@@ -67,11 +71,21 @@ class Session:
     tools: ToolExecutor
 
 
-# Примечание: итог шага: ответ и новый контекст (None — контекст не трогаем)
+# Примечание: итог шага: ответ, новый контекст (None — не трогаем) и что записать в историю как
+# реплику пользователя (None — то, что передали в execute)
 @dataclass(frozen=True)
 class StepOutcome:
     reply: Reply
     context: DialogContext | None = None
+    said: UserInput | None = None
+
+
+# Примечание: шаг дошёл до ответа у известного пользователя — ход попадёт в историю
+@dataclass(frozen=True)
+class _Handled:
+    reply: Reply
+    userId: UserId | None = None
+    said: UserInput | None = None
 
 
 type Step = Callable[[Session], Awaitable[StepOutcome]]
@@ -91,16 +105,26 @@ class TurnPipeline:
         self._turnTimeoutS = turnTimeoutS
         self._lockWaitS = lockWaitS
 
-    # Примечание: никогда не бросает наружу — любая беда превращается в Reply с кодом и trace_id
+    # Примечание: никогда не бросает наружу — любая беда превращается в Reply с кодом и trace_id;
+    # said — реплика пользователя для истории диалога (шаг может уточнить её в StepOutcome)
     async def execute(
-        self, maxUserId: int, maxChatId: int, name: str | None, step: Step, *, kind: str
+        self,
+        maxUserId: int,
+        maxChatId: int,
+        name: str | None,
+        step: Step,
+        *,
+        kind: str,
+        said: UserInput,
     ) -> Reply:
         traceId = currentTraceId() or newTraceId()
         started = time.perf_counter()
         renderer = self.deps.renderer
+        handled: _Handled | None = None
         try:
             async with asyncio.timeout(self._turnTimeoutS):
-                reply = await self._withUser(maxUserId, maxChatId, name, step, traceId)
+                handled = await self._withUser(maxUserId, maxChatId, name, step, traceId)
+            reply = handled.reply
         except TimeoutError:
             _log.warning("turn_timeout", timeout_s=self._turnTimeoutS, kind=kind)
             reply = renderer.failure(ErrorCode.UPSTREAM_TIMEOUT, traceId)
@@ -110,12 +134,28 @@ class TurnPipeline:
         except Exception:  # noqa: BLE001 — пользователь получает ответ с кодом, а не обрыв
             _log.exception("turn_crashed", kind=kind)
             reply = renderer.failure(ErrorCode.INTERNAL, traceId)
-        _log.info(
-            f"{kind}_handled",
-            state=reply.state.value,
-            duration_ms=round((time.perf_counter() - started) * 1000),
-        )
+        latencyMs = round((time.perf_counter() - started) * 1000)
+        _log.info(f"{kind}_handled", state=reply.state.value, duration_ms=latencyMs)
+        if handled is not None and handled.userId is not None:
+            self._record(handled.userId, traceId, handled.said or said, reply, latencyMs)
         return reply
+
+    # Примечание: история диалога — в фоне (DialogLog), сбой записи ответ не трогает
+    def _record(
+        self, userId: UserId, traceId: str, said: UserInput, reply: Reply, latencyMs: int
+    ) -> None:
+        entry = DialogEntry(
+            userId=userId,
+            traceId=traceId,
+            said=said,
+            answer=reply.text,
+            itemIds=tuple(item.id for item in reply.items),
+            latencyMs=latencyMs,
+        )
+        try:
+            self.deps.dialogLog.record(entry)
+        except Exception:  # noqa: BLE001 — история не важнее ответа пользователю
+            _log.exception("dialog_log_failed")
 
     # Примечание: TurnInput без user_id (правило 1): «сейчас» уже в поясе пользователя
     def turnInput(
@@ -169,13 +209,13 @@ class TurnPipeline:
     # Примечание: лок держим только на время шага; снимаем в finally — и при таймауте тоже
     async def _withUser(
         self, maxUserId: int, maxChatId: int, name: str | None, step: Step, traceId: str
-    ) -> Reply:
+    ) -> _Handled:
         user = await self.deps.resolver.resolve(maxUserId, maxChatId, name)
         bindUserId(str(user.userId))
         token = await self.deps.lock.acquire(user.userId, self._lockWaitS)
         if token is None:
             _log.info("user_lock_busy", wait_s=self._lockWaitS)
-            return self.deps.renderer.busy(traceId)
+            return _Handled(self.deps.renderer.busy(traceId))
         try:
             context = await self.deps.contextStore.load(user.userId)
             session = Session(
@@ -190,7 +230,7 @@ class TurnPipeline:
             outcome = await step(session)
             if outcome.context is not None:
                 await self._saveContext(user, outcome.context)
-            return outcome.reply
+            return _Handled(outcome.reply, user.userId, outcome.said)
         finally:
             released = await self.deps.lock.release(user.userId, token)
             if not released:

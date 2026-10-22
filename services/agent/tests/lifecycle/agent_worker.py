@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import sys
+from pathlib import Path
 
 import httpx
 import uvicorn
@@ -29,11 +31,22 @@ class SlowBrain:
         raise NotImplementedError
 
 
-# Примечание: служебный REST mcp-контейнера без сети: user_id = max_user_id, health → 200
-def fakeMcpHttp(request: httpx.Request) -> httpx.Response:
+# Примечание: строка в файл (из потока — не блокирует цикл событий)
+def appendLine(path: Path, line: bytes) -> None:
+    with path.open("ab") as out:
+        out.write(line + b"\n")
+
+
+# Примечание: служебный REST mcp-контейнера без сети: user_id = max_user_id, health → 200;
+# dialog-turns «думает» DIALOG_DELAY_S и дописывает тело в DIALOG_FILE — тест видит запись
+async def fakeMcpHttp(request: httpx.Request) -> httpx.Response:
     if request.url.path == "/internal/v1/users/resolve":
         userId = json.loads(request.content)["max_user_id"]
         return httpx.Response(200, json={"user_id": userId, "tz": "Europe/Moscow"})
+    if request.url.path == "/internal/v1/dialog-turns":
+        await asyncio.sleep(float(os.environ.get("DIALOG_DELAY_S", "0")))
+        await asyncio.to_thread(appendLine, Path(os.environ["DIALOG_FILE"]), request.content)
+        return httpx.Response(202, json={"accepted": True})
     return httpx.Response(200, json={"status": "ok"})
 
 

@@ -19,7 +19,9 @@ import pytest
 import structlog
 from pydantic import SecretStr
 
+from agent.application.ports import DialogEntry, UserInput
 from agent.domain.user import Caller
+from agent.infrastructure.http_dialog_log import HttpDialogLogWriter
 from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpReply, McpToolExecutor
@@ -404,3 +406,33 @@ async def test_rescheduleAndUndo(stub: StubProcess, uniqueId: str) -> None:
     assert second.structured["error"]["code"] == "not_found"  # type: ignore[index]
     assert listed.structured is not None
     assert eventId not in json.dumps(listed.structured)
+
+
+# Примечание: история диалога J8 по HTTP: повтор того же хода (тот же trace_id) — 202 без дубля;
+# без токена — 401
+async def test_dialogTurnsNoDuplicate(stub: StubProcess, uniqueId: str) -> None:
+    entry = DialogEntry(
+        userId=17,
+        traceId=uniqueId,
+        said=UserInput("что у меня завтра", "text"),
+        answer="Завтра: ничего не запланировано.",
+        itemIds=(),
+        latencyMs=12,
+    )
+    async with (
+        managedTasks(timeoutS=5) as tasks,
+        ServiceHttpClient(
+            baseUrl=stub.root, timeoutS=5, serviceToken=SecretStr(SERVICE_TOKEN), upstreamName="mcp"
+        ) as http,
+    ):
+        writer = HttpDialogLogWriter(http, tasks)
+        writer.record(entry)
+        writer.record(entry)
+        await tasks.shutdown(timeoutS=5)
+    stored, duplicates = stub.events("dialog_turns_stored"), stub.events("dialog_turns_duplicate")
+    assert [e["trace_id"] for e in stored] == [uniqueId]
+    assert len(duplicates) == 1
+    async with httpx.AsyncClient() as client:
+        anonymous = await client.post(f"{stub.root}/internal/v1/dialog-turns", json={})
+    assert anonymous.status_code == 401
+    assert "что у меня" not in stub.logPath.read_text()
