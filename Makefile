@@ -94,9 +94,10 @@ eval: ## LLM eval — платно, только по прямой просьб�
 STAND_COMPOSE ?= docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.stand.yml \
 	--env-file .env --profile full
 
-stand-config: ## проверить конфиг стенда с HTTPS (compose + Caddy) без запуска
+stand-config: ## проверить .env и конфиг стенда с HTTPS (compose + Caddy) без запуска
+	./deploy/stand-check.sh .env
 	$(STAND_COMPOSE) config --quiet
 
-deploy: ## стенд с HTTPS: Caddy + webhook MAX (только по прямой просьбе; нужны STAND_DOMAIN, токен MAX)
+deploy: stand-config ## стенд с HTTPS: Caddy + webhook MAX (только по прямой просьбе)
 	$(STAND_COMPOSE) up -d --build --wait
 # --- конец зоны C ---

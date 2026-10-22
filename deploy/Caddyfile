@@ -18,6 +18,10 @@
 			method POST
 			path /webhook/max
 		}
+		# апдейт MAX — небольшой JSON; бот тоже режет тело больше 1 МБ
+		request_body @webhook {
+			max_size 1MB
+		}
 		reverse_proxy @webhook bot:8000
 
 		# J5: мини-приложение ходит в /api/v1/*, api (D) обслуживает /v1/*

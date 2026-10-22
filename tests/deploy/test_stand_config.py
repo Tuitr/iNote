@@ -73,6 +73,8 @@ def test_onlyAllowedUpstreams() -> None:
 def test_botAndApiNarrow() -> None:
     directives = caddyDirectives()
     assert "reverse_proxy @webhook bot:8000" in directives
+    assert "request_body @webhook {" in directives
+    assert "max_size 1MB" in directives
     assert "method POST" in directives
     assert "path /webhook/max" in directives
     assert "@api path /api/v1/*" in directives
