@@ -59,3 +59,11 @@ def test_frozen() -> None:
     model = Sample.fromWire(SAMPLE_JSON)
     with pytest.raises(ValidationError):
         model.traceId = "other"  # type: ignore[misc]
+
+
+# Примечание: в тексте ошибки разбора нет входных значений — текст пользователя не утечёт в лог
+def test_errorHidesInput() -> None:
+    with pytest.raises(ValidationError) as failure:
+        Sample.fromWire({**SAMPLE_JSON, "max_user_id": "позвонить Ивану"})
+    assert "Ивану" not in str(failure.value)
+    assert "max_user_id" in str(failure.value)
