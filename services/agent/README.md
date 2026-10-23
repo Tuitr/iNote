@@ -31,6 +31,12 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` — кн
   в поиске — по кнопке с названием на каждую из первых трёх; список «сегодня» → `today`, другой день →
   `day_YYYY-MM-DD`, неделя → `week_<понедельник>` (даты в поясе пользователя); `start`/`help` → `today` и
   `dialog`. start_param не собрался — `warning start_param_invalid` без значения и кнопка `today`.
+- **Настройки** (`/settings`, `application/settings_actions.py`): экран — пояс и голосовые ответы, 12 поясов РФ
+  кнопками `set_tz {tz}` (по 4 в ряд, текущий — «✓»; белый список — `domain/timezones.py`) и переключатель
+  `set_voice_replies {enabled}`. Запись — `SettingsWriter` (`infrastructure/http_user_settings.py`): J8
+  `PATCH /internal/v1/users/{user_id}/settings` (черновик C; `user_id` — из resolve, не из кнопки; ключ
+  `user-settings:<trace_id>`, 1 повтор) → сброс `va:v1:agent:user:{max_user_id}` → «Пояс: Екатеринбург (UTC+5)»
+  по ответу D и кнопка «Сегодня». Пояс не из списка или `enabled` не bool — «Не понял кнопку», J8 не зовём.
 - **Фокус** (`POST /v1/focus`, `application/handle_focus.py`): фокус — записи последнего ответа; бот после
   доставленного уведомления ставит фокусом его запись (204, под локом; занят — 503). `ScriptedBrain`
   (`infrastructure/scripted_focus.py`): «перенеси его на завтра в 15», «сдвинь её на 2 часа позже»,
