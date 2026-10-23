@@ -28,6 +28,15 @@ main.py          composition root: createApp() и lifespan
 Оба пути отдают апдейты в `UpdateDispatcher`: у пользователя — своя очередь (строго по порядку), разные — параллельно,
 не больше `BOT_MAX_CONCURRENT_UPDATES` сразу; опустевшая очередь удаляется. При SIGTERM принятые апдейты дорабатываются.
 
+**Уведомления J4** (`POST /internal/v1/notify`, Scheduler D → бот, сервисный токен): `DeliverNotification` —
+уже доставлено (`va:v1:bot:notif`, 24 ч) → `duplicate`; «в работе» (`va:v1:bot:notif_lock`, `SET NX`, 60 с) —
+параллельный повтор получает 503 с `Retry-After: 5`; «доставлено» с `message_id` пишется только после ответа MAX.
+Отказ MAX: чат не найден → 404 `chat_not_found` (без повторов), 429 → 429, таймаут/5xx → 503. Текст по `kind` —
+«⏰ Позвонить Ивану / Сегодня, ср 21 октября, 10:00», «Скоро встреча: …», «Срок задачи: …» (время в поясе
+пользователя, `libs/common/ru_dates.py`); кнопки «Выполнено» (не у встречи), «Отложить на 1 ч», «Завтра» и
+«В календаре» (`item_<id>`). Отказы MAX в фейке — `POST /dev/max/failures {chat_id, reason, times}`.
+Сценарии — `contracts/examples/notify/notify.sh once|repeat|parallel|chat-not-found|all`.
+
 `HandleUpdate`: дубль пропускается, сверх лимита (20 в минуту) — «Слишком часто». Текст → агент
 `/v1/messages` (с именем и языком из апдейта), пока ждём — «печатает…» (`typing_on` сразу и раз в 4 с).
 Кнопка: payload — ключ `va:v1:bot:cb:{key}` (24 ч), за ним действие → `/v1/actions`; спиннер MAX гасится сразу,

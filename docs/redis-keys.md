@@ -21,7 +21,8 @@
 | `va:v1:bot:upd:{update_id}` | бот | бот | 24 ч | дедуп апдейтов MAX (SET NX); `update_id` строит бот — у MAX его нет | **в коде** |
 | `va:v1:bot:rl:{max_user_id}` | бот | бот | 60 с | лимит 20 сообщений в минуту (INCR + EXPIRE NX), фиксированное окно | **в коде** |
 | `va:v1:bot:marker:poll` | бот | бот | 24 ч | marker long polling реального MAX; TTL ≤ TTL дедупа, чтобы повтор после рестарта отсекался | **в коде**, только `BOT_MAX_MODE=real` |
-| `va:v1:bot:notif:{notification_id}` | бот | бот | 24 ч | дедуп уведомлений J4: повтор после таймаута → `duplicate` | план (S3) |
+| `va:v1:bot:notif:{notification_id}` | бот | бот | 24 ч | «доставлено» J4: значение — `message_id` MAX; пишется только после ответа MAX; повтор → `duplicate` | **в коде** (S3) |
+| `va:v1:bot:notif_lock:{notification_id}` | бот | бот | 60 с | «в работе» J4: `SET NX` с токеном на время отправки; параллельный повтор → 503 `Retry-After: 5`; снимается своим токеном после отправки | **в коде** (S3) |
 | `va:v1:bot:cb:{key}` | бот | бот | 24 ч | действие за callback-кнопкой `{action, args}`; `key` — `token_urlsafe(12)`, 16 символов — он и есть payload кнопки | **в коде** |
 | `va:v1:agent:lock:{user_id}` | агент | агент | 60 с | лок на пользователя: ходы одного пользователя по очереди; SET NX EX с токеном, снятие только своим токеном (WATCH/MULTI) | **в коде** |
 | `va:v1:agent:ctx:{user_id}` | агент | агент | 2 ч | история диалога для `TurnInput.history` (до 10 реплик) | **в коде** |
