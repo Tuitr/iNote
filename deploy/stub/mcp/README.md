@@ -38,5 +38,5 @@
   (`dialog_turns_stored` / `dialog_turns_duplicate` в логе, без текстов); под тем же токеном;
 - в stdout — JSON-строка `tool_called` с полученным `caller` (без текста пользователя).
 
-Запуск без Docker: `uv run python deploy/stub/mcp/server.py` (порт — `STUB_PORT`, по умолчанию 8000).
+Запуск без Docker: `uv run python deploy/stub/mcp/server.py` (порт — `STUB_PORT`, по умолчанию 8000; `STUB_TOOL_DELAY_MS` — задержка каждого вызова инструмента для lifecycle-тестов, на стенде 0).
 Тест агента по HTTP против заглушки: `uv run pytest services/agent/tests/integration/test_mcp_http.py`.

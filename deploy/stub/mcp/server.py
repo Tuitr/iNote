@@ -10,6 +10,7 @@ J8: POST /internal/v1/users/resolve — user_id по max_user_id (в памят�
 POST /internal/v1/dialog-turns — ход в памяти по trace_id, повтор — 202 без дубля.
 """
 
+import asyncio
 import hmac
 import json
 import os
@@ -35,6 +36,9 @@ OWNER: Final = "C (временно, вместо заглушки D)"
 PORT: Final = int(os.environ.get("STUB_PORT", "8000"))
 # Пустой токен — проверка выключена (запуск руками); в compose берётся из .env, как у всех
 SERVICE_TOKEN: Final = os.environ.get("SERVICE_TOKEN", "")
+# Задержка каждого вызова инструмента, мс — «медленный MCP» для lifecycle-тестов (SIGTERM посреди
+# вызова); на стенде 0
+TOOL_DELAY_S: Final = int(os.environ.get("STUB_TOOL_DELAY_MS", "0")) / 1000
 FIRST_USER_ID: Final = 17
 FIXTURES: Final = Path(__file__).with_name("fixtures")
 WEEKDAYS: Final = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
@@ -677,6 +681,8 @@ def buildServer(stub: StubTools | None = None) -> Server[object]:
 
     # Примечание: вызов инструмента по запросу клиента
     async def onCallTool(ctx: object, params: types.CallToolRequestParams) -> types.CallToolResult:
+        if TOOL_DELAY_S > 0:
+            await asyncio.sleep(TOOL_DELAY_S)
         return tools.call(params.name, params.arguments)
 
     return Server(NAME, version="stub-s1", on_list_tools=onListTools, on_call_tool=onCallTool)
