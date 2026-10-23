@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from typing import Final
 
 import pytest
@@ -38,3 +39,13 @@ async def redisClient(redisContainerUrl: str) -> AsyncIterator[Redis]:
 @pytest.fixture
 def uniqueId() -> str:
     return uuid.uuid4().hex
+
+
+# Примечание: Redis «появляется позже» на заранее выбранном порту — для тестов старта без Redis:
+# сервис запущен с этим адресом, а контейнер поднимаем, когда нужно
+@contextmanager
+def redisOnPort(port: int) -> Iterator[str]:
+    from testcontainers.community.redis import RedisContainer
+
+    with RedisContainer(REDIS_IMAGE).with_bind_ports(REDIS_PORT, port) as container:
+        yield f"redis://{container.get_container_host_ip()}:{port}/0"
