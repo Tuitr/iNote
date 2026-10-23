@@ -4,7 +4,14 @@
 `make smoke` — четыре сценария ТЗ голосом через фейковый MAX и ASR-заглушку («напомни завтра в 10 …»,
 «встреча с Иваном завтра в 15», «что у меня завтра», «найди звонок Ивану») и «что у меня сегодня» текстом;
 `make e2e` — `tests/e2e` на стенде (S1 текстом и S2 голосом: кнопки, уточнения, конфликт встреч, `no_speech`,
-`/week`); `make logs TRACE=<trace_id>` — путь голосового через bot → asr → agent → mcp одним `trace_id`; `make down` — остановка (данные Postgres остаются в volume `pgdata`).
+`/week`; S3 — уведомления, кнопки уведомления, фокус, кнопки мини-приложения, `/settings`); `make logs TRACE=<trace_id>` — путь голосового через bot → asr → agent → mcp одним `trace_id`; `make down` — остановка (данные Postgres остаются в volume `pgdata`).
+
+**S3 — уведомления (J4) вручную**, вместо Scheduler'а D: `SERVICE_TOKEN=<из .env> ./contracts/examples/notify/notify.sh all`
+(`once` — одно уведомление, `repeat` — повтор того же `notification_id` → `duplicate`, `parallel` — два сразу →
+одно сообщение, `chat-not-found` — 404 без повторов). Скрипт печатает `trace_id`; `make logs TRACE=<первые 6>`
+показывает путь: `POST /internal/v1/notify` → `max_message_sent` → `notification_handled` → `focus_sent` (бот) →
+`focus_set` (агент) — одной цепочкой. Сквозные сценарии S3 — `tests/e2e/test_s3_*.py` (голосового ответа
+ассистента нет — решение команды).
 
 | Файл | Что это |
 |---|---|
