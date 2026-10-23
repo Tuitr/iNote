@@ -5,7 +5,10 @@
 
 import asyncio
 import os
+import subprocess
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Final
@@ -189,3 +192,31 @@ async def notifyRaw(
     if traceId is not None:
         headers["X-Trace-Id"] = traceId
     return await client.post("/internal/v1/notify", json=body, headers=headers)
+
+
+ROOT_DIR: Final = Path(__file__).resolve().parents[2]
+COMPOSE: Final = (
+    "docker",
+    "compose",
+    "-f",
+    str(ROOT_DIR / "deploy" / "docker-compose.yml"),
+    "--env-file",
+    str(ROOT_DIR / ".env"),
+    "--profile",
+    "mock",
+)
+
+
+# Примечание: сервис стенда остановлен на время блока, потом поднят и дождались healthy (S4,
+# деградация); исключение внутри блока не оставляет стенд без сервиса
+@contextmanager
+def stopped(service: str) -> Iterator[None]:
+    subprocess.run([*COMPOSE, "stop", service], check=True, capture_output=True)  # noqa: S603
+    try:
+        yield
+    finally:
+        subprocess.run(  # noqa: S603
+            [*COMPOSE, "up", "-d", "--no-build", "--wait", service],
+            check=True,
+            capture_output=True,
+        )
