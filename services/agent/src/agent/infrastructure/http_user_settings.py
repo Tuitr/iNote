@@ -30,7 +30,7 @@ class HttpSettingsWriter:
 
     # Примечание: PATCH → ответ D → сброс кеша → пользователь хода с новыми настройками
     async def update(self, user: UserContext, change: SettingsChange) -> UserContext:
-        body = UpdateUserSettingsRequest(tz=change.tz, voiceReplies=change.voiceReplies)
+        body = UpdateUserSettingsRequest(tz=change.tz)
         traceId = currentTraceId() or newTraceId()
         response = await self._http.request(
             "PATCH",

@@ -16,10 +16,9 @@ HELP: Final = "help"
 COMPLETE: Final = "complete"
 SNOOZE: Final = "snooze"
 CONFIRM_CONFLICT: Final = "confirm_conflict"
-# S3: /settings — пояс и голосовые ответы (предложение к каталогу G3)
+# S3: /settings — часовой пояс (предложение к каталогу G3)
 SETTINGS: Final = "settings"
 SET_TZ: Final = "set_tz"
-SET_VOICE_REPLIES: Final = "set_voice_replies"
 
 # аргументы кнопок
 CHOICE_ARG: Final = "choice"
@@ -34,7 +33,6 @@ UNTIL_ARG: Final = "until"
 UNTIL_TOMORROW: Final = "tomorrow"
 # confirm_conflict: что создать вопреки пересечению — из того вызова, что вернул conflict
 TITLE_ARG: Final = "title"
-# set_tz: пояс IANA из белого списка (domain/timezones.py); set_voice_replies: вкл/выкл
+# set_tz: пояс IANA из белого списка (domain/timezones.py)
 TZ_ARG: Final = "tz"
-ENABLED_ARG: Final = "enabled"
 ENDS_AT_ARG: Final = "ends_at"

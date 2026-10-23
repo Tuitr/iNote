@@ -429,18 +429,18 @@ async def test_confirmConflict() -> None:
     assert bad.text == TEMPLATES.notices.unknownAction
 
 
-# Примечание: /settings — пояс и голосовые ответы текстом; 12 поясов по 4 в ряд (≤ 7), текущий
-# отмечен; переключатель голосовых; инструменты не нужны
+# Примечание: /settings — пояс текстом; 12 поясов по 4 в ряд (≤ 7), текущий отмечен; голосовых
+# ответов нет; инструменты не нужны
 async def test_settingsScreen() -> None:
     rig = Rig()
     reply = await rig.press("settings")
-    assert reply.text.split("\n")[1:3] == ["Пояс: Москва (UTC+3)", "Голосовые ответы: выкл"]
-    *zones, toggle = buttons(reply)
+    assert reply.text.split("\n")[1] == "Пояс: Москва (UTC+3)"
+    assert "олосов" not in reply.text
+    zones = buttons(reply)
     assert [len(row) for row in zones] == [4, 4, 4]
     flat = [b for row in zones for b in row]
     assert flat[1] == ("✓ Москва", "set_tz", {"tz": "Europe/Moscow"})
     assert flat[3] == ("Екатеринбург", "set_tz", {"tz": "Asia/Yekaterinburg"})
-    assert toggle == [("Включить голосовые ответы", "set_voice_replies", {"enabled": True})]
     assert rig.tools.calls == []
 
 
@@ -468,8 +468,8 @@ async def test_setTzThenTodayInNewZone() -> None:
         ("set_tz", {"tz": "Asia/Kolkata"}),
         ("set_tz", {}),
         ("set_tz", {"tz": 3}),
-        ("set_voice_replies", {"enabled": "yes"}),
-        ("set_voice_replies", {}),
+        # голосовых ответов в продукте нет — старое действие не по каталогу
+        ("set_voice_replies", {"enabled": True}),
     ],
 )
 async def test_settingsRejectsBadArgs(action: str, args: dict[str, str | int | bool]) -> None:
@@ -477,15 +477,6 @@ async def test_settingsRejectsBadArgs(action: str, args: dict[str, str | int | b
     reply = await rig.press(action, args)
     assert reply.text == TEMPLATES.notices.unknownAction
     assert rig.settings.calls == []
-
-
-# Примечание: голосовые ответы — подтверждение по сохранённому
-@pytest.mark.parametrize(("enabled", "text"), [(True, "вкл"), (False, "выкл")])
-async def test_setVoiceReplies(enabled: bool, text: str) -> None:
-    rig = Rig()
-    reply = await rig.press("set_voice_replies", {"enabled": enabled})
-    assert reply.text == f"Голосовые ответы: {text}"
-    assert rig.settings.calls == [(USER_ID, SettingsChange(voiceReplies=enabled))]
 
 
 # Примечание: J8 недоступен — ответ-ошибка с кодом, пояс не поменялся

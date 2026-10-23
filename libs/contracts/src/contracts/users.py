@@ -1,6 +1,6 @@
 """J8 · agent (C) → mcp-контейнер (D): POST /internal/v1/users/resolve. Владелец D, черновик C к G1.
 
-S3: PATCH /internal/v1/users/{user_id}/settings — смена пояса и голосовых ответов из /settings
+S3: PATCH /internal/v1/users/{user_id}/settings — смена пояса из /settings
 (потребительский черновик C: у D этого метода ещё нет). Ответ — тот же пользователь, что у resolve;
 после него агент сбрасывает кеш va:v1:agent:user:{max_user_id}.
 
@@ -9,10 +9,10 @@ S3: PATCH /internal/v1/users/{user_id}/settings — смена пояса и г�
 Агент кеширует ответ в va:v1:agent:user:{max_user_id} на 1 ч. Читатель игнорирует незнакомые поля.
 """
 
-from typing import Final, Self
+from typing import Final
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 
 from common.wire import WireModel
 
@@ -59,17 +59,15 @@ def settingsPath(userId: int) -> str:
     return SETTINGS_PATH.format(user_id=userId)
 
 
-# Примечание: что поменять: только заданные поля (PATCH); хотя бы одно обязательно
+# Примечание: что поменять: пока только пояс (голосовых ответов в продукте нет — решение команды,
+# S3); новые поля — добавлением, необязательными
 class UpdateUserSettingsRequest(WireModel):
-    tz: str | None = None
-    voiceReplies: bool | None = None
+    tz: str
 
     # Примечание: пояс — только существующий IANA (белый список — у агента)
     @field_validator("tz")
     @classmethod
-    def _checkTz(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+    def _checkTz(cls, value: str) -> str:
         try:
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
@@ -77,14 +75,6 @@ class UpdateUserSettingsRequest(WireModel):
             raise ValueError(msg) from exc
         return value
 
-    # Примечание: пустой PATCH — ошибка вызывающего, а не «ничего не делать»
-    @model_validator(mode="after")
-    def _notEmpty(self) -> Self:
-        if self.tz is None and self.voiceReplies is None:
-            msg = "нужно хотя бы одно поле: tz или voice_replies"
-            raise ValueError(msg)
-        return self
-
-    # Примечание: на проводе — только заданные поля (PATCH не трогает остальные)
+    # Примечание: тело PATCH на проводе
     def toPatch(self) -> dict[str, object]:
         return self.model_dump(by_alias=True, exclude_none=True, mode="json")

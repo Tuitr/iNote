@@ -68,7 +68,6 @@ class InMemorySettingsWriter:
     def __init__(self, resolver: FakeUserResolver, error: AppError | None = None) -> None:
         self.resolver = resolver
         self.error = error
-        self.voiceReplies = False
         self.calls: list[tuple[UserId, SettingsChange]] = []
 
     # Примечание: запоминает (user_id, изменение) и отдаёт пользователя после изменения
@@ -76,11 +75,8 @@ class InMemorySettingsWriter:
         self.calls.append((user.userId, change))
         if self.error is not None:
             raise self.error
-        if change.tz is not None:
-            self.resolver.tz = change.tz
-        if change.voiceReplies is not None:
-            self.voiceReplies = change.voiceReplies
-        return dataclasses.replace(user, tz=self.resolver.tz, voiceReplies=self.voiceReplies)
+        self.resolver.tz = change.tz
+        return dataclasses.replace(user, tz=self.resolver.tz)
 
 
 # Примечание: лок в памяти с той же семантикой токена, что у Redis
@@ -297,8 +293,7 @@ class FakeMcpHttp:
             error = {"code": "upstream_unavailable", "message": "down", "details": {}}
             return httpx.Response(503, json={"error": error})
         body = json.loads(request.content)
-        self.tz = body.get("tz", self.tz)
-        self.voiceReplies = body.get("voice_replies", self.voiceReplies)
+        self.tz = body["tz"]
         return httpx.Response(200, json=self._user(created=False))
 
 

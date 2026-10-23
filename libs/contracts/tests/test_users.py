@@ -46,13 +46,12 @@ def test_settingsRoundTrip() -> None:
     raw = loadExample("users/settings_request.json")
     request = UpdateUserSettingsRequest.fromWire(raw)
     assert request.toPatch() == raw
-    assert UpdateUserSettingsRequest(voiceReplies=True).toPatch() == {"voice_replies": True}
     response = loadExample("users/settings_response.json")
     assert ResolveUserResponse.fromWire(response).toWire() == response
     assert settingsPath(17) == "/internal/v1/users/17/settings"
 
 
-# Примечание: пустой PATCH и несуществующий пояс — ошибка контракта
+# Примечание: пустой PATCH, пояс null и несуществующий пояс — ошибка контракта
 @pytest.mark.parametrize("raw", [{}, {"tz": None}, {"tz": "Mars/Base"}])
 def test_settingsInvalid(raw: dict[str, object]) -> None:
     with pytest.raises(ValidationError):

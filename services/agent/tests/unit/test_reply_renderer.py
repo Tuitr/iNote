@@ -492,13 +492,11 @@ def test_rescheduleQuestionOpenApp(itemId: str, param: str) -> None:
     assert ("start_param_invalid" in str(logs)) is (param == "today")
 
 
-# Примечание: экран /settings под снапшотом: пояс с UTC-смещением, кнопки поясов, переключатель;
-# пояс пользователя не из списка — IANA как есть, без отметки
-@pytest.mark.parametrize(
-    ("tz", "voice"), [(EKB, True), ("Europe/London", False)], ids=["ekb_voice", "foreign"]
-)
-def test_settingsScreen(tz: str, voice: bool, jsonSnapshot: SnapshotAssertion) -> None:
-    user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=tz, voiceReplies=voice)
+# Примечание: экран /settings под снапшотом: пояс с UTC-смещением и кнопки поясов (без голосовых
+# ответов — их в продукте нет); пояс пользователя не из списка — IANA как есть, без отметки
+@pytest.mark.parametrize("tz", [EKB, "Europe/London"], ids=["ekb", "foreign"])
+def test_settingsScreen(tz: str, jsonSnapshot: SnapshotAssertion) -> None:
+    user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=tz)
     reply = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)).settings(user, TRACE)
     wire = reply.toWire()
     assert all(len(row) <= 7 for row in buttonRows(wire))

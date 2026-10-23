@@ -18,7 +18,6 @@ from agent.application.actions import (
     CANCEL,
     CHOICE_ARG,
     CONFIRM_CONFLICT,
-    ENABLED_ARG,
     ENDS_AT_ARG,
     ITEM_ID_ARG,
     KIND_ARG,
@@ -27,14 +26,13 @@ from agent.application.actions import (
     PICK_OPTION,
     RESCHEDULE,
     SET_TZ,
-    SET_VOICE_REPLIES,
     STARTS_AT_ARG,
     TITLE_ARG,
     TZ_ARG,
     UNDO,
 )
 from agent.application.item_time import ItemKind
-from agent.application.ports import Clock, Notice, SettingsChange, Welcome
+from agent.application.ports import Clock, Notice, Welcome
 from agent.application.reschedule import RescheduleChoice, RescheduleOption
 from agent.application.turn_rules import successfulMutations
 from agent.domain.timezones import RU_TIMEZONES, ruTimezone, utcOffset
@@ -182,8 +180,7 @@ class TemplateReplyRenderer:
     # в ряд (MAX — до 7), текущий отмечен; переключатель голосовых ответов
     def settings(self, user: UserContext, traceId: str) -> Reply:
         s = self._t.settings
-        voice = s.voiceOn if user.voiceReplies else s.voiceOff
-        text = "\n".join([s.header, s.tz.format(tz=self._tzLabel(user.tz)), voice, s.hint])
+        text = "\n".join([s.header, s.tz.format(tz=self._tzLabel(user.tz)), s.hint])
         zones: list[ReplyButton] = [
             ActionButton(
                 text=s.current.format(city=zone.city) if zone.tz == user.tz else zone.city,
@@ -193,25 +190,14 @@ class TemplateReplyRenderer:
             for zone in RU_TIMEZONES
         ]
         rows: Rows = [zones[i : i + TZ_PER_ROW] for i in range(0, len(zones), TZ_PER_ROW)]
-        toggle = ActionButton(
-            text=s.voiceDisable if user.voiceReplies else s.voiceEnable,
-            action=SET_VOICE_REPLIES,
-            args={ENABLED_ARG: not user.voiceReplies},
-        )
-        rows.append([toggle])
         return _plain(text, ReplyState.ANSWER, traceId, buttons=rows)
 
     # Примечание: подтверждение по сохранённому у D: «Пояс: Екатеринбург (UTC+5)»; после смены
     # пояса — кнопка «Сегодня», чтобы сразу увидеть день в новом поясе
-    def settingsChanged(self, user: UserContext, change: SettingsChange, traceId: str) -> Reply:
+    def settingsChanged(self, user: UserContext, traceId: str) -> Reply:
         s, b = self._t.settings, self._t.buttons
-        lines: list[str] = []
-        if change.tz is not None:
-            lines.append(s.tz.format(tz=self._tzLabel(user.tz)))
-        if change.voiceReplies is not None:
-            lines.append(s.voiceOn if user.voiceReplies else s.voiceOff)
-        rows = _periodRow([("today", b.today)]) if change.tz is not None else []
-        return _plain("\n".join(lines), ReplyState.DONE, traceId, buttons=rows)
+        text = s.tz.format(tz=self._tzLabel(user.tz))
+        return _plain(text, ReplyState.DONE, traceId, buttons=_periodRow([("today", b.today)]))
 
     # Примечание: «Екатеринбург (UTC+5)»; пояс не из списка (задан у D иначе) — IANA как есть
     def _tzLabel(self, tz: str) -> str:

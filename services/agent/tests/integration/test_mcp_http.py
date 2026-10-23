@@ -251,7 +251,7 @@ async def test_settingsOverHttp(stub: StubProcess, uniqueId: str) -> None:
     ) as http:
         cache = KeyedRedis(fakeredis.FakeAsyncRedis())
         user = await HttpUserResolver(http, cache).resolve(maxUserId, 5, None)
-        change = SettingsChange(tz="Asia/Yekaterinburg", voiceReplies=True)
+        change = SettingsChange(tz="Asia/Yekaterinburg")
         updated = await HttpSettingsWriter(http, cache).update(user, change)
         again = await HttpUserResolver(http, cache).resolve(maxUserId, 5, None)
         with pytest.raises(AppError) as missing:
@@ -262,8 +262,8 @@ async def test_settingsOverHttp(stub: StubProcess, uniqueId: str) -> None:
             await http.request(
                 "PATCH", f"/internal/v1/users/{user.userId}/settings", json={"tz": "Mars/Base"}
             )
-    assert (updated.tz, updated.voiceReplies) == ("Asia/Yekaterinburg", True)
-    assert (again.userId, again.tz, again.voiceReplies) == (user.userId, "Asia/Yekaterinburg", True)
+    assert updated.tz == "Asia/Yekaterinburg"
+    assert (again.userId, again.tz) == (user.userId, "Asia/Yekaterinburg")
     assert (missing.value.code, badTz.value.code) == ("not_found", "validation_error")
 
 

@@ -1,14 +1,14 @@
-"""/settings без LLM (S3, шаг 5): экран настроек, set_tz и set_voice_replies.
+"""/settings без LLM (S3, шаг 5): экран настроек и set_tz.
 
 Пояс — только из белого списка (domain/timezones.py), иначе кнопка не по каталогу
 (validation_error в лог, «Не понял кнопку»). user_id берётся из resolve (session.user) — из
-args кнопки читаются только tz и enabled. Запись — SettingsWriter (J8 PATCH) со сбросом кеша:
+args кнопки читается только tz. Запись — SettingsWriter (J8 PATCH) со сбросом кеша:
 следующий ход считает «сегодня» уже в новом поясе.
 """
 
 from collections.abc import Mapping
 
-from agent.application.actions import ENABLED_ARG, TZ_ARG
+from agent.application.actions import TZ_ARG
 from agent.application.ports import SettingsChange, SettingsWriter
 from agent.application.turn_pipeline import Session, Step, StepOutcome, TurnPipeline
 from agent.domain.timezones import ruTimezone
@@ -39,22 +39,13 @@ class SettingsActions:
         zone = ruTimezone(args.get(TZ_ARG))
         return None if zone is None else self._change(SettingsChange(tz=zone.tz))
 
-    # Примечание: set_voice_replies {enabled}: только bool
-    def setVoiceStep(self, args: Mapping[str, ArgValue]) -> Step | None:
-        enabled = args.get(ENABLED_ARG)
-        if not isinstance(enabled, bool):
-            return None
-        return self._change(SettingsChange(voiceReplies=enabled))
-
     # Примечание: запись через J8 → подтверждение по сохранённому (ответ D), не по кнопке
     def _change(self, change: SettingsChange) -> Step:
         # Примечание: шаг: PATCH под локом пользователя; сбой J8 — ответ с кодом от каркаса
         async def step(session: Session) -> StepOutcome:
             updated = await self._writer.update(session.user, change)
-            _log.info(
-                "settings_changed", tz_changed=change.tz is not None, voice=change.voiceReplies
-            )
+            _log.info("settings_changed", tz=change.tz)
             renderer = self._pipeline.deps.renderer
-            return StepOutcome(renderer.settingsChanged(updated, change, session.traceId))
+            return StepOutcome(renderer.settingsChanged(updated, session.traceId))
 
         return step

@@ -98,11 +98,10 @@ class Welcome(StrEnum):
     HELP = "help"
 
 
-# Примечание: что поменять в настройках: None — не трогать
+# Примечание: что поменять в настройках: пока только пояс (голосовых ответов нет — решение команды)
 @dataclass(frozen=True)
 class SettingsChange:
-    tz: str | None = None
-    voiceReplies: bool | None = None
+    tz: str
 
 
 # Примечание: запись настроек пользователя (J8 PATCH у D) и сброс кеша пользователя агента
@@ -145,7 +144,7 @@ class ReplyRenderer(Protocol):
     def settings(self, user: UserContext, traceId: str) -> Reply: ...
 
     # Примечание: подтверждение изменения: «Пояс: Екатеринбург (UTC+5)» или голосовые вкл/выкл
-    def settingsChanged(self, user: UserContext, change: SettingsChange, traceId: str) -> Reply: ...
+    def settingsChanged(self, user: UserContext, traceId: str) -> Reply: ...
 
     # Примечание: Reply-ошибка по коду (upstream_timeout, internal, …)
     def failure(self, errorCode: str, traceId: str) -> Reply: ...

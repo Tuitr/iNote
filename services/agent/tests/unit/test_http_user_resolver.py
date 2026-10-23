@@ -175,7 +175,7 @@ async def test_settingsPatchDown() -> None:
     rig.mcp.down = True
     writer = HttpSettingsWriter(rig.http, KeyedRedis(rig.redis))
     with pytest.raises(AppError) as caught:
-        await writer.update(user, SettingsChange(voiceReplies=True))
+        await writer.update(user, SettingsChange(tz="Asia/Omsk"))
     assert caught.value.code == "upstream_unavailable"
     assert await rig.redis.exists(CACHE_KEY)
 
@@ -186,6 +186,6 @@ async def test_settingsCacheDropFailureOnlyLogged() -> None:
     user = UserContext(userId=17, maxUserId=MAX_USER, maxChatId=CHAT, tz="Europe/Moscow")
     writer = HttpSettingsWriter(rig.http, KeyedRedis(rig.redis))
     with structlog.testing.capture_logs() as logs:
-        updated = await writer.update(user, SettingsChange(voiceReplies=True))
-    assert updated.voiceReplies is True
+        updated = await writer.update(user, SettingsChange(tz="Asia/Omsk"))
+    assert updated.tz == "Asia/Omsk"
     assert [e["event"] for e in logs if e["log_level"] == "warning"] == ["user_cache_drop_failed"]

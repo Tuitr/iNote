@@ -34,7 +34,6 @@ from agent.application.actions import (
     PICK_OPTION,
     RESCHEDULE,
     SET_TZ,
-    SET_VOICE_REPLIES,
     SETTINGS,
     SNOOZE,
     START,
@@ -103,7 +102,6 @@ class HandleAction:
             CONFIRM_CONFLICT: self._reminders.confirmConflictStep,
             SETTINGS: self._settings.settingsStep,
             SET_TZ: self._settings.setTzStep,
-            SET_VOICE_REPLIES: self._settings.setVoiceStep,
             START: lambda _: self._welcome(Welcome.START),
             HELP: lambda _: self._welcome(Welcome.HELP),
         }

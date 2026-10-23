@@ -117,12 +117,8 @@ class WelcomeTemplates(_Section):
 class SettingsTemplates(_Section):
     header: str
     tz: str
-    voiceOn: str
-    voiceOff: str
     hint: str
     current: str
-    voiceEnable: str
-    voiceDisable: str
 
 
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
