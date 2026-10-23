@@ -8,12 +8,21 @@ from typing import Final, Self, get_args
 from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic.alias_generators import to_snake
 
+from common.errors import ErrorCode
 from contracts.agent_side import BrainErrorCode, ToolErrorCode
 
 TEMPLATES_FILE: Final = "ru.toml"
 # Коды, для которых обязателен свой текст: всё, что может прийти в TurnResult.error_code
+# Коды стандарта (ErrorCode: в том числе unauthorized, forbidden, stale от J8 и MCP), Brain и
+# инструментов — у каждого свой текст; без него агент не стартует
 REQUIRED_ERROR_KEYS: Final = frozenset(
-    {"code", "default", *get_args(BrainErrorCode.__value__), *get_args(ToolErrorCode.__value__)}
+    {
+        "code",
+        "default",
+        *ErrorCode,
+        *get_args(BrainErrorCode.__value__),
+        *get_args(ToolErrorCode.__value__),
+    }
 )
 
 
