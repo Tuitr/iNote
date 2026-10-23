@@ -41,6 +41,8 @@ def buildNotifyRouter() -> APIRouter:
     @router.post(NOTIFY_PATH, response_model=None)
     async def notify(request: Request, body: NotifyRequest) -> Response:
         result = await _deliver(request)(body)
+        # в details ошибки — notification_id: Scheduler связывает ответ со своей записью
+        details: dict[str, object] = {"notification_id": str(body.notificationId)}
         match result.outcome:
             case NotifyOutcome.DELIVERED:
                 return JSONResponse(NotifyDelivered(messageId=result.messageId).toWire())
@@ -52,22 +54,27 @@ def buildNotifyRouter() -> APIRouter:
                     AppError(
                         CHAT_NOT_FOUND,
                         "чат не найден или бот заблокирован",
+                        details,
                         httpStatus=CHAT_NOT_FOUND_STATUS,
                     )
                 )
             case NotifyOutcome.RATE_LIMITED:
-                return errorResponse(AppError(ErrorCode.RATE_LIMITED, "MAX ограничил отправку"))
+                return errorResponse(
+                    AppError(ErrorCode.RATE_LIMITED, "MAX ограничил отправку", details)
+                )
             case NotifyOutcome.IN_PROGRESS:
                 response = errorResponse(
                     AppError(
                         ErrorCode.UPSTREAM_UNAVAILABLE,
                         "уведомление уже отправляется",
-                        {"reason": "in_progress"},
+                        {**details, "reason": "in_progress"},
                     )
                 )
                 response.headers["Retry-After"] = str(IN_PROGRESS_RETRY_AFTER_S)
                 return response
             case _:
-                return errorResponse(AppError(ErrorCode.UPSTREAM_UNAVAILABLE, "MAX недоступен"))
+                return errorResponse(
+                    AppError(ErrorCode.UPSTREAM_UNAVAILABLE, "MAX недоступен", details)
+                )
 
     return router
