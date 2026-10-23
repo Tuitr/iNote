@@ -27,6 +27,8 @@ class SentMessageDto(WireModel):
     text: str
     format: str
     attachments: list[dict[str, object]]
+    # S4: цепочка сообщения — для отчёта e2e и демо (только фейковый MAX)
+    traceId: str | None = None
 
 
 # Примечание: один ответ на нажатие кнопки
@@ -113,6 +115,7 @@ def buildDevRouter() -> APIRouter:
                     text=m.text,
                     format=m.format,
                     attachments=m.attachments,
+                    traceId=m.traceId,
                 )
                 for m in console.sentMessages()
             ],

@@ -14,6 +14,8 @@ class SentMessageRecord:
     format: str
     # вложения NewMessageBody как их получил бы MAX (клавиатура inline_keyboard)
     attachments: list[dict[str, object]] = field(default_factory=list)
+    # trace_id цепочки, в которой ушло сообщение — e2e-отчёт и демо находят путь в make logs
+    traceId: str | None = None
 
 
 # Примечание: фейковое голосовое: байты и content-type для скачивания по ссылке

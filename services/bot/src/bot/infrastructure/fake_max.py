@@ -21,6 +21,7 @@ from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.max_outgoing import attachments
 from common.lifecycle import TaskRegistry
 from common.logging import getLogger
+from common.trace import currentTraceId
 
 _log = getLogger(__name__)
 
@@ -171,6 +172,7 @@ class FakeMaxGateway:
                 text=message.text,
                 format=message.format.value,
                 attachments=attachments(message),
+                traceId=currentTraceId(),
             )
         )
         _log.info("max_message_sent", message_id=messageId, fake=True)
