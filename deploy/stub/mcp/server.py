@@ -682,21 +682,42 @@ def buildServer(stub: StubTools | None = None) -> Server[object]:
     return Server(NAME, version="stub-s1", on_list_tools=onListTools, on_call_tool=onCallTool)
 
 
-# Примечание: пользователи J8 в памяти: max_user_id → user_id; пояс и настройки — по умолчанию
+# Примечание: пользователи J8 в памяти: max_user_id → user_id; пояс и настройки — по умолчанию,
+# пока их не поменяет PATCH настроек (S3); resolve отдаёт сохранённое
 class StubUsers:
     # Примечание: id выдаются по порядку с 17 — как в contracts/examples/users
     def __init__(self) -> None:
         self._ids: dict[int, int] = {}
+        self._tz: dict[int, str] = {}
+        self._voice: dict[int, bool] = {}
 
     # Примечание: идемпотентно по max_user_id: повтор возвращает того же пользователя
     def resolve(self, maxUserId: int) -> Json:
         created = maxUserId not in self._ids
         if created:
             self._ids[maxUserId] = FIRST_USER_ID + len(self._ids)
+        return self._user(self._ids[maxUserId], created=created)
+
+    # Примечание: PATCH: только заданные поля; незнакомый user_id — None (404)
+    def update(self, userId: int, tz: str | None, voiceReplies: bool | None) -> Json | None:
+        if userId not in self._ids.values():
+            return None
+        if tz is not None:
+            self._tz[userId] = tz
+        if voiceReplies is not None:
+            self._voice[userId] = voiceReplies
+        return self._user(userId, created=False)
+
+    # Примечание: пользователь в форме ответа resolve
+    def _user(self, userId: int, *, created: bool) -> Json:
+        settings: Json = {
+            "default_event_min": DEFAULT_EVENT_MIN,
+            "voice_replies": self._voice.get(userId, False),
+        }
         return {
-            "user_id": self._ids[maxUserId],
-            "tz": "Europe/Moscow",
-            "settings": {"default_event_min": DEFAULT_EVENT_MIN, "voice_replies": False},
+            "user_id": userId,
+            "tz": self._tz.get(userId, "Europe/Moscow"),
+            "settings": settings,
             "created": created,
         }
 
@@ -747,6 +768,46 @@ def buildResolveRoute(users: StubUsers) -> Route:
         return JSONResponse(user)
 
     return Route("/internal/v1/users/resolve", resolveUser, methods=["POST"])
+
+
+# Примечание: PATCH /internal/v1/users/{user_id}/settings (J8, черновик C — у D метода ещё нет):
+# {tz?, voice_replies?} → пользователь как у resolve; пустое тело, чужой пояс — 400, нет id — 404
+def buildSettingsRoute(users: StubUsers) -> Route:
+    # Примечание: разбор тела и проверка пояса (ZoneInfo), токен — как у resolve
+    async def patchSettings(request: Request) -> JSONResponse:
+        if (denied := _authError(request)) is not None:
+            return denied
+        try:
+            body = await request.json()
+        except ValueError:
+            return _errorResponse(request, 400, "validation_error", "тело не JSON")
+        if not isinstance(body, dict):
+            return _errorResponse(request, 400, "validation_error", "тело — объект")
+        tz, voice = body.get("tz"), body.get("voice_replies")
+        badTz = tz is not None and (not isinstance(tz, str) or not _knownTz(tz))
+        badVoice = voice is not None and not isinstance(voice, bool)
+        if badTz or badVoice or (tz is None and voice is None):
+            return _errorResponse(request, 400, "validation_error", "нужны tz или voice_replies")
+        user = users.update(int(request.path_params["user_id"]), tz, voice)
+        if user is None:
+            return _errorResponse(request, 404, "not_found", "нет такого пользователя")
+        log(
+            "user_settings_updated",
+            user_id=user["user_id"],
+            trace_id=request.headers.get("X-Trace-Id"),
+        )
+        return JSONResponse(user)
+
+    return Route("/internal/v1/users/{user_id:int}/settings", patchSettings, methods=["PATCH"])
+
+
+# Примечание: пояс IANA существует
+def _knownTz(tz: str) -> bool:
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
 
 
 # Примечание: история диалога J8 в памяти: trace_id → ход; повтор с тем же trace_id — не дубль
@@ -808,6 +869,7 @@ async def _health(request: Request) -> JSONResponse:
 
 # Примечание: точка входа: uvicorn на 0.0.0.0, Host mcp:8000 из compose разрешён
 def main() -> None:
+    users = StubUsers()
     app = buildServer().streamable_http_app(
         streamable_http_path="/mcp",
         host="0.0.0.0",  # noqa: S104 — порт внутри сети compose
@@ -815,7 +877,8 @@ def main() -> None:
         custom_starlette_routes=[
             Route("/health/live", _health, methods=["GET"]),
             Route("/health/ready", _health, methods=["GET"]),
-            buildResolveRoute(StubUsers()),
+            buildResolveRoute(users),
+            buildSettingsRoute(users),
             buildDialogTurnsRoute(StubDialogLog()),
         ],
     )
