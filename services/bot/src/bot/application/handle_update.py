@@ -38,6 +38,8 @@ COMMAND_ACTIONS: Final[dict[str, tuple[str, dict[str, ArgValue]]]] = {
     "today": ("list_period", {"period": "today"}),
     "tomorrow": ("list_period", {"period": "tomorrow"}),
     "week": ("list_period", {"period": "week"}),
+    # S3: пояс и голосовые ответы — экран и кнопки у агента
+    "settings": ("settings", {}),
 }
 
 _log = getLogger(__name__)
@@ -155,7 +157,7 @@ class HandleUpdate:
         audio = await self._d.downloader.download(voice)
         return await self._d.asr.transcribe(audio)
 
-    # Примечание: /start, /help, /today, /tomorrow, /week → /v1/actions; иначе подсказка бота
+    # Примечание: /start, /help, /today, /tomorrow, /week, /settings → /v1/actions; иначе подсказка
     async def _onCommand(self, update: IncomingUpdate, chatId: MaxChatId) -> HandleOutcome:
         name = (update.commandName or "").lower().split("@", 1)[0]
         if name not in COMMAND_ACTIONS:

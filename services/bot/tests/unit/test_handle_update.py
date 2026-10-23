@@ -133,6 +133,7 @@ async def test_expiredButton(
         ("today", "list_period", {"period": "today"}),
         ("Tomorrow", "list_period", {"period": "tomorrow"}),
         ("week@va_bot", "list_period", {"period": "week"}),
+        ("settings", "settings", {}),
     ],
 )
 async def test_commandsGoToActions(

@@ -18,7 +18,9 @@ VOICE_TOO_LONG: Final = (
     "Слишком длинное голосовое — уложись в минуту или напиши текстом.\nКод: {code}"
 )
 VOICE_FAILED: Final = "Не получилось распознать голосовое — напиши текстом.\nКод: {code}"
-UNKNOWN_COMMAND: Final = "Не знаю команду /{name}. Есть /today, /tomorrow, /week и /help."
+UNKNOWN_COMMAND: Final = (
+    "Не знаю команду /{name}. Есть /today, /tomorrow, /week, /settings и /help."
+)
 TOO_OFTEN: Final = "Слишком часто. Подожди минуту и попробуй снова."
 AGENT_FAILED: Final = (
     "Не получилось связаться с ассистентом. Попробуй ещё раз через минуту.\nКод: {code}"
