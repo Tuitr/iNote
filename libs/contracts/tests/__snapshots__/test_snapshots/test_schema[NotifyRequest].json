@@ -122,7 +122,7 @@
   },
   "properties": {
     "attempt": {
-      "maximum": 5,
+      "maximum": 6,
       "minimum": 1,
       "title": "Attempt",
       "type": "integer"

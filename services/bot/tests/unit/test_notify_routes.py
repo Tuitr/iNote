@@ -127,9 +127,9 @@ async def test_tokenRequired(bot: httpx.AsyncClient) -> None:
     assert (await bot.get("/dev/max/sent")).json()["messages"] == []
 
 
-# Примечание: время без смещения или attempt вне 1…5 — 400 validation_error
+# Примечание: время без смещения или attempt вне 1…6 — 400 validation_error
 @pytest.mark.parametrize(
-    "patch", [{"fire_at": "2026-10-18T10:00:00"}, {"attempt": 6}, {"kind": "memo"}]
+    "patch", [{"fire_at": "2026-10-18T10:00:00"}, {"attempt": 7}, {"kind": "memo"}]
 )
 async def test_invalidBody(bot: httpx.AsyncClient, patch: dict[str, object]) -> None:
     response = await notify(bot, payload(**patch))

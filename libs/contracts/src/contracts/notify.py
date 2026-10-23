@@ -1,7 +1,8 @@
 """J4 · scheduler (D) → bot (C): POST /internal/v1/notify. Владелец C, вызывает D. К заморозке G4.
 
 Ответы: 200 NotifyDelivered (delivered или duplicate) → Scheduler ставит sent;
-404 конверт ошибки chat_not_found → failed без повторов; 429, 5xx, таймаут → повтор, до 5 попыток.
+404 конверт ошибки chat_not_found → failed без повторов; 429, 5xx, таймаут → повтор:
+первая попытка и до 5 повторов (1, 2, 4, 8, 16 мин) — до 6 вызовов, как у Scheduler D.
 Бот отсекает дубли по notification_id (va:v1:bot:notif:{notification_id}, 24 ч).
 """
 
@@ -16,7 +17,8 @@ from common.wire import WireModel
 NOTIFY_PATH: Final = "/internal/v1/notify"
 CHAT_NOT_FOUND: Final = "chat_not_found"
 CHAT_NOT_FOUND_STATUS: Final = 404
-MAX_ATTEMPTS: Final = 5
+# Как у Scheduler D: attempt растёт при каждом взятии в аренду, 6 — последний повтор
+MAX_ATTEMPTS: Final = 6
 
 
 # Примечание: получатель: куда доставить и в каком поясе показывать время
@@ -50,7 +52,7 @@ class NotifyItem(WireModel):
     status: Literal["open", "done", "cancelled"] = "open"
 
 
-# Примечание: запрос Scheduler; attempt — номер попытки (1…5), notification_id — ключ дедупа
+# Примечание: запрос Scheduler; attempt — номер попытки (1…6), notification_id — ключ дедупа
 class NotifyRequest(WireModel):
     notificationId: uuid.UUID
     kind: Literal["task", "reminder", "event"]
