@@ -59,3 +59,15 @@ def test_escapedAndLimited() -> None:
     )
     long = body(now, "Europe/Moscow", "2026-10-21T10:00:00+03:00", "я" * 200)
     assert len(long) <= 4000
+
+
+# Примечание: S4 — длинное название из разметки: обрезка до 4000 не рвёт пару «\*» (иначе MAX
+# покажет висящий «\» перед «…»), на любой чётности границы
+@pytest.mark.parametrize("prefix", ["", "x"])
+def test_cutKeepsEscapes(prefix: str) -> None:
+    now = datetime(2026, 10, 21, 6, 0, tzinfo=UTC)
+    text = body(now, "Europe/Moscow", "2026-10-21T10:00:00+03:00", prefix + "*" * 2500)
+    assert len(text) <= 4000
+    head = text.removesuffix("…")
+    trailing = len(head) - len(head.rstrip("\\"))
+    assert trailing % 2 == 0, "висящий «\\» перед многоточием"
