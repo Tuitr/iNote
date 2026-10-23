@@ -6,7 +6,7 @@ UV ?= uv
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
         test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy \
-        stand-config redis-check
+        stand-config redis-check demo
 
 # Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
 PROFILE ?= mock
@@ -85,6 +85,9 @@ smoke: ## четыре сценария ТЗ голосом и один текс
 e2e: up ## e2e на стенде: tests/e2e (поднимает стенд, если ещё не поднят), затем аудит Redis
 	$(UV) run pytest -m e2e tests/e2e
 	$(UV) run python deploy/redis_check.py $(COMPOSE)
+
+demo: ## демо на поднятом стенде mock: диалог в фейковом MAX как чат (DEMO_PAUSE_S — пауза)
+	./deploy/demo.sh
 
 redis-check: ## аудит Redis поднятого стенда: ключи из реестра, TTL, maxmemory и политика
 	$(UV) run python deploy/redis_check.py $(COMPOSE)
