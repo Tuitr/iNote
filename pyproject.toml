@@ -289,6 +289,8 @@ filterwarnings = ["error"]
 [tool.coverage.run]
 branch = true
 source = ["common", "contracts", "bot", "agent"]
+# Тесты сами себя не считают (порог D для libs/core — в CI, job backend-d)
+omit = ["*/tests/*"]
 
 [tool.coverage.report]
 # CLAUDE.md: сервисы ≥ 60% (libs/core ≥ 80% — свой порог у D)
