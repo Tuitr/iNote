@@ -1,19 +1,49 @@
 # services/agent — Agent Back (зона C)
 
-S2: `POST /v1/messages` проходит настоящий ход — пользователь → лок → контекст в Redis →
-Brain → инструменты MCP → ответ. `POST /v1/actions` — кнопки и команды без LLM в том же каркасе
-(лок, контекст, `caller`, ключи идемпотентности), каталог — ниже.
+Ход ассистента для бота: `POST /v1/messages` — фраза пользователя (текст или распознанный голос) → Brain →
+инструменты MCP → ответ по шаблонам; `POST /v1/actions` — кнопки и команды без LLM в том же каркасе;
+`POST /v1/focus` — запись из уведомления становится фокусом диалога. Агент знает внутреннего пользователя
+(J8), держит лок, контекст и `pending` в Redis, сам заполняет `caller` для MCP и строит подтверждения из того,
+что реально сохранено. Не ходит в PostgreSQL и не знает формата MAX (отдаёт абстрактный `Reply`).
 
-S3: действия напоминаний (`complete`, `snooze`, `confirm_conflict`), фокус (`POST /v1/focus`, «перенеси его…»),
-кнопки мини-приложения J6 везде, `/settings` (только пояс), «напомни через N минут/часов» в `ScriptedBrain`.
-Голосового ответа нет (решение команды).
+Brain сейчас — `ScriptedBrain` (правила, `AGENT_BRAIN=scripted`); LLM-Brain участника B подключается после
+мержа (`AGENT_BRAIN=llm`). MCP и J8 на стенде — временная заглушка C (`deploy/stub/mcp`). Голосового ответа нет.
+
+## Слои и порты
+
+```
+domain/          UserContext, Caller, периоды (сегодня/завтра/неделя с понедельника), белый список поясов
+application/     порты: UserResolver, UserLock, DialogContextStore, Clock, ToolExecutorFactory, ReplyRenderer,
+                 DialogLog, SettingsWriter; Brain и ToolExecutor — из contracts/agent_side.py (J2)
+                 TurnPipeline (лок → контекст → шаг → контекст), HandleMessage, HandleAction, HandleFocus,
+                 ReminderActions, SettingsActions, правила хода (llm_no_action), item_time, snooze
+infrastructure/  McpConnection и McpToolExecutor (J3), HttpUserResolver, HttpSettingsWriter, HttpDialogLogWriter
+                 (J8), Redis: лок и контекст, ScriptedBrain, AgentSettings
+presentation/    роуты /v1/*, TemplateReplyRenderer, шаблоны templates/ru.toml (проверка при старте)
+main.py          composition root: createApp() и lifespan
+```
+
+## Эндпоинты
+
+| Путь | Кто зовёт | Что делает |
+|---|---|---|
+| `POST /v1/messages` | бот, сервисный токен | `MessageRequest` → ход Brain → `Reply` (200 всегда; сбой — `state=error` с кодом) |
+| `POST /v1/actions` | бот | `ActionRequest` → действие из каталога без LLM → `Reply`; каталог — `docs/standards.md` |
+| `POST /v1/focus` | бот после уведомления | `FocusRequest` → фокус = запись; 204, лок занят — 503 |
+| `GET /health/live`, `/health/ready` | compose | ready — Redis и `/health/live` mcp-контейнера (Brain и LLM не зовём) |
+
+Вход только с `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403). Контракты — `contracts/reply.py`,
+`contracts/focus.py`, сторона C в `contracts/agent_side.py`; примеры — `contracts/examples/{agent,reply,actions}`.
+
+## Как работает
 
 - **Ход** (`application/turn_pipeline.py`, шаги — `handle_message.py` и `handle_action.py`): лок на пользователя `va:v1:agent:lock:{user_id}` (60 с), бюджет
   хода 40 с вместе с ожиданием лока, любой сбой → `Reply` с кодом и `trace_id`. Brain получает `TurnInput`
   без `user_id`; «готово» без успешного изменяющего вызова → `llm_no_action` (правило 3). История (10 реплик),
   фокус и `pending` — в Redis с TTL (`docs/redis-keys.md`).
 - **Brain**: `AGENT_BRAIN=scripted` — `ScriptedBrain` на правилах («что у меня сегодня/завтра/на неделе»,
-  «напомни завтра в 10 …», «создай задачу …», «найди …»); `llm` — Brain участника B после мержа.
+  «напомни завтра в 10 …», «напомни через N минут …», «создай задачу …», «встреча …», «найди …», «перенеси его …»);
+  `llm` — Brain участника B после мержа.
 - **MCP** (`infrastructure/mcp_connection.py`, `mcp_executor.py`): одна сессия Streamable HTTP на процесс,
   переподключение при обрыве. `caller` из ответа модели выбрасывается, агент подставляет свой: `user_id`,
   `tz`, `trace_id`, `idempotency_key = <trace_id>:<n>`. Таймаут 5 с и один повтор с тем же ключом;
@@ -73,16 +103,35 @@ S3: действия напоминаний (`complete`, `snooze`, `confirm_conf
   `POST /internal/v1/dialog-turns` в mcp-контейнере (реплика пользователя с `input_type` text/voice — кнопка как text с подписью, ответ
   и `item_ids`, `latency_ms`). Ответ её не ждёт; ключ `dialog-turns:<trace_id>`, 2 повтора; сбой — только
   `warning` с `trace_id`. При SIGTERM агент дожидается начатых записей до закрытия HTTP-клиента.
-- Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).
-- Слои: `domain` ← `application` (порты, ход) ← `infrastructure` (Redis, MCP, ScriptedBrain, настройки),
-  `presentation` (роуты, рендер); `main.py` — composition root, всё создаётся в `lifespan`.
 
-| Переменная | По умолчанию |
-|---|---|
-| `AGENT_BRAIN` | `scripted` |
-| `AGENT_TURN_TIMEOUT_S` / `AGENT_LOCK_WAIT_S` | `40` / `10` |
-| `AGENT_MCP_URL` / `AGENT_MCP_TIMEOUT_S` | `http://mcp:8000/mcp` / `5` |
-| `AGENT_MCP_INTERNAL_URL` | `http://mcp:8000` |
+## Переменные
+
+Таблица генерируется из `AgentSettings` (`make env-docs`), тест следит, чтобы она не расходилась с кодом.
+
+<!-- env:begin -->
+| Переменная | По умолчанию | Зачем |
+|---|---|---|
+| `AGENT_BRAIN` | `scripted` | `scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (после мержа) |
+| `AGENT_TURN_TIMEOUT_S` | `40.0` | бюджет хода вместе с ожиданием лока, с (меньше ожидания бота — 45 с) |
+| `AGENT_LOCK_WAIT_S` | `10.0` | сколько ждать лок пользователя, с; не дождались — «Ещё обрабатываю…» |
+| `AGENT_MCP_URL` | `http://mcp:8000/mcp` | MCP (J3), одна сессия Streamable HTTP на процесс |
+| `AGENT_MCP_INTERNAL_URL` | `http://mcp:8000` | служебный REST mcp-контейнера (J8) и его /health/live |
+| `AGENT_MCP_TIMEOUT_S` | `5.0` | таймаут вызова MCP и J8, с; 1 повтор с тем же ключом |
+| `DATABASE_URL` | — | общая: PostgreSQL (зона C не читает — для D) |
+| `REDIS_URL` | `redis://localhost:6379/0` | общая: Redis (ключи — `docs/redis-keys.md`) |
+| `SERVICE_TOKEN` | обязательно | общая: сервисный токен внутренних вызовов (≥ 16 символов; на стенде с HTTPS ≥ 32) |
+| `LOG_LEVEL` | `INFO` | общая: уровень логов: DEBUG, INFO, WARNING, ERROR |
+| `LOG_FORMAT` | `console` | общая: `console` или `json` |
+| `DEFAULT_TZ` | `Europe/Moscow` | общая: пояс по умолчанию (IANA) |
+<!-- env:end -->
+
+## Ключи Redis
+
+`va:v1:agent:lock:{user_id}` (60 с), `va:v1:agent:ctx:{user_id}` (2 ч), `va:v1:agent:focus:{user_id}` (2 ч),
+`va:v1:agent:pending:{user_id}` (10 мин), `va:v1:agent:user:{max_user_id}` (1 ч). Реестр и замер памяти —
+`docs/redis-keys.md`.
+
+## Запустить локально
 
 ```bash
 export SERVICE_TOKEN=$(openssl rand -hex 16)   # токен не пишем в файлы и команды
@@ -93,5 +142,10 @@ curl -s localhost:8002/v1/messages -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H 'content-type: application/json' -d '{"max_user_id": 1, "max_chat_id": 1, "text": "что у меня сегодня"}'
 ```
 
-Тесты: `uv run pytest services/agent` (unit), `-m integration` (Redis в testcontainers, MCP по HTTP
-против заглушки), `-m lifecycle` (uvicorn + SIGTERM).
+## Тесты
+
+```bash
+uv run pytest services/agent                    # unit: ход, действия, рендер, шаблоны, пределы, ScriptedBrain
+uv run pytest services/agent -m integration     # Redis в testcontainers; MCP и J8 по HTTP против заглушки
+uv run pytest services/agent -m lifecycle       # uvicorn + SIGTERM посреди хода и вызова MCP; старт без соседей
+```

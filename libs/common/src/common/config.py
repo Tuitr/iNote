@@ -29,14 +29,34 @@ class BaseServiceSettings(BaseSettings):
 
     envPrefix: ClassVar[str] = ""
 
-    databaseUrl: SecretStr | None = Field(default=None, validation_alias="DATABASE_URL")
-    redisUrl: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
-    serviceToken: SecretStr = Field(
-        validation_alias="SERVICE_TOKEN", min_length=MIN_SERVICE_TOKEN_LENGTH
+    databaseUrl: SecretStr | None = Field(
+        default=None,
+        validation_alias="DATABASE_URL",
+        description="PostgreSQL (зона C не читает — для D)",
     )
-    logLevel: LogLevel = Field(default="INFO", validation_alias="LOG_LEVEL")
-    logFormat: LogFormat = Field(default="console", validation_alias="LOG_FORMAT")
-    defaultTz: str = Field(default="Europe/Moscow", validation_alias="DEFAULT_TZ")
+    redisUrl: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias="REDIS_URL",
+        description="Redis (ключи — `docs/redis-keys.md`)",
+    )
+    serviceToken: SecretStr = Field(
+        validation_alias="SERVICE_TOKEN",
+        description="сервисный токен внутренних вызовов (≥ 16 символов; на стенде с HTTPS ≥ 32)",
+        min_length=MIN_SERVICE_TOKEN_LENGTH,
+    )
+    logLevel: LogLevel = Field(
+        default="INFO",
+        validation_alias="LOG_LEVEL",
+        description="уровень логов: DEBUG, INFO, WARNING, ERROR",
+    )
+    logFormat: LogFormat = Field(
+        default="console", validation_alias="LOG_FORMAT", description="`console` или `json`"
+    )
+    defaultTz: str = Field(
+        default="Europe/Moscow",
+        validation_alias="DEFAULT_TZ",
+        description="пояс по умолчанию (IANA)",
+    )
 
     # Примечание: пояс по умолчанию должен существовать в tzdata, иначе падаем на старте
     @field_validator("defaultTz")
