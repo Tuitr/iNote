@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # --- зона C ---
+  lint:
+    name: pre-commit (ruff, mypy, import-linter, секреты)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: no-commit-to-branch
+
+  test:
+    name: unit + contract
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: uv run pytest -m "not integration and not lifecycle and not e2e" --cov --cov-report=xml
+
+  integration:
+    name: integration + lifecycle (Docker)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: uv run pytest -m "integration or lifecycle" || test $? -eq 5  # 5 = таких тестов пока нет
+
+  stand:
+    name: compose mock — все healthy + смоук + e2e
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: cp .env.example .env
+      - run: docker compose -f deploy/docker-compose.yml --env-file .env --profile mock config -q
+      - run: make up
+      - run: make smoke
+      - run: uv run pytest -m e2e tests/e2e
+      - if: failure()
+        run: docker compose -f deploy/docker-compose.yml --env-file .env --profile mock logs --no-color
+      - if: always()
+        run: make down
+  # --- конец зоны C ---
+  # --- зона D ---
+  backend-d:
+    # Бывший .github/workflows/backend-d.yml: ruff и формат кода D проверяет job lint
+    # (pre-commit по всему репо), здесь — тесты D с PostgreSQL и Redis (testcontainers)
+    # и порог покрытия libs/core 80% (критерий готовности D).
+    name: backend D — тесты и покрытие libs/core ≥ 80%
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --frozen
+      - run: >-
+          uv run pytest libs/core libs/contracts services/tests
+          --cov=libs/core --cov-report=term-missing --cov-fail-under=80
+  # --- конец зоны D ---
+  # --- зона E ---
+  max-app:
+    # Мини-приложение: типы, тесты Vitest на MSW и сборка Vite. Отдельной проверки у E не было.
+    name: max_app — typecheck, vitest, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: max_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: max_app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+  # --- конец зоны E ---

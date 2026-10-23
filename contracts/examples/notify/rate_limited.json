@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "MAX ограничил отправку",
+    "details": {
+      "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a"
+    },
+    "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "_synthetic": true,
+  "_source": "max-messenger/api-schema schema.yaml 0.0.33 (1a4a502); заменить живым апдейтом",
+  "update_type": "bot_started",
+  "timestamp": 1792580340123,
+  "chat_id": 500600700,
+  "user": {
+    "user_id": 100200300,
+    "first_name": "Иван",
+    "last_name": "Петров",
+    "username": null,
+    "is_bot": false,
+    "last_activity_time": 1792580000000
+  },
+  "payload": "today",
+  "user_locale": "ru"
+}

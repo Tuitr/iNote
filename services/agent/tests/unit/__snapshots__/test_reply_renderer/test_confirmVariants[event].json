@@ -1,0 +1,47 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "undo",
+        "args": {
+          "item_id": "fef2779b-0a6d-5f8c-becb-c57c29e6507d"
+        },
+        "kind": "action",
+        "text": "Отменить"
+      },
+      {
+        "action": "reschedule",
+        "args": {
+          "item_id": "fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+          "kind": "event"
+        },
+        "kind": "action",
+        "text": "Изменить время"
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "start_param": "item_fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+        "text": "В календаре"
+      }
+    ]
+  ],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": false,
+      "ends_at": "2026-10-21T11:00:00+03:00",
+      "id": "fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+      "kind": "event",
+      "remind_at": null,
+      "starts_at": "2026-10-23T15:00:00+03:00",
+      "status": "open",
+      "title": "Созвон с командой"
+    }
+  ],
+  "speak": false,
+  "state": "done",
+  "text": "Встреча создана\nСозвон с командой\nпт 23 октября, 15:00",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

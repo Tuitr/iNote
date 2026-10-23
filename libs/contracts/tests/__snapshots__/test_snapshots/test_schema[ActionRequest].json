@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "ArgValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "action": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "title": "Action",
+      "type": "string"
+    },
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ArgValue"
+      },
+      "title": "Args",
+      "type": "object"
+    },
+    "callback_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Callback Id"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label"
+    },
+    "max_chat_id": {
+      "title": "Max Chat Id",
+      "type": "integer"
+    },
+    "max_user_id": {
+      "title": "Max User Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "max_user_id",
+    "max_chat_id",
+    "action"
+  ],
+  "title": "ActionRequest",
+  "type": "object"
+}

@@ -1,0 +1,25 @@
+[project]
+name = "va-common"
+version = "0.0.0"
+description = "Общая библиотека зоны C: конфиг, логи, lifecycle, health, HTTP-клиент, middleware"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "httpx>=0.28",
+  "pydantic>=2.11",
+  "pydantic-settings>=2.9",
+  "redis>=5.2",
+  "structlog>=25.1",
+  "tenacity>=9.0",
+]
+
+# Общие фикстуры (Redis в testcontainers) подключаются в pytest любого пакета автоматически.
+[project.entry-points.pytest11]
+va_common = "common.testing.pytest_plugin"
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "common"

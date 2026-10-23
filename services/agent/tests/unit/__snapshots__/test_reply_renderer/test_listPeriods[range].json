@@ -1,0 +1,49 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "list_period",
+        "args": {
+          "period": "today"
+        },
+        "kind": "action",
+        "text": "Сегодня"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "week"
+        },
+        "kind": "action",
+        "text": "Неделя"
+      }
+    ]
+  ],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": false,
+      "ends_at": null,
+      "id": "fa85c58a-326b-5997-8712-6f1d50e4214c",
+      "kind": "event",
+      "remind_at": null,
+      "starts_at": "2026-10-30T09:30:00+03:00",
+      "status": "open",
+      "title": "Стоматолог"
+    },
+    {
+      "all_day": true,
+      "ends_at": null,
+      "id": "9e15d3c3-0a76-57cd-a675-ff87013d6532",
+      "kind": "task",
+      "remind_at": null,
+      "starts_at": "2026-11-01T00:00:00+03:00",
+      "status": "open",
+      "title": "Отчёт"
+    }
+  ],
+  "speak": false,
+  "state": "answer",
+  "text": "пт 30 октября — пн 2 ноября:\nпт 30 октября, 09:30 Стоматолог\nвс 1 ноября, весь день Отчёт",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

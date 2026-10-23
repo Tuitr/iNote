@@ -1,0 +1,13 @@
+{
+  "properties": {
+    "tz": {
+      "title": "Tz",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tz"
+  ],
+  "title": "UpdateUserSettingsRequest",
+  "type": "object"
+}

@@ -1,0 +1,247 @@
+{
+  "$defs": {
+    "ActionButton": {
+      "properties": {
+        "action": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "title": "Action",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ArgValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "kind": {
+          "const": "action",
+          "default": "action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "action"
+      ],
+      "title": "ActionButton",
+      "type": "object"
+    },
+    "ArgValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "OpenAppButton": {
+      "properties": {
+        "kind": {
+          "const": "open_app",
+          "default": "open_app",
+          "title": "Kind",
+          "type": "string"
+        },
+        "start_param": {
+          "$ref": "#/$defs/StartParamStr"
+        },
+        "text": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "start_param"
+      ],
+      "title": "OpenAppButton",
+      "type": "object"
+    },
+    "ReplyButton": {
+      "discriminator": {
+        "mapping": {
+          "action": "#/$defs/ActionButton",
+          "open_app": "#/$defs/OpenAppButton"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ActionButton"
+        },
+        {
+          "$ref": "#/$defs/OpenAppButton"
+        }
+      ]
+    },
+    "ReplyFormat": {
+      "enum": [
+        "plain",
+        "markdown"
+      ],
+      "title": "ReplyFormat",
+      "type": "string"
+    },
+    "ReplyItem": {
+      "properties": {
+        "all_day": {
+          "default": false,
+          "title": "All Day",
+          "type": "boolean"
+        },
+        "ends_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends At"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "done"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "ReplyItem",
+      "type": "object"
+    },
+    "ReplyState": {
+      "enum": [
+        "done",
+        "clarify",
+        "answer",
+        "error"
+      ],
+      "title": "ReplyState",
+      "type": "string"
+    },
+    "StartParamStr": {
+      "type": "string"
+    }
+  },
+  "properties": {
+    "buttons": {
+      "items": {
+        "items": {
+          "$ref": "#/$defs/ReplyButton"
+        },
+        "type": "array"
+      },
+      "maxItems": 30,
+      "title": "Buttons",
+      "type": "array"
+    },
+    "format": {
+      "$ref": "#/$defs/ReplyFormat",
+      "default": "plain"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/ReplyItem"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "speak": {
+      "default": false,
+      "title": "Speak",
+      "type": "boolean"
+    },
+    "state": {
+      "$ref": "#/$defs/ReplyState"
+    },
+    "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "trace_id": {
+      "pattern": "^[0-9a-f]{32}$",
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "state",
+    "trace_id"
+  ],
+  "title": "Reply",
+  "type": "object"
+}

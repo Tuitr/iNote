@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "UserSettingsWire": {
+      "properties": {
+        "default_event_min": {
+          "default": 60,
+          "minimum": 1,
+          "title": "Default Event Min",
+          "type": "integer"
+        },
+        "voice_replies": {
+          "default": false,
+          "title": "Voice Replies",
+          "type": "boolean"
+        }
+      },
+      "title": "UserSettingsWire",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "created": {
+      "default": false,
+      "title": "Created",
+      "type": "boolean"
+    },
+    "settings": {
+      "$ref": "#/$defs/UserSettingsWire"
+    },
+    "tz": {
+      "title": "Tz",
+      "type": "string"
+    },
+    "user_id": {
+      "exclusiveMinimum": 0,
+      "title": "User Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "user_id",
+    "tz"
+  ],
+  "title": "ResolveUserResponse",
+  "type": "object"
+}

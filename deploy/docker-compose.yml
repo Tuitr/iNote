@@ -1,0 +1,168 @@
+# Стенд разработки S0 (зона C, вместе с D). Запуск: `make up` (профиль mock).
+#   mock — всё на фейках, без внешних ключей: фейковый MAX, заглушки чужих сервисов
+#   full — пока совпадает с mock; после S1 сюда добавятся реальные ASR/LLM/MAX (платно, только по просьбе)
+# Наружу (на 127.0.0.1) опубликован только бот — ради /dev/max/* в режиме fake. /internal/* не публикуем.
+
+name: va
+
+x-profiles: &profiles
+  profiles: [mock, full]
+
+x-python-service: &python-service
+  <<: *profiles
+  env_file:
+    - path: ../.env
+      required: false
+  restart: unless-stopped
+  # uvicorn ждёт запросы до 15 с (python.Dockerfile) + задачи до 10 с + запас — tests/deploy/test_stop_budget.py
+  stop_grace_period: 30s
+  networks: [internal]
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2).status != 200)"
+    interval: 5s
+    timeout: 3s
+    retries: 10
+    start_period: 10s
+
+x-stub: &stub
+  <<: *python-service
+  build:
+    context: stub
+  image: va/stub:local
+  restart: "no"
+
+services:
+  # --- инфраструктура ---
+  postgres:
+    <<: *profiles
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: va
+      POSTGRES_PASSWORD: va
+      POSTGRES_DB: va
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U va -d va"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    <<: *profiles
+    image: redis:7.4-alpine
+    # В Redis только то, что можно потерять (правило 4): без персистентности,
+    # вытеснение только ключей с TTL — volatile-lru (docs/redis-keys.md)
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - volatile-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- зона C ---
+  bot:
+    <<: *python-service
+    build:
+      context: ..
+      dockerfile: deploy/docker/python.Dockerfile
+      args: { PACKAGE: va-bot, MODULE: bot }
+    image: va/bot:local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      BOT_MAX_MODE: ${BOT_MAX_MODE:-fake}
+      BOT_AGENT_URL: http://agent:8000
+      BOT_ASR_URL: http://asr:8000
+    ports:
+      - "127.0.0.1:${BOT_DEV_PORT:-8001}:8000"
+    depends_on:
+      redis: { condition: service_healthy }
+      agent: { condition: service_healthy }
+      asr: { condition: service_healthy }
+
+  agent:
+    <<: *python-service
+    build:
+      context: ..
+      dockerfile: deploy/docker/python.Dockerfile
+      args: { PACKAGE: va-agent, MODULE: agent }
+    image: va/agent:local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # mock — ScriptedBrain; llm (Brain B) после мержа с libs/brain
+      AGENT_BRAIN: ${AGENT_BRAIN:-scripted}
+      AGENT_MCP_URL: http://mcp:8000/mcp
+      AGENT_MCP_INTERNAL_URL: http://mcp:8000
+    depends_on:
+      redis: { condition: service_healthy }
+      mcp: { condition: service_healthy }
+
+  # --- заглушки чужих зон: одна мини-картинка deploy/stub; владелец — в STUB_OWNER ---
+  asr:
+    # ВРЕМЕННО (S2, C): ASR-заглушка по J1 из deploy/stub/asr («OggS» + текст → текст).
+    # После мержа заменить на ASR_MODE=fake от A, затем на build: services/asr (владелец A)
+    <<: *python-service
+    build:
+      context: stub/asr
+    image: va/stub-asr:local
+    restart: "no"
+
+  mcp:
+    # ВРЕМЕННО (S1, C): MCP-заглушка с инструментами из deploy/stub/mcp/fixtures.
+    # После мержа заменить на заглушку D, затем на build: services/mcp (владелец D)
+    <<: *python-service
+    build:
+      context: stub/mcp
+    image: va/stub-mcp:local
+    restart: "no"
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_healthy }
+
+  api:
+    # Владелец D. После мержа заменить на build: services/api
+    <<: *stub
+    environment: { STUB_NAME: api, STUB_OWNER: D }
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  scheduler:
+    # Владелец D. После мержа заменить на build: services/scheduler
+    <<: *stub
+    environment: { STUB_NAME: scheduler, STUB_OWNER: D }
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  migrate:
+    # Владелец D. После мержа заменить на build: services/migrate (Alembic, одноразовый запуск:
+    # restart: "no" и depends_on: condition: service_completed_successfully у потребителей)
+    <<: *stub
+    environment: { STUB_NAME: migrate, STUB_OWNER: D }
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  max_app:
+    # Владелец E. После мержа заменить на build: max_app (статика за Caddy на стенде)
+    <<: *stub
+    environment: { STUB_NAME: max_app, STUB_OWNER: E }
+
+networks:
+  internal:
+
+volumes:
+  pgdata:

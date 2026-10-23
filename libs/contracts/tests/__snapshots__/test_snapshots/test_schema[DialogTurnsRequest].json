@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "AssistantDialogTurn": {
+      "properties": {
+        "item_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": "Item Ids",
+          "type": "array"
+        },
+        "role": {
+          "const": "assistant",
+          "default": "assistant",
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 4000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AssistantDialogTurn",
+      "type": "object"
+    },
+    "DialogInputType": {
+      "enum": [
+        "text",
+        "voice"
+      ],
+      "type": "string"
+    },
+    "UserDialogTurn": {
+      "properties": {
+        "input_type": {
+          "$ref": "#/$defs/DialogInputType"
+        },
+        "role": {
+          "const": "user",
+          "default": "user",
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 4000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "input_type"
+      ],
+      "title": "UserDialogTurn",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "latency_ms": {
+      "minimum": 0,
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "trace_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Trace Id",
+      "type": "string"
+    },
+    "turns": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/UserDialogTurn"
+        },
+        {
+          "$ref": "#/$defs/AssistantDialogTurn"
+        }
+      ],
+      "title": "Turns",
+      "type": "array"
+    },
+    "user_id": {
+      "exclusiveMinimum": 0,
+      "title": "User Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "user_id",
+    "trace_id",
+    "turns",
+    "latency_ms"
+  ],
+  "title": "DialogTurnsRequest",
+  "type": "object"
+}

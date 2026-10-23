@@ -1,12 +1,24 @@
-.env
-.env.local
-.venv/
-.git/
-.idea/
-**/__pycache__/
+# Контекст сборки — корень репо (образы C — deploy/docker/python.Dockerfile, образ D — Dockerfile).
+# Белый список: в контекст идёт только нужное для сборки и рантайма, остальное (.env, .git,
+# .venv, docs, локальные заметки) — нет.
+**
+# --- зона C ---
+!pyproject.toml
+!uv.lock
+!libs/
+!services/
+!contracts/
+# --- конец зоны C ---
+# --- зона D ---
+# миграции накатывает контейнер migrate (alembic upgrade head)
+!alembic.ini
+!migrations/
+# --- конец зоны D ---
+# --- общее: внутри разрешённых папок ---
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
 **/tests/
-*.egg-info/
-build/
-.pytest_cache/
-.ruff_cache/
-docs/

@@ -1,0 +1,32 @@
+{
+  "attachments": [
+    {
+      "payload": {
+        "buttons": [
+          [
+            {
+              "payload": "key0000000000000",
+              "text": "Завтра",
+              "type": "callback"
+            },
+            {
+              "payload": "key0000000000001",
+              "text": "Неделя",
+              "type": "callback"
+            }
+          ],
+          [
+            {
+              "text": "Открыть день",
+              "type": "link",
+              "url": "https://max.ru/va_test_bot?startapp=day_2026-10-21"
+            }
+          ]
+        ]
+      },
+      "type": "inline_keyboard"
+    }
+  ],
+  "format": "markdown",
+  "text": "Сегодня, ср 21 октября:\n10:00–11:00 Созвон с командой\n18:00 Купить продукты"
+}

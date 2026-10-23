@@ -1,0 +1,12 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "snooze",
+  "args": {
+    "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+    "kind": "reminder",
+    "minutes": 60
+  },
+  "callback_id": "cb.synthetic.snooze",
+  "label": "Отложить на 1 ч"
+}

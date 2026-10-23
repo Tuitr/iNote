@@ -1,0 +1,43 @@
+{
+  "buttons": [
+    [
+      {
+        "kind": "open_app",
+        "start_param": "item_fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+        "text": "Созвон с командой"
+      },
+      {
+        "kind": "open_app",
+        "start_param": "item_8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+        "text": "Позвонить Ивану"
+      }
+    ]
+  ],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": false,
+      "ends_at": "2026-10-21T11:00:00+03:00",
+      "id": "fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+      "kind": "event",
+      "remind_at": null,
+      "starts_at": "2026-10-21T10:00:00+03:00",
+      "status": "open",
+      "title": "Созвон с командой"
+    },
+    {
+      "all_day": false,
+      "ends_at": null,
+      "id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+      "kind": "reminder",
+      "remind_at": null,
+      "starts_at": "2026-10-22T10:00:00+03:00",
+      "status": "open",
+      "title": "Позвонить Ивану"
+    }
+  ],
+  "speak": false,
+  "state": "answer",
+  "text": "Нашёл несколько похожих — какую имеешь в виду?\nСегодня, ср 21 октября, 10:00 — Созвон с командой\nЗавтра, чт 22 октября, 10:00 — Позвонить Ивану",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

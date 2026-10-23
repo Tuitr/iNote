@@ -1,0 +1,66 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "list_period",
+        "args": {
+          "period": "tomorrow"
+        },
+        "kind": "action",
+        "text": "Завтра"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "week"
+        },
+        "kind": "action",
+        "text": "Неделя"
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "start_param": "today",
+        "text": "Открыть день"
+      }
+    ]
+  ],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": true,
+      "ends_at": null,
+      "id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3",
+      "kind": "task",
+      "remind_at": null,
+      "starts_at": "2026-10-21T00:00:00+03:00",
+      "status": "open",
+      "title": "Купить хлеб"
+    },
+    {
+      "all_day": false,
+      "ends_at": "2026-10-21T11:00:00+03:00",
+      "id": "fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+      "kind": "event",
+      "remind_at": null,
+      "starts_at": "2026-10-21T10:00:00+03:00",
+      "status": "open",
+      "title": "Созвон с командой"
+    },
+    {
+      "all_day": false,
+      "ends_at": null,
+      "id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+      "kind": "reminder",
+      "remind_at": null,
+      "starts_at": "2026-10-21T18:00:00+03:00",
+      "status": "open",
+      "title": "Позвонить Ивану"
+    }
+  ],
+  "speak": false,
+  "state": "answer",
+  "text": "Сегодня, ср 21 октября:\nвесь день Купить хлеб\n10:00–11:00 Созвон с командой\n18:00 Позвонить Ивану",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

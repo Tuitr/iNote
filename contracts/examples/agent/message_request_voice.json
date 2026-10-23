@@ -1,0 +1,10 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "text": "Напомни завтра в 10 позвонить Ивану",
+  "source": "voice",
+  "locale": "ru",
+  "name": "Иван",
+  "asr_low_confidence": false,
+  "asr_duration_ms": 2400
+}
