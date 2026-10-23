@@ -17,6 +17,9 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` — кн
 - **Пользователь** (`infrastructure/http_user_resolver.py`): J8 `POST /internal/v1/users/resolve` в mcp-контейнере
   (5 с, 1 повтор с ключом `user-resolve:{max_user_id}`), кеш `va:v1:agent:user:{max_user_id}` на 1 ч.
   J8 недоступен — пользователь получает ответ с кодом ошибки. Readiness: Redis и `/health/live` mcp-контейнера.
+- **Формы D** (`origin/main`): у напоминания время в `remind_at` (`starts_at = null`) — показываем и сортируем по
+  `starts_at` или `remind_at`; `list_items` — даты `[from, to)`; перенос — `application/item_time.py`
+  (напоминание → `remind_at`, иначе `starts_at`); в истории кнопка — `input_type=text` с подписью кнопки.
 - **Ответ** (`presentation/reply_renderer.py`, тексты — `presentation/templates/ru.toml`): подтверждения, списки
   и поиск строятся из `actions[].result.data`, а не из текста модели (правило 3); даты по-русски в поясе
   пользователя («Завтра, чт 22 октября, 10:00», год — только у чужого года); названия экранируются под
