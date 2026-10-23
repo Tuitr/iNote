@@ -5,7 +5,8 @@
 под markdown, текст — не длиннее 4000 символов (лимит MAX), хвост списка — «…и ещё N».
 """
 
-from collections.abc import Mapping, Sequence
+import uuid
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Final
@@ -34,12 +35,14 @@ from agent.application.reschedule import RescheduleChoice, RescheduleOption
 from agent.application.turn_rules import successfulMutations
 from agent.domain.user import UserContext
 from agent.presentation.templates import ReplyTemplates
+from common.logging import getLogger
 from common.markdown import escapeMarkdown
 from common.ru_dates import DateFormatter
 from common.trace import shortTraceId
 from contracts.agent_side import ExecutedAction, TurnResult
 from contracts.reply import (
     BUTTON_TEXT_MAX_LENGTH,
+    MAX_OPEN_APP_PER_ROW,
     REPLY_TEXT_MAX_LENGTH,
     ActionButton,
     OpenAppButton,
@@ -56,6 +59,10 @@ SEARCH_TOOL: Final = "search_items"
 WEEK_DAYS: Final = 7
 OPTIONS_PER_ROW: Final = 3
 ELLIPSIS: Final = "…"
+# у похожих результатов поиска — по кнопке на запись, не больше лимита open_app в ряду MAX
+SEARCH_APP_BUTTONS: Final = MAX_OPEN_APP_PER_ROW
+
+_log = getLogger(__name__)
 
 type Rows = list[list[ReplyButton]]
 
@@ -120,7 +127,7 @@ class TemplateReplyRenderer:
         state = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
         return _plain(texts[notice], state, traceId)
 
-    # Примечание: «На когда перенести?»: по варианту в ряд (подписи длинные) и «Отмена»
+    # Примечание: «На когда перенести?»: по варианту в ряд (подписи длинные), «Отмена» и запись
     def rescheduleQuestion(
         self,
         itemId: str,
@@ -146,7 +153,9 @@ class TemplateReplyRenderer:
             if kind is not None:
                 args[KIND_ARG] = kind
             rows.append([ActionButton(text=label, action=RESCHEDULE, args=args)])
-        rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
+        # запись в календаре — рядом с «Отмена»; id не по J6 — openApp даст today и warning
+        app = openApp(self._t.buttons.openItem, lambda: StartParam.forItem(uuid.UUID(itemId)))
+        rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL), app])
         return _plain(t.question, ReplyState.CLARIFY, traceId, buttons=rows)
 
     # Примечание: «Напомню завтра, чт 22 октября, 10:00 / Позвонить Ивану» — момент из remind_at
@@ -159,17 +168,18 @@ class TemplateReplyRenderer:
             return self.render(result, user, traceId)
         when = scope.dates.moment(item.remindAt.astimezone(scope.zone), allDay=False)
         text = "\n".join([self._t.snooze.done.format(when=when), escapeMarkdown(item.title)])
-        app = OpenAppButton(
-            text=self._t.buttons.openItem, startParam=str(StartParam.forItem(item.id))
-        )
+        app = openApp(self._t.buttons.openItem, lambda: StartParam.forItem(item.id))
         return _markdown(text, ReplyState.DONE, traceId, buttons=[[app]], items=[item])
 
-    # Примечание: приветствие / справка: тексты агента, кнопки периода и «Мой день» (J6 today)
+    # Примечание: приветствие / справка: тексты агента, кнопки периода, «Мой день» (J6 today) и
+    # «История» (J6 dialog)
     def welcome(self, kind: Welcome, traceId: str) -> Reply:
         w, b = self._t.welcome, self._t.buttons
         text = w.start if kind is Welcome.START else w.help
         rows = _periodRow([("today", b.today), ("tomorrow", b.tomorrow), ("week", b.week)])
-        rows.append([OpenAppButton(text=w.openToday, startParam=str(StartParam.today()))])
+        rows.append(
+            [openApp(w.openToday, StartParam.today), openApp(w.openHistory, StartParam.dialog)]
+        )
         return _plain(text, ReplyState.ANSWER, traceId, buttons=rows)
 
     # Примечание: лок пользователя занят другим ходом
@@ -306,7 +316,7 @@ class TemplateReplyRenderer:
             # вид записи — чтобы перенести нужное поле времени (у напоминания — remind_at)
             moveArgs: dict[str, str | int | bool] = {**args, KIND_ARG: item.kind}
             actions.append(ActionButton(text=b.reschedule, action=RESCHEDULE, args=moveArgs))
-        app = OpenAppButton(text=b.openItem, startParam=str(StartParam.forItem(item.id)))
+        app = openApp(b.openItem, lambda: StartParam.forItem(item.id))
         return [actions, [app]] if actions else [[app]]
 
     # Примечание: список за день, неделю (с понедельника) или период [from, to)
@@ -343,12 +353,17 @@ class TemplateReplyRenderer:
             switch = [("today", b.today), ("tomorrow", b.tomorrow), ("week", b.week)]
             current = {scope.today: "today", tomorrow: "tomorrow"}.get(first)
             rows = _periodRow([s for s in switch if s[0] != current][:2])
-            rows.append([OpenAppButton(text=b.openDay, startParam=str(StartParam.forDay(first)))])
+            # «сегодня» — экран today, любой другой день — day_<дата> (J6); дата — в поясе
+            # пользователя (first посчитан в scope.zone)
+            dayParam = (
+                StartParam.today if first == scope.today else (lambda: StartParam.forDay(first))
+            )
+            rows.append([openApp(b.openDay, dayParam)])
             return t.dayHeader.format(day=day), t.dayEmpty.format(day=day), rows
         if isWeek:
             span = dates.weekRange(first, last)
             rows = _periodRow([("today", b.today), ("tomorrow", b.tomorrow)])
-            rows.append([OpenAppButton(text=b.openWeek, startParam=str(StartParam.forWeek(first)))])
+            rows.append([openApp(b.openWeek, lambda: StartParam.forWeek(first))])
             return t.weekHeader.format(range=span), t.weekEmpty.format(range=span), rows
         bounds = {"first": dates.day(first), "last": dates.day(last)}
         rows = _periodRow([("today", b.today), ("week", b.week)])
@@ -386,13 +401,22 @@ class TemplateReplyRenderer:
             for item in items
         ]
         text = _fit(t.found if confident else t.similar, lines, self._t.list.more)
-        rows: Rows = []
+        return _markdown(
+            text, ReplyState.ANSWER, scope.traceId, buttons=self._searchButtons(items), items=items
+        )
+
+    # Примечание: одна запись — «В календаре»; несколько — по кнопке с названием на каждую из
+    # первых трёх (лимит open_app в ряду MAX), остальные — в мини-приложении
+    def _searchButtons(self, items: Sequence[ReplyItem]) -> Rows:
         if len(items) == 1:
-            app = OpenAppButton(
-                text=self._t.buttons.openItem, startParam=str(StartParam.forItem(items[0].id))
-            )
-            rows = [[app]]
-        return _markdown(text, ReplyState.ANSWER, scope.traceId, buttons=rows, items=items)
+            only = items[0]
+            return [[openApp(self._t.buttons.openItem, lambda: StartParam.forItem(only.id))]]
+        return [
+            [
+                openApp(_cut(item.title, BUTTON_TEXT_MAX_LENGTH), _itemParam(item))
+                for item in items[:SEARCH_APP_BUTTONS]
+            ]
+        ]
 
     # Примечание: «Завтра, чт 22 октября, 10:00»; весь день — без времени; без даты — «без срока»
     def _when(self, item: ReplyItem, scope: _Scope) -> str:
@@ -481,6 +505,21 @@ def _fit(header: str, lines: Sequence[str], more: str) -> str:
 # Примечание: обрезка до limit символов с многоточием
 def _cut(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - len(ELLIPSIS)] + ELLIPSIS
+
+
+# Примечание: кнопка мини-приложения только через валидатор J6: не собралась (дата или id не по
+# J6) — в лог без значения и кнопка «сегодня», а не битый start_param у пользователя
+def openApp(text: str, build: Callable[[], StartParam]) -> OpenAppButton:
+    try:
+        return OpenAppButton(text=text, startParam=str(build()))
+    except (ValueError, ValidationError):
+        _log.warning("start_param_invalid", fallback="today")
+        return OpenAppButton(text=text, startParam=str(StartParam.today()))
+
+
+# Примечание: start_param карточки записи — замыкание по конкретной записи
+def _itemParam(item: ReplyItem) -> Callable[[], StartParam]:
+    return lambda: StartParam.forItem(item.id)
 
 
 # Примечание: list из JSON инструмента

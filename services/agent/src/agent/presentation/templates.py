@@ -110,6 +110,7 @@ class WelcomeTemplates(_Section):
     start: str
     help: str
     openToday: str
+    openHistory: str
 
 
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id

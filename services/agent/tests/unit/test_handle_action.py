@@ -242,7 +242,7 @@ async def test_rescheduleAsksWhen() -> None:
                 },
             )
         ],
-        [("Отмена", "cancel", {})],
+        [("Отмена", "cancel", {}), ("В календаре", f"item_{ITEM_ID}")],
     ]
     saved = rig.store.contexts[USER_ID]
     assert (saved.focus, saved.pending, saved.options) == ((BRIEF,), None, ())
@@ -263,12 +263,16 @@ async def test_listPeriod() -> None:
     assert [str(b.id) for b in rig.store.contexts[USER_ID].focus] == [ITEM_ID]
 
 
-# Примечание: «Начать» и /help — тексты агента, кнопки периода и «Мой день»; инструменты не нужны
+# Примечание: «Начать» и /help — тексты агента, кнопки периода, «Мой день» (today) и «История»
+# (dialog); инструменты не нужны
 async def test_startAndHelp() -> None:
     rig = Rig()
     start, help_ = await rig.press("start"), await rig.press("help")
     assert (start.text, help_.text) == (TEMPLATES.welcome.start, TEMPLATES.welcome.help)
-    assert buttons(start)[-1] == [(TEMPLATES.welcome.openToday, "today")]
+    assert buttons(start)[-1] == [
+        (TEMPLATES.welcome.openToday, "today"),
+        (TEMPLATES.welcome.openHistory, "dialog"),
+    ]
     assert [b[2] for b in buttons(help_)[0]] == [
         {"period": "today"},
         {"period": "tomorrow"},

@@ -21,7 +21,7 @@
     [
       {
         "kind": "open_app",
-        "start_param": "day_2026-10-21",
+        "start_param": "today",
         "text": "Открыть день"
       }
     ]

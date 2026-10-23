@@ -1,5 +1,18 @@
 {
-  "buttons": [],
+  "buttons": [
+    [
+      {
+        "kind": "open_app",
+        "start_param": "item_fef2779b-0a6d-5f8c-becb-c57c29e6507d",
+        "text": "Созвон с командой"
+      },
+      {
+        "kind": "open_app",
+        "start_param": "item_8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+        "text": "Позвонить Ивану"
+      }
+    ]
+  ],
   "format": "markdown",
   "items": [
     {

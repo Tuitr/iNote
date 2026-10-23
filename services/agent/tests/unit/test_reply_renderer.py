@@ -7,18 +7,21 @@ from importlib import resources
 from typing import Final
 
 import pytest
+import structlog
 from pydantic import ValidationError
 from syrupy.assertion import SnapshotAssertion
 from syrupy.extensions.json import JSONSnapshotExtension
 
-from agent.application.ports import Notice
+from agent.application.ports import Notice, Welcome
+from agent.domain.periods import periodRange
 from agent.domain.user import UserContext
-from agent.presentation.reply_renderer import TemplateReplyRenderer
+from agent.presentation.reply_renderer import TemplateReplyRenderer, openApp
 from agent.presentation.templates import REQUIRED_ERROR_KEYS, ReplyTemplates, loadTemplates
 from common.markdown import escapeMarkdown
 from common.ru_dates import DateFormatter
 from contracts.agent_side import Clarify, ExecutedAction, ToolResult, TurnResult
 from contracts.reply import REPLY_TEXT_MAX_LENGTH, ReplyState
+from contracts.start_param import StartParam
 from services.agent.tests.fakes import USAGE, FixedClock
 
 TRACE: Final = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
@@ -398,3 +401,92 @@ def test_clarifyConflictForceButton() -> None:
     assert rows[1][0]["args"] == conflictArgs
     plain = render(turn("clarify", say="Когда?", clarify=clarify))
     assert "Всё равно создать" not in str(plain["buttons"])
+
+
+# Примечание: J6 — кнопка всегда week_<понедельник> в поясе пользователя: воскресенье 23:30 в
+# Москве и Екатеринбурге; понедельник 00:10 в Екатеринбурге, когда в UTC ещё воскресенье
+@pytest.mark.parametrize(
+    ("tz", "now", "monday"),
+    [
+        (MSK, datetime(2026, 10, 25, 20, 30, tzinfo=UTC), "2026-10-19"),
+        (EKB, datetime(2026, 10, 25, 18, 30, tzinfo=UTC), "2026-10-19"),
+        (EKB, datetime(2026, 10, 25, 19, 10, tzinfo=UTC), "2026-10-26"),
+    ],
+    ids=["msk_sunday_evening", "ekb_sunday_evening", "ekb_monday_utc_sunday"],
+)
+def test_weekStartParamFromMonday(tz: str, now: datetime, monday: str) -> None:
+    week = periodRange("week", now, tz)
+    reply = render(turn("answer", listed(week.start.isoformat(), week.end.isoformat())), tz, now)
+    assert appParams(reply) == [f"week_{monday}"]
+
+
+# Примечание: J6 по дням: сегодня — today, завтра и другой день — day_<дата> в поясе
+@pytest.mark.parametrize(
+    ("start", "end", "param"),
+    [
+        ("2026-10-21", "2026-10-22", "today"),
+        ("2026-10-22", "2026-10-23", "day_2026-10-22"),
+        ("2026-10-30", "2026-10-31", "day_2026-10-30"),
+    ],
+)
+def test_dayStartParam(start: str, end: str, param: str) -> None:
+    assert appParams(render(turn("answer", listed(start, end)))) == [param]
+
+
+# Примечание: несколько похожих в поиске — по кнопке на запись (не больше 3 в ряду), подпись —
+# название записи
+def test_searchSimilarButtons() -> None:
+    results = [
+        {"item": item(f"Созвон {n}", "2026-10-21T10:00:00+03:00") | {"id": str(uuid.uuid4())}}
+        for n in range(5)
+    ]
+    reply = render(turn("answer", action("search_items", {"results": results})))
+    [row] = buttonRows(reply)
+    assert [b["text"] for b in row] == ["Созвон 0", "Созвон 1", "Созвон 2"]
+    assert [b["start_param"] for b in row] == [f"item_{r['item']['id']}" for r in results[:3]]
+
+
+# Примечание: start_param не собрался по J6 — кнопка «сегодня» и warning без значения
+def test_invalidStartParamFallsBackToToday() -> None:
+    with structlog.testing.capture_logs() as logs:
+        button = openApp("Открыть неделю", lambda: StartParam.forWeek(date(2026, 10, 21)))
+    assert (button.text, button.startParam) == ("Открыть неделю", "today")
+    assert [e["event"] for e in logs] == ["start_param_invalid"]
+    assert "2026-10-21" not in str(logs)
+
+
+# Примечание: ряды кнопок ответа как JSON
+def buttonRows(reply: Json) -> list[list[Json]]:
+    rows = reply["buttons"]
+    assert isinstance(rows, list)
+    return rows
+
+
+# Примечание: все start_param кнопок open_app ответа по порядку
+def appParams(reply: Json) -> list[str]:
+    return [
+        str(b["start_param"]) for row in buttonRows(reply) for b in row if b["kind"] == "open_app"
+    ]
+
+
+# Примечание: шаблоны с кнопками J6 под снапшотом: приветствие и справка (today + dialog)
+@pytest.mark.parametrize("kind", list(Welcome), ids=lambda k: k.value)
+def test_welcomeButtons(kind: Welcome, jsonSnapshot: SnapshotAssertion) -> None:
+    reply = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW)).welcome(kind, TRACE)
+    assert appParams(reply.toWire()) == ["today", "dialog"]
+    assert reply.toWire() == jsonSnapshot
+
+
+# Примечание: «На когда перенести?» — кнопка записи рядом с «Отмена»; id не UUID — today и warning
+@pytest.mark.parametrize(
+    ("itemId", "param"),
+    [(str(REMINDER["id"]), f"item_{REMINDER['id']}"), ("not-a-uuid", "today")],
+    ids=["item", "invalid"],
+)
+def test_rescheduleQuestionOpenApp(itemId: str, param: str) -> None:
+    user = UserContext(userId=17, maxUserId=1, maxChatId=2, tz=MSK)
+    renderer = TemplateReplyRenderer(loadTemplates(), FixedClock(NOW))
+    with structlog.testing.capture_logs() as logs:
+        reply = renderer.rescheduleQuestion(itemId, "reminder", [], user, TRACE).toWire()
+    assert appParams(reply) == [param]
+    assert ("start_param_invalid" in str(logs)) is (param == "today")

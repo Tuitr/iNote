@@ -1,0 +1,48 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "list_period",
+        "args": {
+          "period": "today"
+        },
+        "kind": "action",
+        "text": "Сегодня"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "tomorrow"
+        },
+        "kind": "action",
+        "text": "Завтра"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "week"
+        },
+        "kind": "action",
+        "text": "Неделя"
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "start_param": "today",
+        "text": "Мой день"
+      },
+      {
+        "kind": "open_app",
+        "start_param": "dialog",
+        "text": "История"
+      }
+    ]
+  ],
+  "format": "plain",
+  "items": [],
+  "speak": false,
+  "state": "answer",
+  "text": "Привет! Я помогу с задачами, напоминаниями и встречами — пиши или говори голосом.\nНапример: «напомни завтра в 10 позвонить Ивану», «встреча с Петром завтра в 15», «что у меня завтра».",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}
