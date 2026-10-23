@@ -9,9 +9,11 @@ from bot.application.ports import MaxGateway
 from bot.domain.updates import MaxChatId
 from common.lifecycle import ShuttingDownError, TaskRegistry
 from common.logging import getLogger
+from common.trace import currentTraceId
 
 # Индикатор MAX гаснет сам через несколько секунд — обновляем чаще
 DEFAULT_INTERVAL_S: Final = 4.0
+TASK_NAME: Final = "typing"
 
 _log = getLogger(__name__)
 
@@ -31,7 +33,9 @@ class TypingIndicator:
     async def during(self, chatId: MaxChatId) -> AsyncIterator[None]:
         await self._sendOnce(chatId)
         try:
-            task = self._tasks.spawn(self._repeat(chatId), name=f"typing-{chatId}")
+            # имя задачи попадает в лог при остановке — без chat_id MAX (правило 10)
+            name = f"{TASK_NAME}:{currentTraceId() or 'no-trace'}"
+            task = self._tasks.spawn(self._repeat(chatId), name=name)
         except ShuttingDownError:
             # Бот останавливается: ответ доделаем, а повторять индикатор незачем
             yield

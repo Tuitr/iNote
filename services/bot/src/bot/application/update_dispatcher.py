@@ -59,8 +59,9 @@ class UpdateDispatcher:
             queue.append((update, traceId))
             return
         queue = deque([(update, traceId)])
+        # имя задачи попадает в лог при остановке — без max_user_id (правило 10), по первому апдейту
         _ = self._tasks.spawn(
-            self._drain(update.maxUserId, queue), name=f"{TASK_PREFIX}-{update.maxUserId}"
+            self._drain(update.maxUserId, queue), name=f"{TASK_PREFIX}:{update.updateId}"
         )
         self._queues[update.maxUserId] = queue
         self._idle.clear()
