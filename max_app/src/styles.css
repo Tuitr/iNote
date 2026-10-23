@@ -1,0 +1,191 @@
+/* Цвета и отступы — токены MAX UI: светлая и тёмная тема переключаются вместе с ним. */
+
+body {
+  margin: 0;
+}
+
+/* Токены MAX UI объявлены на его корне, а не на body: фон тянем на весь экран здесь. */
+.app {
+  min-height: 100vh;
+  /* Карточки CellList — --background-card; surface отличается от них в обеих темах. */
+  background: var(--background-surface);
+  color: var(--text-primary);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.screen-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 4px 0;
+}
+
+.screen-header h1 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
+}
+
+.center--screen {
+  min-height: 100vh;
+  align-items: center;
+  padding: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.empty > button {
+  margin-top: 8px;
+}
+
+.all-done {
+  padding: 8px 4px;
+}
+
+.item-title--done {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.kind-icon--event {
+  background: var(--gradient-blue);
+}
+
+.kind-icon--reminder {
+  background: var(--gradient-orange);
+}
+
+.kind-icon--task {
+  background: var(--gradient-purple);
+}
+
+.kind-icon--done {
+  background: var(--gradient-green);
+}
+
+.screen-header__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Высота не зависит от кнопки «Сегодня»: иначе полоска недели прыгает. */
+  min-height: 40px;
+}
+
+/* Полоска недели */
+
+.week-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.week-strip button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.week-strip__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  height: 56px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--text-secondary) !important;
+}
+
+.week-strip__day {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  border-radius: 12px;
+}
+
+.week-strip button:active {
+  background: var(--states-background-pressed-transparent);
+}
+
+.week-strip__weekday {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+.week-strip__number {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.week-strip__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.week-strip__dot--on {
+  background: var(--text-themed);
+}
+
+.week-strip__day--today .week-strip__number,
+.week-strip__day--today .week-strip__weekday {
+  color: var(--text-themed);
+}
+
+/* Цвет кнопки MAX одинаковый в обеих темах, текст на ней — белый. */
+.week-strip__day--selected,
+.week-strip__day--selected:active {
+  background: var(--button-primary) !important;
+}
+
+.week-strip__day--selected .week-strip__number,
+.week-strip__day--selected .week-strip__weekday {
+  color: #fff;
+}
+
+.week-strip__day--selected .week-strip__dot--on {
+  background: #fff;
+}

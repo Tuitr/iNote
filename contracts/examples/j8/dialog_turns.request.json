@@ -1,0 +1,19 @@
+{
+  "user_id": 17,
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80",
+  "turns": [
+    {
+      "role": "user",
+      "text": "Напомни завтра в 10 позвонить Ивану",
+      "input_type": "voice"
+    },
+    {
+      "role": "assistant",
+      "text": "Напомню завтра в 10:00 позвонить Ивану.",
+      "item_ids": [
+        "3c9e1a7b-2d4f-4b6a-8c1e-5f7a9b0d2e4c"
+      ]
+    }
+  ],
+  "latency_ms": 2930
+}

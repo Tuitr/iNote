@@ -1,5 +1,62 @@
-# Корень монорепо: виртуальный uv workspace (сам корень не пакет).
+# Корень монорепо: uv workspace (C) и сам корень — проект бэкенда D (inote-backend).
 # Каждая зона добавляет свой блок с маркерами; при мерже блоки склеиваются.
+#
+# Две раскладки живут рядом до решения на G0 (docs/decisions.md, 2026-10-22):
+#   - зона C — члены workspace со своими pyproject.toml, src-раскладка, импорт по имени пакета
+#     (`common`, `contracts`, `bot`, `agent`);
+#   - зона D — корневой проект: пакеты `libs.*` и `services.*` импортируются от корня репо
+#     (`libs.core`, `libs.contracts`, `services.mcp`, `services.api`).
+# Всё окружение целиком: `uv sync --all-packages` (так делают Makefile, CI и Dockerfile C).
+
+# --- зона D ---
+[project]
+name = "inote-backend"
+version = "0.1.0"
+description = "Бэкенд роли D: libs/core, libs/contracts, сервисы mcp и api"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.151,<1",
+    "uvicorn>=0.54,<1",
+    "pydantic>=2.14,<3",
+    "sqlalchemy[asyncio]>=2.1,<3",
+    "asyncpg>=0.32,<1",
+    "alembic>=1.20,<2",
+    # JWT для мини-приложения: /v1/auth/max выдаёт токен на 1 час (J5).
+    "pyjwt>=2.15,<3",
+    "redis>=8.1,<9",
+    "mcp>=2.3,<3",
+    # База часовых поясов для zoneinfo: на Windows и в slim-образах системной базы может не быть.
+    "tzdata>=2026.5",
+    # Scheduler вызывает бота (J4) асинхронным HTTP-клиентом.
+    "httpx>=0.28,<1",
+    # Проверка rrule (RFC 5545) и расчёт следующей даты серии.
+    "python-dateutil>=2.9,<3",
+]
+
+[project.optional-dependencies]
+# Только код D через pip (`pip install -e ".[dev]"`, образ D — Dockerfile в корне).
+# Тесты всего репо требуют пакеты зоны C — для них `uv sync --all-packages`.
+dev = [
+    "pytest>=9.1,<10",
+    # Общие настройки pytest в корне (asyncio_mode=auto) требуют pytest-asyncio.
+    "pytest-asyncio>=1.4,<2",
+    # PostgreSQL и Redis в Docker для тестов.
+    "testcontainers>=4.15,<5",
+    # Покрытие libs/core, порог 80% (критерий готовности D).
+    "pytest-cov>=7.1,<8",
+    "ruff>=0.17,<1",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Пакеты зоны C (libs/common, libs/contracts/src, services/bot, services/agent) без __init__.py
+# в корне своей папки, поэтому сюда не попадают: их собирает uv как члены workspace.
+include = ["libs*", "services*"]
+exclude = ["*.tests", "*.tests.*"]
+# --- конец зоны D ---
 
 [tool.uv.workspace]
 members = [
@@ -27,6 +84,12 @@ dev = [
   "time-machine>=2.16",
   "syrupy>=4.8",
   # --- конец зоны C ---
+  # --- зона D ---
+  "pytest>=9.1,<10",
+  "testcontainers>=4.15,<5",
+  "pytest-cov>=7.1,<8",
+  "ruff>=0.17,<1",
+  # --- конец зоны D ---
 ]
 
 # ---------------------------------------------------------------------------
@@ -98,9 +161,22 @@ ignore = [
   "PLR2004", # магические числа в проверках
   "ANN401",
 ]
+# --- конец зоны C ---
+# --- зона D ---
+# Код D проверяется набором правил D (E, F, W, I, N, UP, B, ASYNC, S, RUF), как до мержа:
+# правила, которых у D не было, здесь выключены; RUF100 — noqa D писал под свой набор, а S105/S106
+# в тестах выключены и правилом C выше. Общий набор правил — решение G0 (docs/decisions.md).
+# Пути явные: в per-file-ignores «*» захватывает и «/», а шаблон без «/» сравнивается с именем
+# файла в любой папке (поэтому «./conftest.py», а не «conftest.py»).
+"{./conftest.py,migrations/**,libs/__init__.py,libs/core/**,services/{__init__,http_common,http_errors}.py,services/api/**,services/mcp/**,services/tests/**,libs/contracts/{__init__,api,errors,health,internal,items,settings,tools}.py,libs/contracts/tests/{__init__,test_api,test_errors,test_internal,test_items,test_settings,test_tools}.py}" = [
+  "A", "C4", "SIM", "RET", "PIE", "PT", "BLE", "T20", "DTZ", "TID", "TC", "PTH", "ERA", "PL",
+  "PERF", "FURB", "ANN401", "RUF100",
+]
+# --- конец зоны D ---
 
+# --- зона C ---
 [tool.ruff.lint.isort]
-# services.* и libs.* — хелперы тестов (импорт полным путём); фиксируем, чтобы порядок не зависел от машины
+# services.* и libs.* — хелперы тестов C и пакеты D (импорт полным путём от корня репо)
 known-first-party = ["common", "contracts", "bot", "agent", "services", "libs"]
 
 [tool.ruff.lint.flake8-tidy-imports]
@@ -145,6 +221,44 @@ mypy_path = [
 ]
 exclude = ['(^|/)\.venv/', '(^|/)build/', '(^|/)__snapshots__/']
 
+# --- зона D ---
+# Код D до мержа mypy не проверялся: в strict-режиме C у него 165 ошибок (union-attr в тестах,
+# explicit-any, arg-type). Уровень проверки типов для всех зон — решение G0 (docs/decisions.md);
+# до него ошибки в модулях D не валят прогон, но их типы видны коду, который их импортирует.
+[[tool.mypy.overrides]]
+module = [
+  "conftest",
+  "migrations.*",
+  "libs.core",
+  "libs.core.*",
+  "libs.contracts",
+  "libs.contracts.api",
+  "libs.contracts.errors",
+  "libs.contracts.health",
+  "libs.contracts.internal",
+  "libs.contracts.items",
+  "libs.contracts.settings",
+  "libs.contracts.tools",
+  "libs.contracts.tests",
+  "libs.contracts.tests.test_api",
+  "libs.contracts.tests.test_errors",
+  "libs.contracts.tests.test_internal",
+  "libs.contracts.tests.test_items",
+  "libs.contracts.tests.test_settings",
+  "libs.contracts.tests.test_tools",
+  "services",
+  "services.http_common",
+  "services.http_errors",
+  "services.api",
+  "services.api.*",
+  "services.mcp",
+  "services.mcp.*",
+  "services.tests",
+  "services.tests.*",
+]
+ignore_errors = true
+# --- конец зоны D ---
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
@@ -154,7 +268,12 @@ minversion = "8.3"
 testpaths = ["libs", "services", "tests"]
 # importlib: одноимённые test_*.py и conftest.py в разных пакетах не конфликтуют;
 # pythonpath ".": хелперы тестов импортируются полным путём (services.bot.tests.fakes).
-addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+# -p no:anyio: async-тесты всех зон гоняет pytest-asyncio (auto). Плагин anyio (тесты D) и
+# pytest-asyncio в режиме auto запускают тест и его async-фикстуры в разных циклах событий —
+# asyncpg падает с «attached to a different loop». Метка anyio у тестов D остаётся как есть.
+addopts = [
+  "-ra", "--strict-markers", "--strict-config", "--import-mode=importlib", "-p", "no:anyio",
+]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -163,6 +282,7 @@ markers = [
   "integration: нужен Docker (testcontainers: Redis, PostgreSQL)",
   "lifecycle: старт и остановка процесса, SIGTERM",
   "e2e: compose с фейковыми MAX и ASR",
+  "anyio: async-тест D; выполняет pytest-asyncio (плагин anyio выключен, см. addopts)",
 ]
 filterwarnings = ["error"]
 
@@ -206,4 +326,13 @@ source_modules = ["bot.domain", "bot.application", "agent.domain", "agent.applic
 forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn", "mcp"]
 # Запрещён прямой импорт; через common (логи, trace) фреймворки доступны косвенно — это нормально
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+# Правила 1 и 7 CLAUDE.md: бот и агент не ходят в PostgreSQL, данные D — только через MCP (J3)
+# и служебный REST (J8). Код D (`libs.*`, `services.*`) не входит в образы бота и агента:
+# импорт оттуда упал бы в контейнере, поэтому он запрещён и здесь.
+name = "bot и agent не знают про PostgreSQL и код D (libs.core, services.mcp, …)"
+type = "forbidden"
+source_modules = ["bot", "agent"]
+forbidden_modules = ["libs", "services", "sqlalchemy", "asyncpg", "alembic"]
 # --- конец зоны C ---

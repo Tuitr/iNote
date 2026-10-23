@@ -1,0 +1,9 @@
+{
+  "name": "Степан",
+  "settings": {
+    "tz": "Europe/Moscow",
+    "voice_replies": false,
+    "default_event_min": 60,
+    "remind_before_min": 15
+  }
+}
