@@ -1,6 +1,6 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Final
+from typing import Final, override
 
 import pytest
 import structlog
@@ -8,12 +8,15 @@ import structlog
 from agent.application.handle_message import HandleMessage
 from agent.application.ports import DialogContext
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
+from agent.domain.user import UserContext
+from agent.infrastructure.http_user_resolver import toUserContext
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.templates import loadTemplates
 from common.errors import AppError, ErrorCode
 from common.trace import traceContext
 from contracts.agent_side import Clarify, ItemBrief, Turn, TurnInput, TurnResult
 from contracts.reply import MessageRequest, Reply, ReplyState
+from contracts.users import ResolveUserResponse, UserSettingsWire
 from services.agent.tests.fakes import (
     ITEM,
     ITEM_ID,
@@ -118,6 +121,26 @@ async def test_turnInputInUserTzWithoutUserId(tz: str, localHour: int) -> None:
     wire = turn.toJson()
     assert str(USER_ID) not in wire
     assert "user_id" not in wire
+
+
+# Примечание: J8 вернул voice_replies=true (настройка D) — в Brain всё равно false: голосового
+# ответа ассистента нет (решение команды, S3)
+async def test_voiceRepliesNeverReachBrain() -> None:
+    resolved = ResolveUserResponse(
+        userId=USER_ID, tz="Europe/Moscow", settings=UserSettingsWire(voiceReplies=True)
+    )
+
+    # Примечание: resolver с ответом J8 как есть — через тот же toUserContext, что у HTTP
+    class J8Resolver(FakeUserResolver):
+        # Примечание: пользователь из ответа J8
+        @override
+        async def resolve(self, maxUserId: int, maxChatId: int, name: str | None) -> UserContext:
+            return toUserContext(resolved, maxUserId, maxChatId)
+
+    rig = Rig(ScenarioBrain(answer), resolver=J8Resolver())
+    await rig.run()
+    [turn] = rig.brain.turns
+    assert turn.settings.voiceReplies is False
 
 
 # Примечание: история, фокус и pending сохраняются после хода; фокус — как ItemBrief из data
