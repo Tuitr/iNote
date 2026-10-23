@@ -26,6 +26,9 @@ WAIT_S: Final = 15.0
 
 type Json = dict[str, object]
 
+# trace_id сообщений бота, которые видел текущий тест (по ним отчёт e2e ищет путь в make logs)
+SEEN_TRACES: Final[list[str]] = []
+
 _MESSAGES: Final = TypeAdapter(list[dict[str, object]])
 _BUTTONS: Final = TypeAdapter(list[list[dict[str, str]]])
 
@@ -91,6 +94,7 @@ async def messagesTo(client: httpx.AsyncClient, chat: Chat, count: int) -> list[
                 if m["chat_id"] == chat.chatId
             ]
             if len(mine) >= count:
+                SEEN_TRACES.extend(str(m["trace_id"]) for m in mine if m.get("trace_id"))
                 return mine
             await asyncio.sleep(0.1)
 
