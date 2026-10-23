@@ -89,7 +89,10 @@ async def test_parallelOneMessage(bot: httpx.AsyncClient) -> None:
     assert statuses == [200, 503]
     busy = first if first.status_code == 503 else second
     assert busy.headers["Retry-After"] == "5"
-    assert busy.json()["error"]["details"] == {"reason": "in_progress"}
+    assert busy.json()["error"]["details"] == {
+        "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a",
+        "reason": "in_progress",
+    }
     assert len((await bot.get("/dev/max/sent")).json()["messages"]) == 1
 
 
@@ -132,3 +135,36 @@ async def test_invalidBody(bot: httpx.AsyncClient, patch: dict[str, object]) -> 
     response = await notify(bot, payload(**patch))
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "validation_error"
+
+
+# Примечание: S4 (к заморозке) — каждый пример ответа J4 из contracts/examples/notify совпадает с
+# тем, что отдаёт бот: статус, код и details (в details — notification_id, чтобы Scheduler
+# связал ответ с записью; message — свободный текст, trace_id — свой у каждого запроса)
+@pytest.mark.parametrize(
+    ("example", "failure", "status"),
+    [
+        ("chat_not_found", "chat_not_found", 404),
+        ("rate_limited", "rate_limited", 429),
+        ("unavailable", "unavailable", 503),
+    ],
+)
+async def test_errorExamplesMatch(
+    bot: httpx.AsyncClient, example: str, failure: str, status: int
+) -> None:
+    plan = {"chat_id": CHAT, "reason": failure, "times": 1}
+    assert (await bot.post("/dev/max/failures", json=plan)).status_code == 200
+    response = await notify(bot, payload())
+    expected = json.loads((EXAMPLES / "notify" / f"{example}.json").read_text())["error"]
+    error = response.json()["error"]
+    assert response.status_code == status
+    assert (error["code"], error["details"]) == (expected["code"], expected["details"])
+
+
+# Примечание: пример in_progress — параллельный повтор: 503, reason и notification_id, Retry-After
+async def test_inProgressExampleMatches(bot: httpx.AsyncClient) -> None:
+    first, second = await asyncio.gather(notify(bot, payload()), notify(bot, payload(attempt=2)))
+    [busy] = [r for r in (first, second) if r.status_code == 503]
+    expected = json.loads((EXAMPLES / "notify" / "in_progress.json").read_text())["error"]
+    error = busy.json()["error"]
+    assert (error["code"], error["details"]) == (expected["code"], expected["details"])
+    assert busy.headers["Retry-After"] == "5"
