@@ -7,6 +7,7 @@ import asyncio
 import os
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Final
 from zoneinfo import ZoneInfo
 
@@ -119,3 +120,58 @@ def payloadOf(message: Json, text: str) -> str:
 # Примечание: все подписи кнопок сообщения подряд
 def labels(message: Json) -> list[str]:
     return [b["text"] for row in buttons(message) for b in row]
+
+
+# Примечание: сервисный токен стенда — из окружения или из .env в корне (как у make up)
+def serviceToken() -> str:
+    if token := os.environ.get("SERVICE_TOKEN"):
+        return token
+    env = Path(__file__).resolve().parents[2] / ".env"
+    for line in env.read_text(encoding="utf-8").splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == "SERVICE_TOKEN":
+            return value.strip()
+    msg = "нет SERVICE_TOKEN ни в окружении, ни в .env"
+    raise RuntimeError(msg)
+
+
+# Примечание: id записи из кнопки «В календаре» (start_param item_<id>)
+def itemIdOf(message: Json) -> str:
+    found = [
+        b["payload"].removeprefix("item_")
+        for row in buttons(message)
+        for b in row
+        if b["type"] == "open_app" and b["payload"].startswith("item_")
+    ]
+    assert found, f"нет кнопки записи: {buttons(message)}"
+    return found[0]
+
+
+# Примечание: J4 за Scheduler: уведомление о напоминании в чат теста; ответ — тело 200
+async def notify(
+    client: httpx.AsyncClient, chat: Chat, itemId: str, title: str, remindAt: datetime
+) -> Json:
+    body = {
+        "notification_id": str(uuid.uuid4()),
+        "kind": "reminder",
+        "user": {"max_user_id": chat.userId, "max_chat_id": chat.chatId, "tz": str(USER_TZ)},
+        "item": {
+            "id": itemId,
+            "kind": "reminder",
+            "title": title,
+            "starts_at": None,
+            "all_day": False,
+            "remind_at": remindAt.isoformat(),
+            "status": "open",
+        },
+        "fire_at": remindAt.isoformat(),
+        "attempt": 1,
+    }
+    response = await client.post(
+        "/internal/v1/notify",
+        json=body,
+        headers={"Authorization": f"Bearer {serviceToken()}"},
+    )
+    assert response.status_code == 200, response.text
+    data: Json = response.json()
+    return data
