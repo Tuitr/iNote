@@ -41,7 +41,14 @@ Brain → инструменты MCP → ответ. `POST /v1/actions` — кн
   с кнопками периода и «Мой день» (`open_app today`); `pick_option`, `cancel` — уточнения. Из `args`
   берутся только поля каталога (`user_id` из кнопки до MCP не доходит); незнакомое действие или
   `args` не по каталогу — `validation_error` в лог и «Не понял кнопку» без лока и вызовов.
-  «Отменить» есть только у созданной записи, у удалённой кнопок нет. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
+  «Отменить» есть только у созданной записи, у удалённой кнопок нет.
+- **Кнопки напоминаний и конфликта** (`application/reminder_actions.py`, S3): `complete` (`item_id`) →
+  `complete_item`, повтор (`unchanged`) — «Уже отмечено выполненным»; `snooze` (`item_id`, `minutes` 1…1440 или
+  `until=tomorrow`, `kind?`) → `update_item` с новым `remind_at` («на N минут» — от «сейчас», «Завтра» — время
+  напоминания из фокуса или «сейчас», завтра; `application/snooze.py`) → «Напомню: …»; `confirm_conflict`
+  (`title`, `starts_at`, `ends_at?`) → `create_event` с `allow_conflict: true`, только пока жив вопрос (иначе
+  «Вопрос устарел»). Кнопку «Всё равно создать» рисует рендер рядом со свободными окнами — по аргументам того
+  `create_event`, что вернул `conflict`. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
 - **История диалога** (`infrastructure/http_dialog_log.py`, J8): после каждого хода и действия — фоновая задача
   `POST /internal/v1/dialog-turns` в mcp-контейнере (реплика пользователя с `input_type` text/voice/action, ответ
   и `item_ids`, `latency_ms`). Ответ её не ждёт; ключ `dialog-turns:<trace_id>`, 2 повтора; сбой — только
