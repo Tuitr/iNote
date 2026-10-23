@@ -13,10 +13,10 @@ from syrupy.extensions.json import JSONSnapshotExtension
 
 from agent.application.ports import Notice
 from agent.domain.user import UserContext
-from agent.presentation.dates import DateFormatter
-from agent.presentation.markdown import escapeMarkdown
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.templates import REQUIRED_ERROR_KEYS, ReplyTemplates, loadTemplates
+from common.markdown import escapeMarkdown
+from common.ru_dates import DateFormatter
 from contracts.agent_side import Clarify, ExecutedAction, ToolResult, TurnResult
 from contracts.reply import REPLY_TEXT_MAX_LENGTH, ReplyState
 from services.agent.tests.fakes import USAGE, FixedClock
@@ -284,7 +284,7 @@ def test_busy() -> None:
 
 # Примечание: даты: год только у чужого года, неделя через границу месяцев
 def test_dateFormatter() -> None:
-    dates = DateFormatter(loadTemplates().dates, date(2026, 10, 21))
+    dates = DateFormatter(date(2026, 10, 21))
     assert dates.day(date(2026, 10, 23)) == "пт 23 октября"
     assert dates.day(date(2027, 1, 1)) == "пт 1 января 2027"
     assert dates.relativeDay(date(2026, 10, 20)) == "Вчера, вт 20 октября"

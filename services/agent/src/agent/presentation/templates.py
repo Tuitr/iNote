@@ -5,14 +5,12 @@ from functools import cache
 from importlib import resources
 from typing import Final, Self, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 from pydantic.alias_generators import to_snake
 
 from contracts.agent_side import BrainErrorCode, ToolErrorCode
 
 TEMPLATES_FILE: Final = "ru.toml"
-WEEKDAYS: Final = 7
-MONTHS: Final = 12
 # Коды, для которых обязателен свой текст: всё, что может прийти в TurnResult.error_code
 REQUIRED_ERROR_KEYS: Final = frozenset(
     {"code", "default", *get_args(BrainErrorCode.__value__), *get_args(ToolErrorCode.__value__)}
@@ -22,22 +20,6 @@ REQUIRED_ERROR_KEYS: Final = frozenset(
 # Примечание: база секций: ключи TOML в snake_case, лишний ключ — ошибка (опечатка в шаблоне)
 class _Section(BaseModel):
     model_config = ConfigDict(alias_generator=to_snake, extra="forbid", frozen=True)
-
-
-# Примечание: дни недели, месяцы в родительном падеже и формы дат
-class DateTemplates(_Section):
-    weekdays: tuple[str, ...] = Field(min_length=WEEKDAYS, max_length=WEEKDAYS)
-    months: tuple[str, ...] = Field(min_length=MONTHS, max_length=MONTHS)
-    today: str
-    tomorrow: str
-    yesterday: str
-    day: str
-    dayWithYear: str
-    relativeDay: str
-    moment: str
-    timeRange: str
-    weekSameMonth: str
-    weekTwoMonths: str
 
 
 # Примечание: заголовки подтверждения по виду созданной записи
@@ -125,7 +107,6 @@ class WelcomeTemplates(_Section):
 
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
 class ReplyTemplates(_Section):
-    dates: DateTemplates
     created: CreatedTemplates
     changed: ChangedTemplates
     list: ListTemplates

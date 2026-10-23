@@ -30,9 +30,9 @@ from agent.application.ports import Clock, Notice, Welcome
 from agent.application.reschedule import RescheduleChoice, RescheduleOption
 from agent.application.turn_rules import successfulMutations
 from agent.domain.user import UserContext
-from agent.presentation.dates import DateFormatter
-from agent.presentation.markdown import escapeMarkdown
 from agent.presentation.templates import ReplyTemplates
+from common.markdown import escapeMarkdown
+from common.ru_dates import DateFormatter
 from common.trace import shortTraceId
 from contracts.agent_side import ExecutedAction, TurnResult
 from contracts.reply import (
@@ -166,7 +166,7 @@ class TemplateReplyRenderer:
     def _scope(self, user: UserContext, traceId: str) -> _Scope:
         zone = ZoneInfo(user.tz)
         today = self._clock.now().astimezone(zone).date()
-        return _Scope(zone, today, DateFormatter(self._t.dates, today), traceId)
+        return _Scope(zone, today, DateFormatter(today), traceId)
 
     # Примечание: вопрос модели и варианты ответа кнопками (по 3 в ряд)
     def _clarify(self, result: TurnResult, scope: _Scope) -> Reply:
