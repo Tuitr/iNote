@@ -14,7 +14,8 @@ x-python-service: &python-service
     - path: ../.env
       required: false
   restart: unless-stopped
-  stop_grace_period: 20s
+  # uvicorn ждёт запросы до 15 с (python.Dockerfile) + задачи до 10 с + запас — tests/deploy/test_stop_budget.py
+  stop_grace_period: 30s
   networks: [internal]
   healthcheck:
     test:
