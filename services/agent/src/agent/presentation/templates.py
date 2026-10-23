@@ -113,6 +113,18 @@ class WelcomeTemplates(_Section):
     openHistory: str
 
 
+# Примечание: /settings: экран и подтверждения; current — подпись текущего пояса на кнопке
+class SettingsTemplates(_Section):
+    header: str
+    tz: str
+    voiceOn: str
+    voiceOff: str
+    hint: str
+    current: str
+    voiceEnable: str
+    voiceDisable: str
+
+
 # Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
 class ReplyTemplates(_Section):
     created: CreatedTemplates
@@ -125,6 +137,7 @@ class ReplyTemplates(_Section):
     reschedule: RescheduleTemplates
     snooze: SnoozeTemplates
     welcome: WelcomeTemplates
+    settings: SettingsTemplates
     errors: dict[str, str]
 
     # Примечание: у каждого возможного кода ошибки — свой текст, иначе пользователь увидит «default»

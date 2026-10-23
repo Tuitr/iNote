@@ -413,5 +413,17 @@
     },
     "tz": "Europe/Moscow",
     "user_id": 17
+  },
+  "users/settings_request.json": {
+    "tz": "Asia/Yekaterinburg"
+  },
+  "users/settings_response.json": {
+    "created": false,
+    "settings": {
+      "default_event_min": 60,
+      "voice_replies": false
+    },
+    "tz": "Asia/Yekaterinburg",
+    "user_id": 17
   }
 }

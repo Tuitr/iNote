@@ -30,10 +30,10 @@ class HttpUserResolver:
 
     # Примечание: кеш → J8 → кеш; ошибки J8 уходят AppError с кодом стандарта
     async def resolve(self, maxUserId: int, maxChatId: int, name: str | None) -> UserContext:
-        key = _key(maxUserId)
+        key = userCacheKey(maxUserId)
         cached = await self._readCache(key)
         if cached is not None:
-            return _toContext(cached, maxUserId, maxChatId)
+            return toUserContext(cached, maxUserId, maxChatId)
         request = ResolveUserRequest(maxUserId=maxUserId, maxChatId=maxChatId, name=name)
         # Вызов идемпотентен по max_user_id — ключ от него разрешает один повтор (правило 6)
         response = await self._http.post(
@@ -45,7 +45,7 @@ class HttpUserResolver:
             raise AppError(ErrorCode.INTERNAL, "J8 resolve: ответ не по контракту") from exc
         _log.info("user_resolved", user_id=resolved.userId, created=resolved.created)
         await self._writeCache(key, resolved)
-        return _toContext(resolved, maxUserId, maxChatId)
+        return toUserContext(resolved, maxUserId, maxChatId)
 
     # Примечание: битый JSON или недоступный Redis — промах кеша, а не ошибка хода
     async def _readCache(self, key: RedisKey) -> ResolveUserResponse | None:
@@ -72,12 +72,12 @@ class HttpUserResolver:
 
 
 # Примечание: ключ кеша по max_user_id
-def _key(maxUserId: int) -> RedisKey:
+def userCacheKey(maxUserId: int) -> RedisKey:
     return RedisKey(service="agent", entity="user", id=str(maxUserId))
 
 
 # Примечание: ответ J8 + чат из апдейта → пользователь хода
-def _toContext(resolved: ResolveUserResponse, maxUserId: int, maxChatId: int) -> UserContext:
+def toUserContext(resolved: ResolveUserResponse, maxUserId: int, maxChatId: int) -> UserContext:
     return UserContext(
         userId=resolved.userId,
         maxUserId=maxUserId,

@@ -1,6 +1,8 @@
 import json
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Final
+from zoneinfo import ZoneInfo
 
 import fakeredis
 import httpx
@@ -13,6 +15,7 @@ from agent.infrastructure.scripted_brain import HELP
 from agent.infrastructure.settings import AgentSettings
 from agent.main import AgentOverrides, createApp
 from agent.presentation.templates import loadTemplates
+from contracts.agent_side import ToolResult
 from services.agent.tests.conftest import EXAMPLES, SERVICE_TOKEN
 from services.agent.tests.fakes import ITEM_ID, FakeMcpHttp, RecordingToolFactory, mutation
 
@@ -239,3 +242,24 @@ async def test_focusInvalid(client: httpx.AsyncClient) -> None:
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "validation_error"
+
+
+# Примечание: S3 — /settings через HTTP: set_tz → J8 PATCH, кеш пользователя в Redis сброшен,
+# следующий «сегодня» считает день по новому поясу (resolve снова идёт в J8)
+async def test_setTzThroughApi(
+    client: httpx.AsyncClient, mcpHttp: FakeMcpHttp, tools: RecordingToolFactory
+) -> None:
+    tools.responses["list_items"] = ToolResult(ok=True, summary="ok", data={"items": []})
+    base = {"max_user_id": 100200300, "max_chat_id": 500600700, "label": None}
+    today = {**base, "action": "list_period", "args": {"period": "today"}}
+    assert (await client.post("/v1/actions", json=today, headers=AUTH)).status_code == 200
+    change = {**base, "action": "set_tz", "args": {"tz": "Asia/Kamchatka", "user_id": 1}}
+    reply = (await client.post("/v1/actions", json=change, headers=AUTH)).json()
+    assert reply["text"] == "Пояс: Камчатка (UTC+12)"
+    [patch] = mcpHttp.settingsPatches
+    assert patch.url.path == "/internal/v1/users/17/settings"
+    assert (await client.post("/v1/actions", json=today, headers=AUTH)).status_code == 200
+    assert len(mcpHttp.resolves) == 2
+    days = [args["from"] for name, args in tools.calls if name == "list_items"]
+    kamchatka = datetime.now(ZoneInfo("Asia/Kamchatka")).date().isoformat()
+    assert days[-1] == kamchatka

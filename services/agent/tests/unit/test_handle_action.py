@@ -6,10 +6,11 @@ from typing import Final
 import pytest
 
 from agent.application.handle_action import HandleAction
-from agent.application.ports import DialogContext
+from agent.application.ports import DialogContext, SettingsChange
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.templates import loadTemplates
+from common.errors import AppError, ErrorCode
 from common.trace import traceContext
 from contracts.agent_side import Clarify, ItemBrief, ToolResult, TurnInput, TurnResult
 from contracts.reply import ActionButton, ActionRequest, Reply, ReplyState
@@ -20,6 +21,7 @@ from services.agent.tests.fakes import (
     FakeUserResolver,
     FixedClock,
     InMemoryContextStore,
+    InMemorySettingsWriter,
     InMemoryUserLock,
     RecordingDialogLog,
     RecordingToolFactory,
@@ -53,9 +55,11 @@ class Rig:
             self.store.contexts[USER_ID] = context
         self.dialog = RecordingDialogLog()
         self.tools = RecordingToolFactory(responses)
+        self.resolver = FakeUserResolver()
+        self.settings = InMemorySettingsWriter(self.resolver)
         pipeline = TurnPipeline(
             TurnDeps(
-                resolver=FakeUserResolver(),
+                resolver=self.resolver,
                 lock=self.lock,
                 contextStore=self.store,
                 clock=FixedClock(NOW),
@@ -66,7 +70,7 @@ class Rig:
             ),
             lockWaitS=0.05,
         )
-        self.handler = HandleAction(pipeline)
+        self.handler = HandleAction(pipeline, self.settings)
 
     # Примечание: нажатие кнопки в trace-контексте
     async def press(
@@ -423,3 +427,71 @@ async def test_confirmConflict() -> None:
     assert stale.tools.calls == []
     bad = await Rig(context=asked()).press("confirm_conflict", {"title": "x"})
     assert bad.text == TEMPLATES.notices.unknownAction
+
+
+# Примечание: /settings — пояс и голосовые ответы текстом; 12 поясов по 4 в ряд (≤ 7), текущий
+# отмечен; переключатель голосовых; инструменты не нужны
+async def test_settingsScreen() -> None:
+    rig = Rig()
+    reply = await rig.press("settings")
+    assert reply.text.split("\n")[1:3] == ["Пояс: Москва (UTC+3)", "Голосовые ответы: выкл"]
+    *zones, toggle = buttons(reply)
+    assert [len(row) for row in zones] == [4, 4, 4]
+    flat = [b for row in zones for b in row]
+    assert flat[1] == ("✓ Москва", "set_tz", {"tz": "Europe/Moscow"})
+    assert flat[3] == ("Екатеринбург", "set_tz", {"tz": "Asia/Yekaterinburg"})
+    assert toggle == [("Включить голосовые ответы", "set_voice_replies", {"enabled": True})]
+    assert rig.tools.calls == []
+
+
+# Примечание: смена пояса → J8 под user_id из resolve (user_id из args игнорируется) →
+# «Пояс: Камчатка (UTC+12)»; следующий «сегодня» — уже по дню Камчатки (там 22 октября)
+async def test_setTzThenTodayInNewZone() -> None:
+    rig = Rig(responses={"list_items": ToolResult(ok=True, summary="ok", data={"items": []})})
+    before = await rig.press("list_period", {"period": "today"})
+    reply = await rig.press("set_tz", {"tz": "Asia/Kamchatka", "user_id": 999})
+    after = await rig.press("list_period", {"period": "today"})
+    assert reply.text == "Пояс: Камчатка (UTC+12)"
+    assert buttons(reply) == [[("Сегодня", "list_period", {"period": "today"})]]
+    assert rig.settings.calls == [(USER_ID, SettingsChange(tz="Asia/Kamchatka"))]
+    days = [args["from"] for name, args in rig.tools.calls if name == "list_items"]
+    assert days == ["2026-10-21", "2026-10-22"]
+    assert (before.state, after.state) == (ReplyState.ANSWER, ReplyState.ANSWER)
+
+
+# Примечание: пояс не из белого списка, пустой и не строка; enabled не bool — «Не понял кнопку»,
+# в J8 не ходим
+@pytest.mark.parametrize(
+    ("action", "args"),
+    [
+        ("set_tz", {"tz": "Europe/London"}),
+        ("set_tz", {"tz": "Asia/Kolkata"}),
+        ("set_tz", {}),
+        ("set_tz", {"tz": 3}),
+        ("set_voice_replies", {"enabled": "yes"}),
+        ("set_voice_replies", {}),
+    ],
+)
+async def test_settingsRejectsBadArgs(action: str, args: dict[str, str | int | bool]) -> None:
+    rig = Rig()
+    reply = await rig.press(action, args)
+    assert reply.text == TEMPLATES.notices.unknownAction
+    assert rig.settings.calls == []
+
+
+# Примечание: голосовые ответы — подтверждение по сохранённому
+@pytest.mark.parametrize(("enabled", "text"), [(True, "вкл"), (False, "выкл")])
+async def test_setVoiceReplies(enabled: bool, text: str) -> None:
+    rig = Rig()
+    reply = await rig.press("set_voice_replies", {"enabled": enabled})
+    assert reply.text == f"Голосовые ответы: {text}"
+    assert rig.settings.calls == [(USER_ID, SettingsChange(voiceReplies=enabled))]
+
+
+# Примечание: J8 недоступен — ответ-ошибка с кодом, пояс не поменялся
+async def test_settingsWriterDown() -> None:
+    rig = Rig()
+    rig.settings.error = AppError(ErrorCode.UPSTREAM_UNAVAILABLE, "down")
+    reply = await rig.press("set_tz", {"tz": "Asia/Omsk"})
+    assert reply.state is ReplyState.ERROR
+    assert rig.resolver.tz == "Europe/Moscow"

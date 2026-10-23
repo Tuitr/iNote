@@ -6,8 +6,10 @@ import pytest
 import structlog
 from pydantic import SecretStr
 
+from agent.application.ports import SettingsChange
 from agent.domain.user import UserContext
 from agent.infrastructure.http_user_resolver import USER_CACHE_TTL_S, HttpUserResolver
+from agent.infrastructure.http_user_settings import HttpSettingsWriter
 from common.errors import AppError
 from common.http import RetryPolicy, ServiceHttpClient
 from common.redis import KeyedRedis
@@ -143,3 +145,47 @@ async def test_logsWithoutPersonalData() -> None:
     assert (resolved["user_id"], resolved["created"]) == (17, True)
     assert "Иван" not in str(logs)
     assert str(MAX_USER) not in str(logs)
+
+
+# Примечание: S3 — PATCH настроек под user_id из resolve: только меняемое поле, токен, trace и
+# ключ user-settings:<trace>; кеш пользователя сброшен — следующий resolve идёт в J8 за новым поясом
+async def test_settingsPatchDropsCache() -> None:
+    rig = Rig(FakeMcpHttp(userId=17))
+    user = await rig.resolve()
+    assert await rig.redis.exists(CACHE_KEY)
+    writer = HttpSettingsWriter(rig.http, KeyedRedis(rig.redis))
+    with traceContext(TRACE):
+        updated = await writer.update(user, SettingsChange(tz="Asia/Yekaterinburg"))
+    [patch] = rig.mcp.settingsPatches
+    assert patch.url.path == "/internal/v1/users/17/settings"
+    assert json.loads(patch.content) == {"tz": "Asia/Yekaterinburg"}
+    assert patch.headers["Authorization"] == f"Bearer {SERVICE_TOKEN}"
+    assert patch.headers["X-Trace-Id"] == TRACE
+    assert patch.headers["Idempotency-Key"] == f"user-settings:{TRACE}"
+    assert (updated.userId, updated.tz, updated.maxChatId) == (17, "Asia/Yekaterinburg", CHAT)
+    assert not await rig.redis.exists(CACHE_KEY)
+    assert (await rig.resolve()).tz == "Asia/Yekaterinburg"
+    assert len(rig.mcp.resolves) == 2
+
+
+# Примечание: J8 недоступен — AppError upstream_unavailable, кеш не тронут
+async def test_settingsPatchDown() -> None:
+    rig = Rig(FakeMcpHttp(userId=17))
+    user = await rig.resolve()
+    rig.mcp.down = True
+    writer = HttpSettingsWriter(rig.http, KeyedRedis(rig.redis))
+    with pytest.raises(AppError) as caught:
+        await writer.update(user, SettingsChange(voiceReplies=True))
+    assert caught.value.code == "upstream_unavailable"
+    assert await rig.redis.exists(CACHE_KEY)
+
+
+# Примечание: Redis лежит — PATCH прошёл, пользователь новый, сброс кеша — только warning
+async def test_settingsCacheDropFailureOnlyLogged() -> None:
+    rig = Rig(FakeMcpHttp(userId=17), redisUp=False)
+    user = UserContext(userId=17, maxUserId=MAX_USER, maxChatId=CHAT, tz="Europe/Moscow")
+    writer = HttpSettingsWriter(rig.http, KeyedRedis(rig.redis))
+    with structlog.testing.capture_logs() as logs:
+        updated = await writer.update(user, SettingsChange(voiceReplies=True))
+    assert updated.voiceReplies is True
+    assert [e["event"] for e in logs if e["log_level"] == "warning"] == ["user_cache_drop_failed"]

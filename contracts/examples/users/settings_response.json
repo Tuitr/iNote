@@ -1,0 +1,9 @@
+{
+  "user_id": 17,
+  "tz": "Asia/Yekaterinburg",
+  "settings": {
+    "default_event_min": 60,
+    "voice_replies": false
+  },
+  "created": false
+}

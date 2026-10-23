@@ -98,6 +98,20 @@ class Welcome(StrEnum):
     HELP = "help"
 
 
+# Примечание: что поменять в настройках: None — не трогать
+@dataclass(frozen=True)
+class SettingsChange:
+    tz: str | None = None
+    voiceReplies: bool | None = None
+
+
+# Примечание: запись настроек пользователя (J8 PATCH у D) и сброс кеша пользователя агента
+class SettingsWriter(Protocol):
+    # Примечание: user_id — из resolve (session.user), не из кнопки; ответ — пользователь после
+    # изменения; недоступность J8 — AppError upstream_*
+    async def update(self, user: UserContext, change: SettingsChange) -> UserContext: ...
+
+
 # Примечание: перевод итога хода в Reply; все тексты — в шаблонах presentation
 class ReplyRenderer(Protocol):
     # Примечание: Reply по итогу хода Brain; heard — распознанный текст голосового («Распознал: …»)
@@ -126,6 +140,12 @@ class ReplyRenderer(Protocol):
 
     # Примечание: приветствие или справка с примерами фраз и кнопкой «Мой день» (open_app today)
     def welcome(self, kind: Welcome, traceId: str) -> Reply: ...
+
+    # Примечание: /settings: текущий пояс и голосовые ответы, кнопки поясов и переключатель
+    def settings(self, user: UserContext, traceId: str) -> Reply: ...
+
+    # Примечание: подтверждение изменения: «Пояс: Екатеринбург (UTC+5)» или голосовые вкл/выкл
+    def settingsChanged(self, user: UserContext, change: SettingsChange, traceId: str) -> Reply: ...
 
     # Примечание: Reply-ошибка по коду (upstream_timeout, internal, …)
     def failure(self, errorCode: str, traceId: str) -> Reply: ...

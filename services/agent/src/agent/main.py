@@ -19,6 +19,7 @@ from agent.application.ports import (
     Clock,
     DialogLog,
     ReplyRenderer,
+    SettingsWriter,
     ToolExecutorFactory,
     UserResolver,
 )
@@ -27,6 +28,7 @@ from agent.infrastructure.brains import buildBrain
 from agent.infrastructure.http_dialog_log import TASK_PREFIX as DIALOG_TASK_PREFIX
 from agent.infrastructure.http_dialog_log import HttpDialogLogWriter
 from agent.infrastructure.http_user_resolver import HttpUserResolver
+from agent.infrastructure.http_user_settings import HttpSettingsWriter
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutorFactory
 from agent.infrastructure.redis_context import RedisDialogContextStore
@@ -64,6 +66,7 @@ class AgentOverrides:
     clock: Clock | None = None
     renderer: ReplyRenderer | None = None
     dialogLog: DialogLog | None = None
+    settingsWriter: SettingsWriter | None = None
     # транспорт к служебному REST mcp-контейнера (J8, health) — httpx.MockTransport в тестах
     mcpTransport: httpx.AsyncBaseTransport | None = None
 
@@ -126,7 +129,9 @@ def createApp(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
             app.state.handleMessage = HandleMessage(pipeline)
-            app.state.handleAction = HandleAction(pipeline)
+            app.state.handleAction = HandleAction(
+                pipeline, custom.settingsWriter or HttpSettingsWriter(mcpHttp, store)
+            )
             app.state.handleFocus = HandleFocus(deps, lockWaitS=config.lockWaitS)
             _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
             try:

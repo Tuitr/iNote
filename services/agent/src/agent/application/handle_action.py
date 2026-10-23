@@ -2,7 +2,8 @@
 
 Каталог (application/actions.py): pick_option → Brain.resume, cancel, undo → delete_item,
 reschedule → update_item или вопрос «На когда перенести?», list_period → list_items, start и help;
-complete, snooze, confirm_conflict — application/reminder_actions.py.
+complete, snooze, confirm_conflict — application/reminder_actions.py; settings, set_tz,
+set_voice_replies — application/settings_actions.py.
 Инструменты зовутся через ToolExecutor хода: caller и ключи идемпотентности ставит агент,
 из args кнопки берутся только поля каталога. Незнакомое действие — «Не понял кнопку».
 """
@@ -32,15 +33,19 @@ from agent.application.actions import (
     PERIOD_ARG,
     PICK_OPTION,
     RESCHEDULE,
+    SET_TZ,
+    SET_VOICE_REPLIES,
+    SETTINGS,
     SNOOZE,
     START,
     STARTS_AT_ARG,
     UNDO,
 )
 from agent.application.item_time import ItemKind, isItemKind, moveArgs
-from agent.application.ports import Notice, UserInput, Welcome
+from agent.application.ports import Notice, SettingsWriter, UserInput, Welcome
 from agent.application.reminder_actions import ReminderActions
 from agent.application.reschedule import rescheduleOptions
+from agent.application.settings_actions import SettingsActions
 from agent.application.turn_pipeline import (
     Session,
     Step,
@@ -60,9 +65,10 @@ _log = getLogger(__name__)
 # Примечание: действие → шаг каркаса; непонятное действие или args — без лока и инструментов
 class HandleAction:
     # Примечание: всё нужное — в каркасе: renderer, Brain, инструменты хода
-    def __init__(self, pipeline: TurnPipeline) -> None:
+    def __init__(self, pipeline: TurnPipeline, settingsWriter: SettingsWriter) -> None:
         self._pipeline = pipeline
         self._reminders = ReminderActions(pipeline)
+        self._settings = SettingsActions(pipeline, settingsWriter)
 
     # Примечание: имя действия в лог можно — это код кнопки, не текст пользователя
     async def __call__(self, request: ActionRequest) -> Reply:
@@ -95,6 +101,9 @@ class HandleAction:
             COMPLETE: self._reminders.completeStep,
             SNOOZE: self._reminders.snoozeStep,
             CONFIRM_CONFLICT: self._reminders.confirmConflictStep,
+            SETTINGS: self._settings.settingsStep,
+            SET_TZ: self._settings.setTzStep,
+            SET_VOICE_REPLIES: self._settings.setVoiceStep,
             START: lambda _: self._welcome(Welcome.START),
             HELP: lambda _: self._welcome(Welcome.HELP),
         }

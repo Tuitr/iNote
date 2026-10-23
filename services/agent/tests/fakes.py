@@ -1,13 +1,15 @@
 """Фейки портов агента для тестов. Brain — TurnResult по сценарию (ScriptedBrain — шаг 2)."""
 
 import asyncio
+import dataclasses
+import json
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Final
 
 import httpx
 
-from agent.application.ports import DialogContext, DialogEntry
+from agent.application.ports import DialogContext, DialogEntry, SettingsChange
 from agent.domain.user import Caller, UserContext, UserId
 from common.errors import AppError
 from contracts.agent_side import (
@@ -58,6 +60,27 @@ class FakeUserResolver:
         return UserContext(
             userId=maxUserId + 1, maxUserId=maxUserId, maxChatId=maxChatId, tz=self.tz
         )
+
+
+# Примечание: настройки в памяти: меняет пояс у FakeUserResolver — как J8 + сброс кеша
+class InMemorySettingsWriter:
+    # Примечание: resolver — чей пояс меняется; error — имитировать недоступность J8
+    def __init__(self, resolver: FakeUserResolver, error: AppError | None = None) -> None:
+        self.resolver = resolver
+        self.error = error
+        self.voiceReplies = False
+        self.calls: list[tuple[UserId, SettingsChange]] = []
+
+    # Примечание: запоминает (user_id, изменение) и отдаёт пользователя после изменения
+    async def update(self, user: UserContext, change: SettingsChange) -> UserContext:
+        self.calls.append((user.userId, change))
+        if self.error is not None:
+            raise self.error
+        if change.tz is not None:
+            self.resolver.tz = change.tz
+        if change.voiceReplies is not None:
+            self.voiceReplies = change.voiceReplies
+        return dataclasses.replace(user, tz=self.resolver.tz, voiceReplies=self.voiceReplies)
 
 
 # Примечание: лок в памяти с той же семантикой токена, что у Redis
@@ -215,6 +238,7 @@ class FakeMcpHttp:
         self.failures = failures
         self.body = body
         self.healthy = True
+        self.voiceReplies = False
         self.requests: list[httpx.Request] = []
 
     # Примечание: транспорт для ServiceHttpClient / AgentOverrides.mcpTransport
@@ -232,23 +256,50 @@ class FakeMcpHttp:
     def dialogTurns(self) -> list[httpx.Request]:
         return [r for r in self.requests if r.url.path == "/internal/v1/dialog-turns"]
 
-    # Примечание: /health/live, users/resolve и dialog-turns (202); остальное — 404
+    # Примечание: PATCH настроек (J8, черновик C)
+    @property
+    def settingsPatches(self) -> list[httpx.Request]:
+        return [r for r in self.requests if r.method == "PATCH"]
+
+    # Примечание: /health/live, users/resolve, PATCH настроек и dialog-turns (202); иначе 404
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if request.method == "PATCH" and request.url.path.endswith("/settings"):
+            return self._patchSettings(request)
         if request.url.path == "/health/live":
             return httpx.Response(200 if self.healthy else 503, json={"status": "ok"})
         if request.url.path == "/internal/v1/dialog-turns":
             return httpx.Response(202, json={"accepted": True})
         if request.url.path != "/internal/v1/users/resolve":
             return httpx.Response(404, json={"error": {"code": "not_found", "message": "-"}})
+        return self._resolve()
+
+    # Примечание: users/resolve: недоступен, свой ответ или пользователь с текущим поясом
+    def _resolve(self) -> httpx.Response:
         if self.down or self.failures > 0:
             self.failures -= 1
             error = {"code": "upstream_unavailable", "message": "down", "details": {}}
             return httpx.Response(503, json={"error": error})
         if self.body is not None:
             return httpx.Response(200, json=self.body)
-        user = {"user_id": self.userId, "tz": self.tz, "settings": {}, "created": True}
-        return httpx.Response(200, json=user)
+        return httpx.Response(200, json=self._user(created=True))
+
+    # Примечание: пользователь в форме ответа resolve с текущими поясом и настройками
+    def _user(self, *, created: bool) -> dict[str, object]:
+        settings = {"voice_replies": self.voiceReplies}
+        return {"user_id": self.userId, "tz": self.tz, "settings": settings, "created": created}
+
+    # Примечание: /internal/v1/users/{user_id}/settings: чужой id — 404; поля — как в теле
+    def _patchSettings(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path != f"/internal/v1/users/{self.userId}/settings":
+            return httpx.Response(404, json={"error": {"code": "not_found", "message": "-"}})
+        if self.down:
+            error = {"code": "upstream_unavailable", "message": "down", "details": {}}
+            return httpx.Response(503, json={"error": error})
+        body = json.loads(request.content)
+        self.tz = body.get("tz", self.tz)
+        self.voiceReplies = body.get("voice_replies", self.voiceReplies)
+        return httpx.Response(200, json=self._user(created=False))
 
 
 # Примечание: история диалога в памяти; failing — record падает (ответ всё равно уходит)

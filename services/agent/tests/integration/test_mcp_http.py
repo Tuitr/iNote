@@ -19,10 +19,11 @@ import pytest
 import structlog
 from pydantic import SecretStr
 
-from agent.application.ports import DialogEntry, UserInput
+from agent.application.ports import DialogEntry, SettingsChange, UserInput
 from agent.domain.user import Caller
 from agent.infrastructure.http_dialog_log import HttpDialogLogWriter
 from agent.infrastructure.http_user_resolver import HttpUserResolver
+from agent.infrastructure.http_user_settings import HttpSettingsWriter
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpReply, McpToolExecutor
 from common.errors import AppError
@@ -239,6 +240,31 @@ async def test_resolveUserOverHttp(stub: StubProcess, uniqueId: str) -> None:
     assert first.tz == "Europe/Moscow"
     created = [e["created"] for e in stub.events("user_resolved")]
     assert created == [True, False]
+
+
+# Примечание: S3 — PATCH настроек по HTTP: пояс сохраняется, resolve отдаёт сохранённое;
+# незнакомый user_id — 404, пояс не IANA — 400 (у агента до заглушки не доходит)
+async def test_settingsOverHttp(stub: StubProcess, uniqueId: str) -> None:
+    maxUserId = int(uniqueId[:12], 16)
+    async with ServiceHttpClient(
+        baseUrl=stub.root, timeoutS=5, serviceToken=SecretStr(SERVICE_TOKEN), upstreamName="mcp"
+    ) as http:
+        cache = KeyedRedis(fakeredis.FakeAsyncRedis())
+        user = await HttpUserResolver(http, cache).resolve(maxUserId, 5, None)
+        change = SettingsChange(tz="Asia/Yekaterinburg", voiceReplies=True)
+        updated = await HttpSettingsWriter(http, cache).update(user, change)
+        again = await HttpUserResolver(http, cache).resolve(maxUserId, 5, None)
+        with pytest.raises(AppError) as missing:
+            await http.request(
+                "PATCH", "/internal/v1/users/999999999/settings", json={"tz": "Asia/Omsk"}
+            )
+        with pytest.raises(AppError) as badTz:
+            await http.request(
+                "PATCH", f"/internal/v1/users/{user.userId}/settings", json={"tz": "Mars/Base"}
+            )
+    assert (updated.tz, updated.voiceReplies) == ("Asia/Yekaterinburg", True)
+    assert (again.userId, again.tz, again.voiceReplies) == (user.userId, "Asia/Yekaterinburg", True)
+    assert (missing.value.code, badTz.value.code) == ("not_found", "validation_error")
 
 
 # Примечание: J8 без сервисного токена — 401 unauthorized в конверте стандарта

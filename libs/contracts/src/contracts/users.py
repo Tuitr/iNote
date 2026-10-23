@@ -1,18 +1,23 @@
 """J8 · agent (C) → mcp-контейнер (D): POST /internal/v1/users/resolve. Владелец D, черновик C к G1.
 
+S3: PATCH /internal/v1/users/{user_id}/settings — смена пояса и голосовых ответов из /settings
+(потребительский черновик C: у D этого метода ещё нет). Ответ — тот же пользователь, что у resolve;
+после него агент сбрасывает кеш va:v1:agent:user:{max_user_id}.
+
 Агент узнаёт внутренний user_id и пояс по max_user_id; при первом обращении D создаёт пользователя
 (created=true). Вызов идемпотентен по max_user_id — повтор не создаёт второго пользователя.
 Агент кеширует ответ в va:v1:agent:user:{max_user_id} на 1 ч. Читатель игнорирует незнакомые поля.
 """
 
-from typing import Final
+from typing import Final, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from common.wire import WireModel
 
 RESOLVE_PATH: Final = "/internal/v1/users/resolve"
+SETTINGS_PATH: Final = "/internal/v1/users/{user_id}/settings"
 DEFAULT_EVENT_MIN: Final = 60
 NAME_MAX_LENGTH: Final = 256
 
@@ -47,3 +52,39 @@ class ResolveUserResponse(WireModel):
             msg = f"неизвестный часовой пояс: {value}"
             raise ValueError(msg) from exc
         return value
+
+
+# Примечание: путь PATCH настроек; user_id — внутренний (из resolve), не из кнопки
+def settingsPath(userId: int) -> str:
+    return SETTINGS_PATH.format(user_id=userId)
+
+
+# Примечание: что поменять: только заданные поля (PATCH); хотя бы одно обязательно
+class UpdateUserSettingsRequest(WireModel):
+    tz: str | None = None
+    voiceReplies: bool | None = None
+
+    # Примечание: пояс — только существующий IANA (белый список — у агента)
+    @field_validator("tz")
+    @classmethod
+    def _checkTz(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            msg = f"неизвестный часовой пояс: {value}"
+            raise ValueError(msg) from exc
+        return value
+
+    # Примечание: пустой PATCH — ошибка вызывающего, а не «ничего не делать»
+    @model_validator(mode="after")
+    def _notEmpty(self) -> Self:
+        if self.tz is None and self.voiceReplies is None:
+            msg = "нужно хотя бы одно поле: tz или voice_replies"
+            raise ValueError(msg)
+        return self
+
+    # Примечание: на проводе — только заданные поля (PATCH не трогает остальные)
+    def toPatch(self) -> dict[str, object]:
+        return self.model_dump(by_alias=True, exclude_none=True, mode="json")

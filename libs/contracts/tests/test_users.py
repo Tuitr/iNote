@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from contracts.users import ResolveUserRequest, ResolveUserResponse
+from contracts.users import (
+    ResolveUserRequest,
+    ResolveUserResponse,
+    UpdateUserSettingsRequest,
+    settingsPath,
+)
 from libs.contracts.tests.examples import loadExample
 
 
@@ -34,3 +39,21 @@ def test_invalidResponse(patch: dict[str, object]) -> None:
     assert isinstance(raw, dict)
     with pytest.raises(ValidationError):
         ResolveUserResponse.fromWire({**raw, **patch})
+
+
+# Примечание: S3 — PATCH настроек: пример запроса и ответа; на проводе только заданные поля
+def test_settingsRoundTrip() -> None:
+    raw = loadExample("users/settings_request.json")
+    request = UpdateUserSettingsRequest.fromWire(raw)
+    assert request.toPatch() == raw
+    assert UpdateUserSettingsRequest(voiceReplies=True).toPatch() == {"voice_replies": True}
+    response = loadExample("users/settings_response.json")
+    assert ResolveUserResponse.fromWire(response).toWire() == response
+    assert settingsPath(17) == "/internal/v1/users/17/settings"
+
+
+# Примечание: пустой PATCH и несуществующий пояс — ошибка контракта
+@pytest.mark.parametrize("raw", [{}, {"tz": None}, {"tz": "Mars/Base"}])
+def test_settingsInvalid(raw: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        UpdateUserSettingsRequest.fromWire(raw)

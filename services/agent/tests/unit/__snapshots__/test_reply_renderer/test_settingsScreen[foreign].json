@@ -1,0 +1,122 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Europe/Kaliningrad"
+        },
+        "kind": "action",
+        "text": "Калининград"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Europe/Moscow"
+        },
+        "kind": "action",
+        "text": "Москва"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Europe/Samara"
+        },
+        "kind": "action",
+        "text": "Самара"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Yekaterinburg"
+        },
+        "kind": "action",
+        "text": "Екатеринбург"
+      }
+    ],
+    [
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Omsk"
+        },
+        "kind": "action",
+        "text": "Омск"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Novosibirsk"
+        },
+        "kind": "action",
+        "text": "Новосибирск"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Krasnoyarsk"
+        },
+        "kind": "action",
+        "text": "Красноярск"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Irkutsk"
+        },
+        "kind": "action",
+        "text": "Иркутск"
+      }
+    ],
+    [
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Yakutsk"
+        },
+        "kind": "action",
+        "text": "Якутск"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Vladivostok"
+        },
+        "kind": "action",
+        "text": "Владивосток"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Magadan"
+        },
+        "kind": "action",
+        "text": "Магадан"
+      },
+      {
+        "action": "set_tz",
+        "args": {
+          "tz": "Asia/Kamchatka"
+        },
+        "kind": "action",
+        "text": "Камчатка"
+      }
+    ],
+    [
+      {
+        "action": "set_voice_replies",
+        "args": {
+          "enabled": true
+        },
+        "kind": "action",
+        "text": "Включить голосовые ответы"
+      }
+    ]
+  ],
+  "format": "plain",
+  "items": [],
+  "speak": false,
+  "state": "answer",
+  "text": "Настройки\nПояс: Europe/London (UTC+1)\nГолосовые ответы: выкл\nПояс — кнопкой ниже: от него считаются «сегодня» и время напоминаний.",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

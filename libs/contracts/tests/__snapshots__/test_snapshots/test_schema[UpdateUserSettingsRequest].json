@@ -1,0 +1,30 @@
+{
+  "properties": {
+    "tz": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tz"
+    },
+    "voice_replies": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Voice Replies"
+    }
+  },
+  "title": "UpdateUserSettingsRequest",
+  "type": "object"
+}

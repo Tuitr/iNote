@@ -16,7 +16,7 @@ from contracts.dialog_turns import DialogTurnsRequest
 from contracts.focus import FocusRequest
 from contracts.notify import NotifyDelivered, NotifyRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
-from contracts.users import ResolveUserRequest, ResolveUserResponse
+from contracts.users import ResolveUserRequest, ResolveUserResponse, UpdateUserSettingsRequest
 from libs.contracts.tests.examples import EXAMPLES_DIR, loadExample
 
 pytestmark = pytest.mark.contract
@@ -34,6 +34,7 @@ MODELS: list[type[BaseModel]] = [
     TranscribeResponse,
     DialogTurnsRequest,
     FocusRequest,
+    UpdateUserSettingsRequest,
 ]
 
 
