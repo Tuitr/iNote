@@ -85,6 +85,12 @@ _WHEN_RE: Final = re.compile(
     r"\b(?P<day>сегодня|завтра)\s+в\s+(?P<hour>[01]?\d|2[0-3])(?::(?P<minute>[0-5]\d))?\b",
     re.IGNORECASE,
 )
+# S3: «через минуту», «через 5 минут», «через час», «через 2 часа» — от «сейчас» пользователя
+_IN_RE: Final = re.compile(
+    r"\bчерез\s+(?:(?P<count>\d{1,3})\s+)?(?P<unit>минуту|минуты|минут|час|часа|часов)\b",
+    re.IGNORECASE,
+)
+_MAX_IN_MINUTES: Final = 24 * 60
 _TOOL_ERRORS: Final = frozenset(get_args(ToolErrorCode.__value__))
 
 
@@ -386,6 +392,8 @@ def _period(word: str) -> Period:
 
 # Примечание: «завтра в 10» → момент в поясе пользователя и фраза без этого куска
 def _extractWhen(rest: str, now: datetime, tz: str) -> tuple[datetime | None, str]:
+    if (relative := _IN_RE.search(rest)) is not None:
+        return _inMoment(relative, rest, now, tz)
     match = _WHEN_RE.search(rest)
     if match is None:
         return None, rest.strip()
@@ -397,6 +405,20 @@ def _extractWhen(rest: str, now: datetime, tz: str) -> tuple[datetime | None, st
     )
     title = re.sub(r"\s+", " ", (rest[: match.start()] + rest[match.end() :])).strip(" ,")
     return moment, title
+
+
+# Примечание: «через N минут/часов» → момент от «сейчас» до минуты (секунды отбрасываем);
+# больше суток — не разбираем (пусть уточнит словами)
+def _inMoment(
+    match: re.Match[str], rest: str, now: datetime, tz: str
+) -> tuple[datetime | None, str]:
+    count = int(match["count"] or 1)
+    minutes = count * (60 if match["unit"].lower().startswith("час") else 1)
+    if not 1 <= minutes <= _MAX_IN_MINUTES:
+        return None, rest.strip()
+    local = now.astimezone(ZoneInfo(tz)).replace(second=0, microsecond=0)
+    title = re.sub(r"\s+", " ", (rest[: match.start()] + rest[match.end() :])).strip(" ,")
+    return local + timedelta(minutes=minutes), title
 
 
 # Примечание: id записей из ответа инструмента — в фокус (item, items, results[].item)

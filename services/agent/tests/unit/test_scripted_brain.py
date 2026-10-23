@@ -163,6 +163,28 @@ async def test_listPeriods(phrase: str, local: str, tz: str, start: str, end: st
             "Выключить духовку",
             "2026-10-31T23:00:00+03:00",
         ),
+        # S3: «через …» от «сейчас» пользователя, в том числе через полночь и конец года
+        (
+            "Напомни через минуту позвонить Ивану",
+            "2026-10-21T23:59",
+            MSK,
+            "Позвонить Ивану",
+            "2026-10-22T00:00:00+03:00",
+        ),
+        (
+            "напомни через 2 часа выпить таблетку",
+            "2026-12-31T23:30",
+            EKB,
+            "Выпить таблетку",
+            "2027-01-01T01:30:00+05:00",
+        ),
+        (
+            "напомни полить цветы через 90 минут",
+            "2026-10-21T10:15",
+            MSK,
+            "Полить цветы",
+            "2026-10-21T11:45:00+03:00",
+        ),
     ],
 )
 async def test_remindWithTime(phrase: str, local: str, tz: str, title: str, moment: str) -> None:
@@ -588,3 +610,13 @@ async def test_focusPickAllDayLabel() -> None:
     assert asked.clarify is not None
     assert asked.clarify.options == ["Позвонить Ивану — завтра 10:00", "Купить хлеб — завтра"]
     assert asked.say == "Какую запись удалить?"
+
+
+# Примечание: «через 0 минут» и больше суток не разбираем — напоминание без времени, вопрос
+@pytest.mark.parametrize(
+    "phrase", ["напомни через 0 минут позвонить", "напомни через 25 часов позвонить"]
+)
+async def test_remindInOutOfRangeAsks(phrase: str) -> None:
+    result, tools = await runPhrase(phrase, "2026-10-21T10:00")
+    assert tools.calls == []
+    assert result.outcome == "clarify"
