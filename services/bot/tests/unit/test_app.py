@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from pydantic import TypeAdapter
 from redis.asyncio import Redis
 
+from bot.infrastructure.max_throttle import MAX_REQUESTS_PER_SECOND, ThrottledMaxGateway
 from bot.infrastructure.real_max import ADAPTER_NOT_CHOSEN, MaxAdapterNotChosenError
 from bot.infrastructure.settings import BotSettings
 from bot.main import createApp
@@ -222,6 +223,15 @@ async def test_voiceThroughDevRoutes(running: httpx.AsyncClient, agentHttp: Fake
         "voice",
         False,
     )
+
+
+# Примечание: S4 — все запросы бота к MAX (ответы, уведомления, «печатает…», опрос) идут через
+# клиентский лимит 30 в секунду; фейк для /dev/max/* — тот же MAX под лимитером
+async def test_maxRequestsThrottled(app: FastAPI, running: httpx.AsyncClient) -> None:
+    gateway = app.state.maxGateway
+    assert isinstance(gateway, ThrottledMaxGateway)
+    assert gateway.limit == MAX_REQUESTS_PER_SECOND == 30
+    assert gateway.inner is app.state.devConsole
 
 
 # Примечание: health: live и ready (Redis отвечает)
