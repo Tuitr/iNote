@@ -29,7 +29,8 @@ async def test_whatIsToday(bot: httpx.AsyncClient) -> None:
     assert all(b["type"] == "callback" for b in rows[0])
     [app] = rows[1]
     assert app["type"] in {"open_app", "link"}
-    assert f"day_{today.isoformat()}" in (app.get("payload") or app.get("url") or "")
+    # S3 (J6): экран «сегодня» — start_param today, а не day_<сегодня>
+    assert (app.get("payload") or app.get("url") or "").endswith("today")
 
 
 # Примечание: «напомни завтра в 10» → подтверждение из сохранённого; «Отменить» → /v1/actions
