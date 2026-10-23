@@ -38,7 +38,7 @@ COMMAND_ACTIONS: Final[dict[str, tuple[str, dict[str, ArgValue]]]] = {
     "today": ("list_period", {"period": "today"}),
     "tomorrow": ("list_period", {"period": "tomorrow"}),
     "week": ("list_period", {"period": "week"}),
-    # S3: пояс и голосовые ответы — экран и кнопки у агента
+    # S3: часовой пояс — экран и кнопки у агента
     "settings": ("settings", {}),
 }
 
@@ -95,7 +95,7 @@ class HandleUpdate:
         )
         return outcome
 
-    # Примечание: маршрутизация по виду апдейта; голосовое — заглушка до J1 (ASR)
+    # Примечание: маршрутизация по виду апдейта: кнопка, текст, команда, голосовое (через ASR, J1)
     async def _dispatch(self, update: IncomingUpdate) -> HandleOutcome:
         if update.kind is UpdateKind.CALLBACK:
             return await self._onCallback(update)

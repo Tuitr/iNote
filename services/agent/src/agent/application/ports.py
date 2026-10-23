@@ -140,10 +140,10 @@ class ReplyRenderer(Protocol):
     # Примечание: приветствие или справка с примерами фраз и кнопкой «Мой день» (open_app today)
     def welcome(self, kind: Welcome, traceId: str) -> Reply: ...
 
-    # Примечание: /settings: текущий пояс и голосовые ответы, кнопки поясов и переключатель
+    # Примечание: /settings: текущий пояс и кнопки поясов
     def settings(self, user: UserContext, traceId: str) -> Reply: ...
 
-    # Примечание: подтверждение изменения: «Пояс: Екатеринбург (UTC+5)» или голосовые вкл/выкл
+    # Примечание: подтверждение смены пояса: «Пояс: Екатеринбург (UTC+5)» и кнопка «Сегодня»
     def settingsChanged(self, user: UserContext, traceId: str) -> Reply: ...
 
     # Примечание: Reply-ошибка по коду (upstream_timeout, internal, …)

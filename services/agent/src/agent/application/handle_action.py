@@ -2,8 +2,8 @@
 
 Каталог (application/actions.py): pick_option → Brain.resume, cancel, undo → delete_item,
 reschedule → update_item или вопрос «На когда перенести?», list_period → list_items, start и help;
-complete, snooze, confirm_conflict — application/reminder_actions.py; settings, set_tz,
-set_voice_replies — application/settings_actions.py.
+complete, snooze, confirm_conflict — application/reminder_actions.py; settings и set_tz —
+application/settings_actions.py.
 Инструменты зовутся через ToolExecutor хода: caller и ключи идемпотентности ставит агент,
 из args кнопки берутся только поля каталога. Незнакомое действие — «Не понял кнопку».
 """

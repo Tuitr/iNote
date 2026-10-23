@@ -70,7 +70,7 @@ S3: действия напоминаний (`complete`, `snooze`, `confirm_conf
   «Вопрос устарел»). Кнопку «Всё равно создать» рисует рендер рядом со свободными окнами — по аргументам того
   `create_event`, что вернул `conflict`. На стенде пока MCP-заглушка C из `deploy/stub/mcp` вместо заглушки D.
 - **История диалога** (`infrastructure/http_dialog_log.py`, J8): после каждого хода и действия — фоновая задача
-  `POST /internal/v1/dialog-turns` в mcp-контейнере (реплика пользователя с `input_type` text/voice/action, ответ
+  `POST /internal/v1/dialog-turns` в mcp-контейнере (реплика пользователя с `input_type` text/voice — кнопка как text с подписью, ответ
   и `item_ids`, `latency_ms`). Ответ её не ждёт; ключ `dialog-turns:<trace_id>`, 2 повтора; сбой — только
   `warning` с `trace_id`. При SIGTERM агент дожидается начатых записей до закрытия HTTP-клиента.
 - Вход только с сервисным токеном: `Authorization: Bearer $SERVICE_TOKEN` (нет — 401, неверный — 403).

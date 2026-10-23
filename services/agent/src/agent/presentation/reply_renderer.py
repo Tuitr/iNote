@@ -176,8 +176,8 @@ class TemplateReplyRenderer:
         app = openApp(self._t.buttons.openItem, lambda: StartParam.forItem(item.id))
         return _markdown(text, ReplyState.DONE, traceId, buttons=[[app]], items=[item])
 
-    # Примечание: /settings: «Пояс: Москва (UTC+3) / Голосовые ответы: выкл»; кнопки поясов по 4
-    # в ряд (MAX — до 7), текущий отмечен; переключатель голосовых ответов
+    # Примечание: /settings: «Пояс: Москва (UTC+3)» и подсказка; кнопки поясов по 4 в ряд
+    # (MAX — до 7), текущий отмечен
     def settings(self, user: UserContext, traceId: str) -> Reply:
         s = self._t.settings
         text = "\n".join([s.header, s.tz.format(tz=self._tzLabel(user.tz)), s.hint])

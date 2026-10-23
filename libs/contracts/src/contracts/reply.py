@@ -81,6 +81,8 @@ class Reply(WireModel):
     state: ReplyState
     buttons: list[list[ReplyButton]] = Field(default_factory=list, max_length=MAX_BUTTON_ROWS)
     items: list[ReplyItem] = Field(default_factory=list)
+    # не используется: голосового ответа ассистента нет (решение команды, S3); поле остаётся до
+    # решения на G4 — удаление ломает контракт
     speak: bool = False
     traceId: str = Field(pattern=r"^[0-9a-f]{32}$")
 

@@ -27,7 +27,7 @@ class SettingsActions:
 
     # Примечание: /settings — экран с текущими значениями; args не нужны
     def settingsStep(self, _args: Mapping[str, ArgValue]) -> Step:
-        # Примечание: шаг: пользователь из resolve — его пояс и голосовые ответы
+        # Примечание: шаг: пользователь из resolve — его пояс
         async def step(session: Session) -> StepOutcome:
             renderer = self._pipeline.deps.renderer
             return StepOutcome(renderer.settings(session.user, session.traceId))
