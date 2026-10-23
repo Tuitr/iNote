@@ -22,6 +22,7 @@ from bot.infrastructure.http_agent import HttpAgentGateway
 from bot.infrastructure.http_asr import HttpAsrGateway
 from bot.infrastructure.http_focus import HttpFocusNotifier
 from bot.infrastructure.max_mapper import mapRawUpdate
+from bot.infrastructure.max_throttle import ThrottledMaxGateway
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
 from bot.infrastructure.redis_adapters import (
@@ -71,11 +72,13 @@ def createApp(
         if config.maxMode == "real":
             createRealMaxGateway()
         redis = redisFactory(config.redisUrl)
-        gateway = FakeMaxGateway(
+        fake = FakeMaxGateway(
             FakeMaxOptions(
                 sendDelayS=config.fakeSendDelayMs / 1000, filesBaseUrl=config.fakeFilesUrl
             )
         )
+        # все запросы к MAX — через клиентский лимит 30 в секунду (и у реального адаптера)
+        gateway = ThrottledMaxGateway(fake)
         store = KeyedRedis(redis)
         # Бот → агент: 45 с без повторов (стандарт); POST без ключа и так не повторяется
         agentHttp = ServiceHttpClient(
@@ -105,7 +108,8 @@ def createApp(
             else None
         )
         callbacks = RedisCallbackStore(store)
-        app.state.devConsole = gateway
+        app.state.devConsole = fake
+        app.state.maxGateway = gateway
         app.state.redis = redis
         app.state.agentHttp = agentHttp
         try:
@@ -143,7 +147,7 @@ def createApp(
                 if config.updatesMode == "webhook":
                     # фейк доставляет апдейты POST-ом на свой же /webhook/max — как MAX
                     if webhookClient is not None:
-                        gateway.attachWebhook(webhookClient, tasks)
+                        fake.attachWebhook(webhookClient, tasks)
                     await gateway.ensureSubscription(
                         config.webhookUrl, config.webhookSecret.get_secret_value()
                     )
