@@ -1,10 +1,18 @@
+import random
+import re
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Final
 
 import pytest
 
-from contracts.start_param import StartParam, StartParamKind, isValidStartParam, parseStartParam
+from contracts.start_param import (
+    START_PARAM_MAX_LENGTH,
+    StartParam,
+    StartParamKind,
+    isValidStartParam,
+    parseStartParam,
+)
 from libs.contracts.tests.examples import loadExample
 
 ITEM_ID: Final = uuid.UUID("7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90")
@@ -60,3 +68,22 @@ def test_inconsistentStartParamRejected() -> None:
         StartParam(StartParamKind.TODAY, day=date(2026, 10, 21))
     with pytest.raises(ValueError, match="только для item"):
         StartParam(StartParamKind.ITEM)
+
+
+# Примечание: S4 — всё, что выдаёт валидатор J6, — только [A-Za-z0-9_-], не длиннее 512 и
+# разбирается обратно в то же; детерминированный перебор вместо hypothesis
+def test_everyBuiltParamIsSafe() -> None:
+    rnd = random.Random(20261023)  # noqa: S311 — не криптография
+    safe = re.compile(rf"^[A-Za-z0-9_-]{{1,{START_PARAM_MAX_LENGTH}}}$")
+    for _ in range(500):
+        day = date(1970, 1, 5) + timedelta(weeks=rnd.randint(0, 6000))
+        for param in (
+            StartParam.today(),
+            StartParam.dialog(),
+            StartParam.forDay(day + timedelta(days=rnd.randint(0, 6))),
+            StartParam.forWeek(day),
+            StartParam.forItem(uuid.UUID(int=rnd.getrandbits(128))),
+        ):
+            raw = str(param)
+            assert safe.fullmatch(raw), raw
+            assert parseStartParam(raw) == param
