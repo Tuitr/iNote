@@ -18,6 +18,7 @@ from agent.application.actions import (
     CHOICE_ARG,
     HELP,
     ITEM_ID_ARG,
+    KIND_ARG,
     LIST_PERIOD,
     PERIOD_ARG,
     PICK_OPTION,
@@ -26,6 +27,7 @@ from agent.application.actions import (
     STARTS_AT_ARG,
     UNDO,
 )
+from agent.application.item_time import ItemKind, isItemKind, moveArgs
 from agent.application.ports import Notice, UserInput, Welcome
 from agent.application.reschedule import rescheduleOptions
 from agent.application.turn_pipeline import (
@@ -74,14 +76,14 @@ class HandleAction:
             )
             traceId = currentTraceId() or newTraceId()
             return self._pipeline.deps.renderer.notice(Notice.UNKNOWN_ACTION, traceId)
-        # в историю — код действия (args не пишем: там id записей и время, не слова пользователя)
+        # в историю — подпись кнопки (её прислал бот) или /действие; args не пишем (id и время)
         return await self._pipeline.execute(
             request.maxUserId,
             request.maxChatId,
             None,
             step,
             kind="action",
-            said=UserInput(request.action, "action"),
+            said=UserInput(request.label or f"/{request.action}", "text"),
         )
 
     # Примечание: каталог действий; None — незнакомое действие или args не по каталогу
@@ -112,7 +114,7 @@ class HandleAction:
             raw = await self._pipeline.deps.brain.resume(turn, str(choice), session.tools)
             # в историю — подпись выбранной кнопки: это и есть ответ пользователя на вопрос
             outcome = self._pipeline.finish(session, turn, raw)
-            return dataclasses.replace(outcome, said=UserInput(options[choice], "action"))
+            return dataclasses.replace(outcome, said=UserInput(options[choice], "text"))
 
         return step
 
@@ -153,17 +155,23 @@ class HandleAction:
         itemId = _itemId(args)
         if itemId is None:
             return None
+        rawKind = args.get(KIND_ARG)
+        if rawKind is not None and not isItemKind(rawKind):
+            return None
+        kind = rawKind if isItemKind(rawKind) else None
         if STARTS_AT_ARG not in args:
-            return self._askWhen(itemId)
+            return self._askWhen(itemId, kind)
         startsAt = _moment(args[STARTS_AT_ARG])
-        return None if startsAt is None else self._move(itemId, startsAt)
+        return None if startsAt is None else self._move(itemId, kind, startsAt)
 
-    # Примечание: update_item с новым временем; подтверждение — из того, что вернул инструмент
-    def _move(self, itemId: str, startsAt: datetime) -> Step:
+    # Примечание: update_item с новым временем (у напоминания — remind_at); подтверждение — из
+    # того, что вернул инструмент; вид записи — из кнопки, иначе из фокуса
+    def _move(self, itemId: str, kind: ItemKind | None, startsAt: datetime) -> Step:
         # Примечание: шаг: перенос, фокус — на перенесённой записи
         async def step(session: Session) -> StepOutcome:
             started = time.perf_counter()
-            args = {"id": itemId, "starts_at": startsAt.isoformat()}
+            known = kind or _focusKind(session, itemId)
+            args = moveArgs(itemId, known, startsAt)
             result = _result(await _callTool(session, "update_item", args), "done", started)
             context = dataclasses.replace(
                 session.context, focus=nextFocus(session.context, result) or session.context.focus
@@ -174,16 +182,17 @@ class HandleAction:
 
     # Примечание: «На когда перенести?»: варианты — кнопки reschedule с starts_at; текстом —
     # ответ разбирает Brain: фокус ставим на эту запись, прежний вопрос (pending) снимаем
-    def _askWhen(self, itemId: str) -> Step:
+    def _askWhen(self, itemId: str, kind: ItemKind | None) -> Step:
         # Примечание: шаг: время записи — из фокуса, если она там; иначе «завтра» — от «сейчас»
         async def step(session: Session) -> StepOutcome:
             context = session.context
             brief = next((b for b in context.focus if str(b.id).startswith(itemId)), None)
             options = rescheduleOptions(
-                session.now, session.user.tz, brief.startsAt if brief else None
+                session.now, session.user.tz, brief.moment if brief else None
             )
+            known = kind or (brief.kind if brief else None)
             reply = self._pipeline.deps.renderer.rescheduleQuestion(
-                itemId, options, session.user, session.traceId
+                itemId, known, options, session.user, session.traceId
             )
             focus = (brief,) if brief is not None else context.focus
             return StepOutcome(
@@ -197,8 +206,9 @@ class HandleAction:
         # Примечание: шаг: [from, to) от «сейчас» пользователя, неделя с понедельника
         async def step(session: Session) -> StepOutcome:
             started = time.perf_counter()
+            # J3 у D: from и to — даты, to не включается
             span = periodRange(period, session.now, session.user.tz)
-            args = {"from": span.start.isoformat(), "to": span.end.isoformat()}
+            args = {"from": span.start.date().isoformat(), "to": span.end.date().isoformat()}
             result = _result(await _callTool(session, "list_items", args), "answer", started)
             context = dataclasses.replace(session.context, focus=nextFocus(session.context, result))
             return StepOutcome(self._pipeline.render(session, result), context)
@@ -212,6 +222,12 @@ class HandleAction:
             return StepOutcome(self._pipeline.deps.renderer.welcome(kind, session.traceId))
 
         return step
+
+
+# Примечание: вид записи из фокуса (если она там) — чтобы двигать нужное поле времени
+def _focusKind(session: Session, itemId: str) -> ItemKind | None:
+    brief = next((b for b in session.context.focus if str(b.id).startswith(itemId)), None)
+    return brief.kind if brief is not None else None
 
 
 # Примечание: вызов инструмента хода; результат — как у Brain, для рендера из данных

@@ -33,6 +33,7 @@
       "ends_at": null,
       "id": "fa85c58a-326b-5997-8712-6f1d50e4214c",
       "kind": "event",
+      "remind_at": null,
       "starts_at": "2026-10-19T09:30:00+03:00",
       "status": "open",
       "title": "Стоматолог"
@@ -42,6 +43,7 @@
       "ends_at": null,
       "id": "9e15d3c3-0a76-57cd-a675-ff87013d6532",
       "kind": "task",
+      "remind_at": null,
       "starts_at": "2026-10-21T00:00:00+03:00",
       "status": "open",
       "title": "Отчёт"

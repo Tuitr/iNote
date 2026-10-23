@@ -12,7 +12,8 @@
       {
         "action": "reschedule",
         "args": {
-          "item_id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c"
+          "item_id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+          "kind": "reminder"
         },
         "kind": "action",
         "text": "Изменить время"
@@ -33,6 +34,7 @@
       "ends_at": null,
       "id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c",
       "kind": "reminder",
+      "remind_at": null,
       "starts_at": "2026-10-22T10:00:00+03:00",
       "status": "open",
       "title": "Позвонить Ивану"

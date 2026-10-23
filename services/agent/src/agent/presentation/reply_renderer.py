@@ -17,6 +17,7 @@ from agent.application.actions import (
     CANCEL,
     CHOICE_ARG,
     ITEM_ID_ARG,
+    KIND_ARG,
     LIST_PERIOD,
     PERIOD_ARG,
     PICK_OPTION,
@@ -24,6 +25,7 @@ from agent.application.actions import (
     STARTS_AT_ARG,
     UNDO,
 )
+from agent.application.item_time import ItemKind
 from agent.application.ports import Clock, Notice, Welcome
 from agent.application.reschedule import RescheduleChoice, RescheduleOption
 from agent.application.turn_rules import successfulMutations
@@ -116,7 +118,12 @@ class TemplateReplyRenderer:
 
     # Примечание: «На когда перенести?»: по варианту в ряд (подписи длинные) и «Отмена»
     def rescheduleQuestion(
-        self, itemId: str, options: Sequence[RescheduleOption], user: UserContext, traceId: str
+        self,
+        itemId: str,
+        kind: ItemKind | None,
+        options: Sequence[RescheduleOption],
+        user: UserContext,
+        traceId: str,
     ) -> Reply:
         t = self._t.reschedule
         zone = ZoneInfo(user.tz)
@@ -132,6 +139,8 @@ class TemplateReplyRenderer:
                 ITEM_ID_ARG: itemId,
                 STARTS_AT_ARG: local.isoformat(),
             }
+            if kind is not None:
+                args[KIND_ARG] = kind
             rows.append([ActionButton(text=label, action=RESCHEDULE, args=args)])
         rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
         return _plain(t.question, ReplyState.CLARIFY, traceId, buttons=rows)
@@ -249,7 +258,9 @@ class TemplateReplyRenderer:
         if status == "created":
             actions.append(ActionButton(text=b.undo, action=UNDO, args=args))
         if item.status == "open":
-            actions.append(ActionButton(text=b.reschedule, action=RESCHEDULE, args=args))
+            # вид записи — чтобы перенести нужное поле времени (у напоминания — remind_at)
+            moveArgs: dict[str, str | int | bool] = {**args, KIND_ARG: item.kind}
+            actions.append(ActionButton(text=b.reschedule, action=RESCHEDULE, args=moveArgs))
         app = OpenAppButton(text=b.openItem, startParam=str(StartParam.forItem(item.id)))
         return [actions, [app]] if actions else [[app]]
 
@@ -265,7 +276,7 @@ class TemplateReplyRenderer:
         items = sorted(
             (item for raw in _asList(data.get("items")) if (item := _replyItem(raw)) is not None),
             key=lambda item: (
-                item.startsAt or datetime.combine(first, datetime.min.time(), scope.zone)
+                item.moment or datetime.combine(first, datetime.min.time(), scope.zone)
             ),
         )
         header, empty, rows = self._listFrame(first, last, scope)
@@ -301,7 +312,7 @@ class TemplateReplyRenderer:
     # Примечание: «10:00–11:00 Созвон»; за неделю — с днём: «чт 22 октября, 10:00 Созвон»
     def _listLine(self, item: ReplyItem, scope: _Scope, *, withDay: bool) -> str:
         title = escapeMarkdown(item.title)
-        start = item.startsAt.astimezone(scope.zone) if item.startsAt else None
+        start = item.moment.astimezone(scope.zone) if item.moment else None
         if start is None or item.allDay:
             when = self._t.list.allDay
         else:
@@ -340,9 +351,10 @@ class TemplateReplyRenderer:
 
     # Примечание: «Завтра, чт 22 октября, 10:00»; весь день — без времени; без даты — «без срока»
     def _when(self, item: ReplyItem, scope: _Scope) -> str:
-        if item.startsAt is None:
+        moment = item.moment
+        if moment is None:
             return self._t.changed.noDate
-        return scope.dates.moment(item.startsAt.astimezone(scope.zone), allDay=item.allDay)
+        return scope.dates.moment(moment.astimezone(scope.zone), allDay=item.allDay)
 
 
 # Примечание: последний успешный вызов инструмента с этим именем
@@ -360,19 +372,31 @@ def _replyItem(raw: object) -> ReplyItem | None:
         return None
 
 
-# Примечание: период списка: из аргументов вызова, иначе из data.range; to не включается
+# Примечание: период списка: из аргументов вызова, иначе из data.range; to не включается.
+# У D (J3) from и to — даты; момент со смещением тоже понимаем (полночь в поясе пользователя)
 def _period(
     args: Mapping[str, object], data: Mapping[str, object], scope: _Scope
 ) -> tuple[date, date] | None:
     span = data.get("range")
     fallback = span if isinstance(span, dict) else {}
-    start = _moment(args.get("from") or fallback.get("from"), scope)
-    end = _moment(args.get("to") or fallback.get("to"), scope)
+    start = _boundary(args.get("from") or fallback.get("from"), scope)
+    end = _boundary(args.get("to") or fallback.get("to"), scope)
     if start is None or end is None or end <= start:
         return None
     # [from, to): ровно полночь — последний день предыдущий; иначе день самого to
     lastMoment = end - timedelta(microseconds=1)
     return start.date(), lastMoment.date()
+
+
+# Примечание: граница периода: дата «2026-10-21» → полночь в поясе пользователя; иначе момент
+def _boundary(raw: object, scope: _Scope) -> datetime | None:
+    if isinstance(raw, str) and len(raw) == len("2026-10-21"):
+        try:
+            day = date.fromisoformat(raw)
+        except ValueError:
+            return None
+        return datetime.combine(day, datetime.min.time(), scope.zone)
+    return _moment(raw, scope)
 
 
 # Примечание: ISO-строка со смещением → момент в поясе пользователя; иначе None

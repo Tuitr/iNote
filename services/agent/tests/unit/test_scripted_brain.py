@@ -132,12 +132,13 @@ async def runPhrase(
 )
 async def test_listPeriods(phrase: str, local: str, tz: str, start: str, end: str) -> None:
     result, tools = await runPhrase(phrase, local, tz)
-    assert tools.calls == [("list_items", {"from": start, "to": end})]
+    # J3 у D: from и to — даты (день начала и день после конца в поясе пользователя)
+    assert tools.calls == [("list_items", {"from": start[:10], "to": end[:10]})]
     assert result.outcome == "answer"
     assert [str(i) for i in result.focus] == [ITEM_ID]
 
 
-# Примечание: «напомни завтра в 10 …» → reminder с due_at и remind_at; регистр имён сохранён
+# Примечание: «напомни завтра в 10 …» → reminder с remind_at (как у D); регистр имён сохранён
 @pytest.mark.parametrize(
     ("phrase", "local", "tz", "title", "moment"),
     [
@@ -167,7 +168,7 @@ async def test_listPeriods(phrase: str, local: str, tz: str, start: str, end: st
 async def test_remindWithTime(phrase: str, local: str, tz: str, title: str, moment: str) -> None:
     created = ToolResult(ok=True, summary="ok", data={"status": "created", "item": ITEM})
     result, tools = await runPhrase(phrase, local, tz, RecordingTools(created))
-    expected = {"title": title, "kind": "reminder", "due_at": moment, "remind_at": moment}
+    expected = {"title": title, "kind": "reminder", "remind_at": moment}
     assert tools.calls == [("create_task", expected)]
     assert result.outcome == "done"
     assert result.actions[0].result.ok
@@ -211,7 +212,7 @@ async def test_remindWithoutTimeAsks(
     assert result.clarify.options == labels
     pending = result.clarify.pending
     assert pending["kind"] == "time"
-    assert pending["field"] == "due_at"
+    assert pending["field"] == "remind_at"
     options = pending["options"]
     assert isinstance(options, list)
     assert options[0] == first
@@ -232,7 +233,7 @@ async def test_resumeTimeCreatesReminder() -> None:
     assert tools.calls == [
         (
             "create_task",
-            {"title": "Купить хлеб", "kind": "reminder", "due_at": moment, "remind_at": moment},
+            {"title": "Купить хлеб", "kind": "reminder", "remind_at": moment},
         )
     ]
     assert result.outcome == "done"
@@ -252,7 +253,7 @@ async def test_timeAnsweredByText(answer: str, moment: str) -> None:
     turn = turnAt(answer, "2026-10-21T21:31").model_copy(update={"pending": asked.clarify.pending})
     result = await ScriptedBrain().run(turn, tools)
     assert result.outcome == "done"
-    assert tools.calls[0][1]["due_at"] == moment
+    assert tools.calls[0][1]["remind_at"] == moment
 
 
 # Примечание: при живом pending новая просьба — обычная фраза, вопрос забывается
@@ -386,7 +387,7 @@ async def test_badChoice(pending: dict[str, object] | None, choice: str) -> None
         ("создай задачу купить хлеб", {"title": "Купить хлеб", "kind": "task"}),
         (
             "Добавь задачу завтра в 9 отправить отчёт",
-            {"title": "Отправить отчёт", "kind": "task", "due_at": "2026-10-22T09:00:00+03:00"},
+            {"title": "Отправить отчёт", "kind": "task", "starts_at": "2026-10-22T09:00:00+03:00"},
         ),
     ],
 )
@@ -485,5 +486,6 @@ async def test_rescheduleFocused(phrase: str, focus: int, expected: str | None) 
         assert tools.calls == []
         assert result.say == HELP
         return
-    assert tools.calls == [("update_item", {"id": ITEM_ID, "starts_at": expected})]
+    # запись в фокусе — напоминание: двигаем remind_at (у D у напоминания starts_at = null)
+    assert tools.calls == [("update_item", {"id": ITEM_ID, "remind_at": expected})]
     assert result.outcome == "done"

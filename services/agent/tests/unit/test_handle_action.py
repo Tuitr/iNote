@@ -67,8 +67,16 @@ class Rig:
         self.handler = HandleAction(pipeline)
 
     # Примечание: нажатие кнопки в trace-контексте
-    async def press(self, action: str, args: dict[str, str | int | bool] | None = None) -> Reply:
-        request = ActionRequest(maxUserId=MAX_USER, maxChatId=5, action=action, args=args or {})
+    async def press(
+        self,
+        action: str,
+        args: dict[str, str | int | bool] | None = None,
+        *,
+        label: str | None = None,
+    ) -> Reply:
+        request = ActionRequest(
+            maxUserId=MAX_USER, maxChatId=5, action=action, args=args or {}, label=label
+        )
         with traceContext(TRACE):
             return await self.handler(request)
 
@@ -214,14 +222,22 @@ async def test_rescheduleAsksWhen() -> None:
             (
                 "Через час",
                 "reschedule",
-                {"item_id": ITEM_ID, "starts_at": "2026-10-21T22:30:00+03:00"},
+                {
+                    "item_id": ITEM_ID,
+                    "starts_at": "2026-10-21T22:30:00+03:00",
+                    "kind": "reminder",
+                },
             )
         ],
         [
             (
                 "Завтра в 9:00",
                 "reschedule",
-                {"item_id": ITEM_ID, "starts_at": "2026-10-22T09:00:00+03:00"},
+                {
+                    "item_id": ITEM_ID,
+                    "starts_at": "2026-10-22T09:00:00+03:00",
+                    "kind": "reminder",
+                },
             )
         ],
         [("Отмена", "cancel", {})],
@@ -240,9 +256,7 @@ async def test_listPeriod() -> None:
     )
     rig = Rig(responses={"list_items": listed})
     reply = await rig.press("list_period", {"period": "week"})
-    assert rig.tools.calls == [
-        ("list_items", {"from": "2026-10-19T00:00:00+03:00", "to": "2026-10-26T00:00:00+03:00"})
-    ]
+    assert rig.tools.calls == [("list_items", {"from": "2026-10-19", "to": "2026-10-26"})]
     assert reply.text.splitlines()[0] == "Неделя, 19–25 октября:"
     assert [str(b.id) for b in rig.store.contexts[USER_ID].focus] == [ITEM_ID]
 
@@ -279,13 +293,35 @@ async def test_unknownAction() -> None:
         assert (rig.lock.acquired, rig.tools.calls) == (0, [])
 
 
-# Примечание: в историю: кнопка — код действия, выбор варианта — подпись кнопки; input_type=action;
+# Примечание: в историю (input_type=text, как у D): подпись кнопки от бота, без неё — /действие,
+# выбор варианта — подпись варианта;
 # незнакомая кнопка (без хода) — без записи
 async def test_dialogEntries() -> None:
     rig = Rig(context=asked(), responses={"delete_item": mutation("deleted")})
     await rig.press("pick_option", {"choice": 1})
     await rig.press("undo", {"item_id": ITEM_ID})
+    await rig.press("list_period", {"period": "today"}, label="Сегодня")
     await rig.press("teleport")
     said = [(e.said.text, e.said.inputType) for e in rig.dialog.entries]
-    assert said == [("сегодня 19:00", "action"), ("undo", "action")]
+    assert said == [("сегодня 19:00", "text"), ("/undo", "text"), ("Сегодня", "text")]
     assert {e.traceId for e in rig.dialog.entries} == {TRACE}
+
+
+# Примечание: перенос по кнопке двигает поле времени по виду записи: у напоминания — remind_at,
+# у встречи — starts_at; вид из кнопки, без него — из фокуса; чужой вид — «Не понял кнопку»
+async def test_rescheduleMovesFieldByKind() -> None:
+    when = "2026-10-22T15:00:00+03:00"
+    rig = Rig(responses={"update_item": mutation("updated")})
+    await rig.press("reschedule", {"item_id": ITEM_ID, "starts_at": when, "kind": "event"})
+    await rig.press("reschedule", {"item_id": ITEM_ID, "starts_at": when, "kind": "reminder"})
+    focused = Rig(
+        context=DialogContext(focus=(BRIEF,)), responses={"update_item": mutation("updated")}
+    )
+    await focused.press("reschedule", {"item_id": ITEM_ID, "starts_at": when})
+    assert [c[1] for c in rig.tools.calls + focused.tools.calls] == [
+        {"id": ITEM_ID, "starts_at": when},
+        {"id": ITEM_ID, "remind_at": when},
+        {"id": ITEM_ID, "remind_at": when},
+    ]
+    bad = await Rig().press("reschedule", {"item_id": ITEM_ID, "starts_at": when, "kind": "x"})
+    assert bad.text == TEMPLATES.notices.unknownAction

@@ -39,6 +39,19 @@
       "default": null,
       "title": "Callback Id"
     },
+    "label": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Label"
+    },
     "max_chat_id": {
       "title": "Max Chat Id",
       "type": "integer"

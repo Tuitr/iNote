@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from agent.application.item_time import ItemKind
 from agent.application.reschedule import RescheduleOption
 from agent.domain.user import Caller, UserContext, UserId
 from contracts.agent_side import ItemBrief, JsonObject, ToolExecutor, Turn, TurnResult
@@ -111,7 +112,12 @@ class ReplyRenderer(Protocol):
 
     # Примечание: вопрос «На когда перенести?» с вариантами-кнопками reschedule и «Отмена»
     def rescheduleQuestion(
-        self, itemId: str, options: Sequence[RescheduleOption], user: UserContext, traceId: str
+        self,
+        itemId: str,
+        kind: ItemKind | None,
+        options: Sequence[RescheduleOption],
+        user: UserContext,
+        traceId: str,
     ) -> Reply: ...
 
     # Примечание: приветствие или справка с примерами фраз и кнопкой «Мой день» (open_app today)

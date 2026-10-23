@@ -21,6 +21,19 @@
           "title": "Kind",
           "type": "string"
         },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
         "starts_at": {
           "anyOf": [
             {

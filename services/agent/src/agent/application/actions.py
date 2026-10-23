@@ -18,3 +18,5 @@ CHOICE_ARG: Final = "choice"
 ITEM_ID_ARG: Final = "item_id"
 STARTS_AT_ARG: Final = "starts_at"
 PERIOD_ARG: Final = "period"
+# вид записи у «Изменить время»: какое поле времени двигать (application/item_time.py)
+KIND_ARG: Final = "kind"

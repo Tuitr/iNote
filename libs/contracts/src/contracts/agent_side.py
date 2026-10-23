@@ -30,7 +30,8 @@ type JsonObject = dict[str, object]
 # ===================== сторона C =====================
 
 
-# Примечание: краткая запись (ItemBrief) — для фокуса, конфликтов и истории
+# Примечание: краткая запись (ItemBrief) — для фокуса, конфликтов и истории; у напоминания
+# время — в remind_at (starts_at = null), как в Item у D (S3: поле добавлено)
 class ItemBrief(WireModel):
     id: uuid.UUID
     kind: Literal["task", "reminder", "event"]
@@ -38,6 +39,12 @@ class ItemBrief(WireModel):
     startsAt: AwareDatetime | None = None
     allDay: bool = False
     status: Literal["open", "done", "cancelled"] = "open"
+    remindAt: AwareDatetime | None = None
+
+    # Примечание: «когда» записи для людей: начало встречи или срока, у напоминания — remind_at
+    @property
+    def moment(self) -> datetime | None:
+        return self.startsAt or self.remindAt
 
 
 # Примечание: одна реплика истории диалога

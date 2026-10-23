@@ -5,6 +5,7 @@
 """
 
 import uuid
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Final, Literal
 
@@ -64,6 +65,13 @@ class ReplyItem(WireModel):
     endsAt: AwareDatetime | None = None
     allDay: bool = False
     status: Literal["open", "done"] = "open"
+    # у напоминания время — здесь, starts_at = null (Item у D); добавлено в S3
+    remindAt: AwareDatetime | None = None
+
+    # Примечание: «когда» записи: начало встречи или срок задачи, у напоминания — remind_at
+    @property
+    def moment(self) -> datetime | None:
+        return self.startsAt or self.remindAt
 
 
 # Примечание: ответ агента боту; бот не знает бизнес-логики, агент — формата MAX
@@ -115,3 +123,5 @@ class ActionRequest(WireModel):
     action: str = Field(pattern=ACTION_PATTERN)
     args: dict[str, ArgValue] = Field(default_factory=dict)
     callbackId: str | None = None
+    # подпись нажатой кнопки или команда («/week») — реплика пользователя в истории (S3, добавлено)
+    label: str | None = Field(default=None, max_length=BUTTON_TEXT_MAX_LENGTH)

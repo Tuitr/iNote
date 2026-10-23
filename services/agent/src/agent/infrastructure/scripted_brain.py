@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
+from agent.application.item_time import moveArgs, timeField
 from agent.domain.periods import Period, periodRange
 from contracts.agent_side import (
     Clarify,
@@ -99,7 +100,8 @@ class ScriptedBrain:
             # «На когда перенести?» (кнопка агента) или «перенеси на завтра в 15» — запись в фокусе
             moved = _RESCHEDULE_RE.sub("", text)
             if (when := _timeAnswer(turn, moved)) is not None:
-                args = {"id": str(turn.focus[0].id), "starts_at": when.isoformat()}
+                focused = turn.focus[0]
+                args = moveArgs(str(focused.id), focused.kind, when)
                 return await self._call(tools, "update_item", args, "done", started)
         return await self._parse(turn, tools, text, started)
 
@@ -133,7 +135,11 @@ class ScriptedBrain:
         if listed := _LIST_RE.match(text):
             period = _period(listed["period"])
             span = periodRange(period, turn.now, turn.tz)
-            args: dict[str, object] = {"from": span.start.isoformat(), "to": span.end.isoformat()}
+            # J3 у D: from и to — даты в поясе пользователя, to не включается
+            args: dict[str, object] = {
+                "from": span.start.date().isoformat(),
+                "to": span.end.date().isoformat(),
+            }
             return await self._call(tools, "list_items", args, "answer", started)
         if reminded := _REMIND_RE.match(text):
             return await self._create(turn, tools, reminded["rest"], "reminder", started)
@@ -162,7 +168,7 @@ class ScriptedBrain:
         args: dict[str, object] = {"title": title[0].upper() + title[1:], "kind": kind}
         if kind == "reminder" and when is None:
             return self._askTime(
-                turn, tool="create_task", args=args, field="due_at", day=day, started=started
+                turn, tool="create_task", args=args, field="remind_at", day=day, started=started
             )
         if when is not None:
             args.update(_taskTime(kind, when))
@@ -367,12 +373,9 @@ def _clarify(
     )
 
 
-# Примечание: у напоминания срок и момент напоминания совпадают; у задачи — только срок
+# Примечание: время записи по полю D: у напоминания — remind_at, у задачи — starts_at (срок)
 def _taskTime(kind: Literal["task", "reminder"], when: datetime) -> dict[str, object]:
-    times: dict[str, object] = {"due_at": when.isoformat()}
-    if kind == "reminder":
-        times["remind_at"] = when.isoformat()
-    return times
+    return {timeField(kind): when.isoformat()}
 
 
 # Примечание: «завтра» без времени — запомнить день и убрать слово из названия

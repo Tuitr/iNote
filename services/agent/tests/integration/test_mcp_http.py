@@ -135,7 +135,9 @@ async def test_listToolsOverHttp(stub: StubProcess, uniqueId: str) -> None:
         "list_items",
         "search_items",
         "update_item",
+        "complete_item",
         "delete_item",
+        "check_conflicts",
     }
     for tool in tools:
         assert "caller" not in json.dumps(tool.inputSchema)
@@ -148,7 +150,7 @@ async def test_callerOverwrittenOverHttp(stub: StubProcess, uniqueId: str) -> No
     args: dict[str, object] = {
         "title": "Позвонить Ивану",
         "kind": "reminder",
-        "due_at": due.isoformat(),
+        "remind_at": due.isoformat(),
         "caller": {"user_id": 1, "tz": "UTC", "trace_id": "0" * 32},
     }
     async with connection(stub.url) as mcp:
@@ -169,16 +171,16 @@ async def test_pastTimeOverHttp(stub: StubProcess, uniqueId: str) -> None:
     past = (datetime.now(ZoneInfo(TZ)) - timedelta(hours=1)).isoformat()
     async with connection(stub.url) as mcp:
         result = await McpToolExecutor(mcp, callerFor(uniqueId)).call(
-            "create_task", {"title": "Позвонить", "kind": "reminder", "due_at": past}
+            "create_task", {"title": "Позвонить", "kind": "reminder", "remind_at": past}
         )
     assert not result.ok
     assert result.error is not None
     assert result.error.code == "past_time"
 
 
-# Примечание: период [сегодня, завтра) в поясе теста
+# Примечание: период [сегодня, завтра) в поясе теста — датами, как J3 у D
 def todayArgs() -> dict[str, object]:
-    today = datetime.now(ZoneInfo(TZ)).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(ZoneInfo(TZ)).date()
     return {"from": today.isoformat(), "to": (today + timedelta(days=1)).isoformat()}
 
 
@@ -254,7 +256,7 @@ def reminderArgs(caller: Caller, key: str) -> dict[str, object]:
     return {
         "title": "Позвонить",
         "kind": "reminder",
-        "due_at": due.isoformat(),
+        "remind_at": due.isoformat(),
         "caller": {
             "user_id": caller.userId,
             "tz": caller.tz,
@@ -298,7 +300,8 @@ def eventArgs(caller: Caller, key: str, startsAt: datetime, **extra: object) -> 
     }
 
 
-# Примечание: конфликт — не ошибка: status=conflict, что мешает, свободные окна; force — создаёт
+# Примечание: конфликт — не ошибка: status=conflict, что мешает, свободные окна;
+# allow_conflict (как у D) — создаёт
 async def test_eventConflict(stub: StubProcess, uniqueId: str) -> None:
     caller = callerFor(uniqueId)
     tomorrow = datetime.now(ZoneInfo(TZ)).replace(second=0, microsecond=0) + timedelta(days=1)
@@ -325,7 +328,7 @@ async def test_eventConflict(stub: StubProcess, uniqueId: str) -> None:
         assert again.structured is not None
         assert again.structured["status"] == "conflict"
         forced = await mcp.callTool(
-            "create_event", eventArgs(caller, f"{uniqueId}:4", first, force=True), 5
+            "create_event", eventArgs(caller, f"{uniqueId}:4", first, allow_conflict=True), 5
         )
         assert forced.structured is not None
         assert forced.structured["status"] == "created"
@@ -388,7 +391,7 @@ async def test_rescheduleAndUndo(stub: StubProcess, uniqueId: str) -> None:
         second = await mcp.callTool(
             "delete_item", withCaller(caller, f"{uniqueId}:3", id=eventId), 5
         )
-        day = start.replace(hour=0)
+        day = start.date()
         listed = await mcp.callTool(
             "list_items",
             withCaller(
@@ -436,3 +439,122 @@ async def test_dialogTurnsNoDuplicate(stub: StubProcess, uniqueId: str) -> None:
         anonymous = await client.post(f"{stub.root}/internal/v1/dialog-turns", json={})
     assert anonymous.status_code == 401
     assert "что у меня" not in stub.logPath.read_text()
+
+
+# Примечание: формы D (main): у напоминания время в remind_at, starts_at = null; list_items по
+# датам находит его по remind_at; update_item двигает remind_at; complete_item done=true/false;
+# delete_item restore=true возвращает запись
+async def test_reminderLifecycleInDShape(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    zone = ZoneInfo(TZ)
+    remindAt = datetime.now(zone).replace(hour=11, minute=0, second=0, microsecond=0)
+    remindAt += timedelta(days=2)
+    day = remindAt.date()
+    period = {"from": day.isoformat(), "to": (day + timedelta(days=1)).isoformat()}
+    async with connection(stub.url) as mcp:
+        created = await mcp.callTool(
+            "create_task",
+            withCaller(
+                caller,
+                f"{uniqueId}:0",
+                title="Позвонить маме",
+                kind="reminder",
+                remind_at=remindAt.isoformat(),
+            ),
+            5,
+        )
+        assert created.structured is not None
+        item = created.structured["item"]
+        assert isinstance(item, dict)
+        assert (item["starts_at"], item["remind_at"]) == (None, remindAt.isoformat())
+        itemId = str(item["id"])
+        listed = await mcp.callTool("list_items", withCaller(caller, f"{uniqueId}:1", **period), 5)
+        assert itemId in json.dumps(listed.structured)
+        later = remindAt + timedelta(hours=1)
+        moved = await mcp.callTool(
+            "update_item",
+            withCaller(caller, f"{uniqueId}:2", id=itemId[:8], remind_at=later.isoformat()),
+            5,
+        )
+        assert moved.structured is not None
+        assert moved.structured["item"]["remind_at"] == later.isoformat()  # type: ignore[index]
+        done = await mcp.callTool(
+            "complete_item", withCaller(caller, f"{uniqueId}:3", id=itemId), 5
+        )
+        assert done.structured is not None
+        assert done.structured["status"] == "completed"
+        assert done.structured["item"]["status"] == "done"  # type: ignore[index]
+        openOnly = await mcp.callTool(
+            "list_items", withCaller(caller, f"{uniqueId}:4", **period), 5
+        )
+        assert itemId not in json.dumps(openOnly.structured)
+        await mcp.callTool("delete_item", withCaller(caller, f"{uniqueId}:5", id=itemId), 5)
+        restored = await mcp.callTool(
+            "delete_item", withCaller(caller, f"{uniqueId}:6", id=itemId, restore=True), 5
+        )
+        assert restored.structured is not None
+        assert restored.structured["status"] == "restored"
+
+
+# Примечание: перенос встречи на занятое время — conflict (сама встреча не мешает);
+# check_conflicts отдаёт то же без создания; кнопка в истории как у D — только voice|text
+async def test_updateConflictAndDialogInputType(stub: StubProcess, uniqueId: str) -> None:
+    caller = callerFor(uniqueId)
+    base = datetime.now(ZoneInfo(TZ)).replace(hour=12, minute=0, second=0, microsecond=0)
+    base += timedelta(days=3)
+    async with connection(stub.url) as mcp:
+        first = await mcp.callTool("create_event", eventArgs(caller, f"{uniqueId}:0", base), 5)
+        second = await mcp.callTool(
+            "create_event", eventArgs(caller, f"{uniqueId}:1", base + timedelta(hours=2)), 5
+        )
+        selfMove = await mcp.callTool(
+            "update_item",
+            withCaller(
+                caller,
+                f"{uniqueId}:2",
+                id=itemId(first),
+                starts_at=(base + timedelta(minutes=30)).isoformat(),
+            ),
+            5,
+        )
+        assert selfMove.structured is not None
+        assert selfMove.structured["status"] == "updated"
+        clash = await mcp.callTool(
+            "update_item",
+            withCaller(
+                caller,
+                f"{uniqueId}:3",
+                id=itemId(second),
+                starts_at=base.isoformat(),
+            ),
+            5,
+        )
+        assert clash.structured is not None
+        assert clash.structured["status"] == "conflict"
+        checked = await mcp.callTool(
+            "check_conflicts",
+            withCaller(
+                caller,
+                f"{uniqueId}:4",
+                starts_at=base.isoformat(),
+                ends_at=(base + timedelta(hours=1)).isoformat(),
+            ),
+            5,
+        )
+        assert checked.structured is not None
+        assert checked.structured["conflicts"]
+    turns = {
+        "user_id": 17,
+        "trace_id": uniqueId,
+        "turns": [
+            {"role": "user", "text": "Отменить", "input_type": "action"},
+            {"role": "assistant", "text": "Отменено"},
+        ],
+    }
+    async with httpx.AsyncClient() as client:
+        rejected = await client.post(
+            f"{stub.root}/internal/v1/dialog-turns",
+            json=turns,
+            headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
+        )
+    assert rejected.status_code == 400

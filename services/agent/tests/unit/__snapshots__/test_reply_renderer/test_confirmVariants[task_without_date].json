@@ -12,7 +12,8 @@
       {
         "action": "reschedule",
         "args": {
-          "item_id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3"
+          "item_id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3",
+          "kind": "task"
         },
         "kind": "action",
         "text": "Изменить время"
@@ -33,6 +34,7 @@
       "ends_at": null,
       "id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3",
       "kind": "task",
+      "remind_at": null,
       "starts_at": null,
       "status": "open",
       "title": "Купить хлеб"

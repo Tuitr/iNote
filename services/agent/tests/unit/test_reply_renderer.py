@@ -350,3 +350,23 @@ def test_notices(notice: Notice) -> None:
     assert reply.text
     expected = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
     assert (reply.state, reply.format.value) == (expected, "plain")
+
+
+# Примечание: напоминание в форме D — starts_at = null, время в remind_at: подтверждение и
+# список показывают remind_at (а не «без срока»); период — датами J3 [from, to)
+def test_reminderTimeFromRemindAt() -> None:
+    dShaped = item(
+        "Позвонить маме",
+        None,
+        kind="reminder",
+        all_day=False,
+        remind_at="2026-10-21T19:00:00+03:00",
+    )
+    confirm = render(turn("done", created(dShaped)))
+    assert str(confirm["text"]).split("\n")[2] == "Сегодня, ср 21 октября, 19:00"
+    listedReply = render(turn("answer", listed("2026-10-21", "2026-10-22", dShaped, EVENT)))
+    lines = str(listedReply["text"]).split("\n")
+    assert lines[0] == "Сегодня, ср 21 октября:"
+    assert lines[1:] == ["10:00–11:00 Созвон с командой", "19:00 Позвонить маме"]
+    week = render(turn("answer", listed("2026-10-19", "2026-10-26", dShaped)))
+    assert str(week["text"]).startswith("Неделя, 19–25 октября:")

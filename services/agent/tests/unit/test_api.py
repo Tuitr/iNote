@@ -203,5 +203,5 @@ async def test_dialogTurnsWrittenInBackground(app: FastAPI, mcpHttp: FakeMcpHttp
     body = json.loads(written.content)
     assert (body["user_id"], body["trace_id"]) == (17, TRACE)
     assert [t["role"] for t in body["turns"]] == ["user", "assistant"]
-    assert body["turns"][0] == {"role": "user", "text": "undo", "input_type": "action"}
+    assert body["turns"][0] == {"role": "user", "text": "Отменить", "input_type": "text"}
     assert written.headers["Idempotency-Key"] == f"dialog-turns:{TRACE}"

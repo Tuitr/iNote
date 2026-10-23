@@ -31,8 +31,7 @@
     "DialogInputType": {
       "enum": [
         "text",
-        "voice",
-        "action"
+        "voice"
       ],
       "type": "string"
     },

@@ -15,11 +15,12 @@ from common.wire import WireModel
 DIALOG_TURNS_PATH: Final = "/internal/v1/dialog-turns"
 TEXT_MAX_LENGTH: Final = 4000
 
-# action — кнопка или команда без LLM (/v1/actions)
-type DialogInputType = Literal["text", "voice", "action"]
+# как у D (libs/contracts/internal.py в main): голосом или текстом; кнопка и команда — text,
+# в text — подпись кнопки («Отменить») или команда («/week»)
+type DialogInputType = Literal["text", "voice"]
 
 
-# Примечание: реплика пользователя; для кнопки — подпись варианта или код действия
+# Примечание: реплика пользователя; для кнопки — её подпись, для команды — сама команда
 class UserDialogTurn(WireModel):
     role: Literal["user"] = "user"
     text: str = Field(max_length=TEXT_MAX_LENGTH)
