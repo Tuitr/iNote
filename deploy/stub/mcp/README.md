@@ -23,7 +23,7 @@
 - созданные записи хранятся в памяти по `user_id` и видны в `list_items` и `search_items`;
 - `update_item` (`id` целиком или 8 символов, `starts_at`, `ends_at`, `remind_at`, `title`, `allow_conflict`):
   встреча сохраняет длительность и проверяет пересечения (кроме самой себя), время в прошлом — `past_time`;
-  `complete_item {id, done}` — `completed`/`reopened` (встречу — `validation_error`);
+  `complete_item {id, done}` — `completed`/`reopened`, уже в этом статусе — `unchanged` (встречу — `validation_error`);
   `delete_item {id, restore}` — мягкое удаление и возврат, повтор удаления — `not_found`;
   `check_conflicts {starts_at, ends_at, exclude_id}` — пересечения и свободные окна; правки — в памяти поверх фикстур;
 - поиск — по началу слов (первые 4 буквы слова запроса длиной от 4): «звонок» найдёт «Позвонить»;

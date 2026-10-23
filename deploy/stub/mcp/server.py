@@ -268,7 +268,12 @@ class StubTools:
         if item["kind"] == "event":
             raise ToolFailureError("validation_error", "Встречу нельзя выполнить", {"field": "id"})
         done = args.get("done", True) is not False
-        updated = self._patch(item, {"status": "done" if done else "open"}, userId)
+        target = "done" if done else "open"
+        if item["status"] == target:
+            # уже в этом статусе — повторное «Выполнено»: агент ответит «Уже отмечено» (вопрос к D)
+            same: Json = {"status": "unchanged", "item": item, "conflicts": [], "free_slots": []}
+            return _ok(f"Без изменений: {_brief(item)}", same)
+        updated = self._patch(item, {"status": target}, userId)
         data: Json = {
             "status": "completed" if done else "reopened",
             "item": updated,
