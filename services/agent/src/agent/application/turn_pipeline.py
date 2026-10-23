@@ -177,11 +177,8 @@ class TurnPipeline:
                 "history": list(context.history),
                 "focus": list(context.focus),
                 "pending": context.pending,
-                "settings": UserSettings(
-                    tz=user.tz,
-                    defaultEventMin=user.defaultEventMin,
-                    voiceReplies=user.voiceReplies,
-                ),
+                # voice_replies (поле B) — всегда false: голосового ответа нет (решение команды)
+                "settings": UserSettings(tz=user.tz, defaultEventMin=user.defaultEventMin),
             }
         )
 

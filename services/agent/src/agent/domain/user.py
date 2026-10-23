@@ -14,7 +14,6 @@ class UserContext:
     maxChatId: int
     tz: str
     defaultEventMin: int = DEFAULT_EVENT_MIN
-    voiceReplies: bool = False
 
 
 # Примечание: служебные данные для MCP (J3 caller); ключ идемпотентности добавляет исполнитель

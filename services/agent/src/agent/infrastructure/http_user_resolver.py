@@ -76,7 +76,8 @@ def userCacheKey(maxUserId: int) -> RedisKey:
     return RedisKey(service="agent", entity="user", id=str(maxUserId))
 
 
-# Примечание: ответ J8 + чат из апдейта → пользователь хода
+# Примечание: ответ J8 + чат из апдейта → пользователь хода; settings.voice_replies не читаем —
+# голосового ответа ассистента нет (решение команды, S3)
 def toUserContext(resolved: ResolveUserResponse, maxUserId: int, maxChatId: int) -> UserContext:
     return UserContext(
         userId=resolved.userId,
@@ -84,5 +85,4 @@ def toUserContext(resolved: ResolveUserResponse, maxUserId: int, maxChatId: int)
         maxChatId=maxChatId,
         tz=resolved.tz,
         defaultEventMin=resolved.settings.defaultEventMin,
-        voiceReplies=resolved.settings.voiceReplies,
     )

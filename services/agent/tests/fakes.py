@@ -234,7 +234,6 @@ class FakeMcpHttp:
         self.failures = failures
         self.body = body
         self.healthy = True
-        self.voiceReplies = False
         self.requests: list[httpx.Request] = []
 
     # Примечание: транспорт для ServiceHttpClient / AgentOverrides.mcpTransport
@@ -282,7 +281,7 @@ class FakeMcpHttp:
 
     # Примечание: пользователь в форме ответа resolve с текущими поясом и настройками
     def _user(self, *, created: bool) -> dict[str, object]:
-        settings = {"voice_replies": self.voiceReplies}
+        settings = {"voice_replies": False}  # форма D; агент поле не читает
         return {"user_id": self.userId, "tz": self.tz, "settings": settings, "created": created}
 
     # Примечание: /internal/v1/users/{user_id}/settings: чужой id — 404; поля — как в теле
