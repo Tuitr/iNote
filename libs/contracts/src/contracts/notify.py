@@ -1,4 +1,4 @@
-"""J4 · scheduler (D) → bot (C): POST /internal/v1/notify. Владелец C, вызывает D. Черновик к G1.
+"""J4 · scheduler (D) → bot (C): POST /internal/v1/notify. Владелец C, вызывает D. К заморозке G4.
 
 Ответы: 200 NotifyDelivered (delivered или duplicate) → Scheduler ставит sent;
 404 конверт ошибки chat_not_found → failed без повторов; 429, 5xx, таймаут → повтор, до 5 попыток.

@@ -91,4 +91,43 @@ J4: `chat_not_found` 404). `ServiceHttpClient` превращает конвер
 - Новая переменная — в `.env.example` в том же PR. `.env` не коммитим; секреты в README и командах — только как `$SERVICE_TOKEN`
   (gitleaks в pre-commit и CI).
 - Клиенты и пулы создаются один раз в `lifespan`; фоновые задачи — только через `TaskRegistry` (правило 9).
+## Контракты зоны C к заморозке (G4)
+
+| Модуль | Стык | Владелец | Примеры |
+|---|---|---|---|
+| `contracts/reply.py` — `MessageRequest`, `ActionRequest`, `Reply`, кнопки `action` и `open_app` | бот → агент | C | `contracts/examples/{agent,reply,actions}` |
+| `contracts/notify.py` — `NotifyRequest`, `NotifyDelivered`, коды `chat_not_found` | J4 Scheduler → бот | C (вызывает D) | `contracts/examples/notify` — запрос, `delivered`, `duplicate`, `chat_not_found`, `rate_limited`, `unavailable`, `in_progress` |
+| `contracts/start_param.py` — `StartParam`, `parseStartParam` | J6 бот → MAX app | C (читает E) | `contracts/examples/start_param` |
+| `contracts/focus.py` — `FocusRequest` | бот → агент | C | `contracts/examples/agent/focus_request.json` |
+| `contracts/agent_side.py` — `TurnInput`, `ToolExecutor`, `ToolSpec`, `ToolResult`, `ErrorInfo` | J2 агент ↔ Brain | C (сторона C); `TurnResult`, `Clarify`, `Brain` — B | `contracts/examples/brain` |
+| `contracts/asr.py` | J1 бот → ASR | **A**, черновик потребителя C | `contracts/examples/asr` |
+| `contracts/users.py` (resolve, PATCH settings) | J8 агент → mcp-контейнер | **D**, черновик потребителя C | `contracts/examples/users` |
+| `contracts/dialog_turns.py` | J8 агент → mcp-контейнер | **D**, черновик потребителя C | `contracts/examples/dialog` |
+
+У черновиков чужих стыков при мерже верх берёт владелец; агент и бот подстраиваются. Схемы под снапшотами
+(`pytest -m contract`), каждое действие и каждый ответ J4 — с примером, примеры проверяют тесты.
+
+## Каталог действий `/v1/actions` (кнопки и команды без LLM)
+
+`ActionRequest {max_user_id, max_chat_id, action, args, callback_id?, label?}` → `Reply`. Из `args` берутся только
+поля каталога (`user_id` в `args` игнорируется); незнакомое действие или `args` не по каталогу — 200 и «Не понял
+кнопку» (`validation_error` в лог). `label` — подпись кнопки (или `/команда`) для истории диалога.
+
+| Действие | `args` | Что делает |
+|---|---|---|
+| `pick_option` | `choice` — номер варианта | ответ на уточнение → `Brain.resume`; нет живого вопроса — «Вопрос устарел» |
+| `cancel` | — | снять уточнение: «Хорошо, отменил» |
+| `undo` | `item_id` | `delete_item`; повтор — «Уже отменено» |
+| `reschedule` | `item_id`, `kind?`, `starts_at?` | с `starts_at` — `update_item`; без — «На когда перенести?» с вариантами |
+| `list_period` | `period`: `today` \| `tomorrow` \| `week` | `list_items` за период в поясе пользователя (неделя с понедельника) |
+| `start`, `help` | — | приветствие и справка; кнопки периода, «Мой день», «История» |
+| `complete` | `item_id`, `kind?` | `complete_item`; повтор — «Уже отмечено выполненным» |
+| `snooze` | `item_id`, `kind?`, `minutes` 1…1440 \| `until: "tomorrow"` | `update_item` с новым `remind_at` → «Напомню: …» |
+| `confirm_conflict` | `title`, `starts_at`, `ends_at?` | `create_event` с `allow_conflict: true`; только при живом вопросе о конфликте |
+| `settings` | — | экран «Настройки»: пояс и 12 поясов РФ кнопками |
+| `set_tz` | `tz` — из белого списка 12 поясов РФ | J8 `PATCH settings {tz}` → сброс кеша пользователя → «Пояс: …» |
+
+Команды бота → действия: `/start` и «Начать» → `start`, `/help` → `help`, `/today` · `/tomorrow` · `/week` →
+`list_period`, `/settings` → `settings`. Примеры — `contracts/examples/actions/*.json` (по одному на действие и вариант).
+
 <!-- --- конец зоны C --- -->

@@ -1,4 +1,4 @@
-"""J6 · bot → max_app: start_param кнопки мини-приложения. C → E, черновик к G1."""
+"""J6 · bot → max_app: start_param кнопки мини-приложения. C → E, к заморозке G4."""
 
 import re
 import uuid

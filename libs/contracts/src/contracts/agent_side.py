@@ -2,7 +2,7 @@
 
 Сторона C (владелец C): TurnInput, ToolExecutor и его типы — ToolSpec, ToolResult, ErrorInfo.
 Сторона B — НАБРОСОК, ВЛАДЕЛЕЦ B (формат решает B): Clarify, ExecutedAction, Usage,
-TurnResult, Brain.
+TurnResult, Brain. При мерже верх у этой части берёт B; сторона C к G4 — заморожена.
 
 - Brain не видит user_id и не ходит в Redis и MCP сам — только через ToolExecutor (правило 1).
 - pending — непрозрачный JSON: C хранит его в Redis (va:v1:agent:pending:{user_id}, 10 мин)

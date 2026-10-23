@@ -50,7 +50,12 @@ Redis. В конце — таблица «итог → trace_id → сценар
 | `stub/asr/` | **временная** ASR-заглушка C по J1: «OggS» + текст → текст — до `ASR_MODE=fake` у A |
 | `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX (override) |
 | `Caddyfile` | что видно снаружи: webhook MAX, `/api/v1/*`, статика мини-приложения; служебное — 404 |
-| `smoke.sh` | смоук: два апдейта через `/dev/max/*` → ответы агента |
+| `smoke.sh` | смоук: четыре сценария ТЗ голосом и один текстом через `/dev/max/*` |
+| `demo.sh`, `demo.py` | демо на 3–5 минут: диалог как чат (`make demo`) |
+| `redis_check.py` | аудит Redis стенда: ключи из реестра, TTL, `maxmemory` (`make redis-check`) |
+| `redis_load.py` | нагрузка на фейках и замер памяти Redis (таблица — `docs/redis-keys.md`) |
+| `env_docs.py` | таблицы переменных в README бота и агента из классов настроек (`make env-docs`) |
+| `stand-check.sh` | проверка `.env` перед `make deploy` |
 
 - Наружу опубликован только бот на `127.0.0.1:${BOT_DEV_PORT:-8001}` — ради `/dev/max/*`; `/internal/*` под сервисным токеном.
 - Профиль `full` пока совпадает с `mock`; реальные провайдеры (платно) — только по прямой просьбе.
@@ -67,3 +72,37 @@ Redis. В конце — таблица «итог → trace_id → сценар
 Webhook локально, без HTTPS: `BOT_UPDATES_MODE=webhook BOT_WEBHOOK_URL=http://127.0.0.1:8000/webhook/max
 BOT_WEBHOOK_SECRET=$(openssl rand -hex 16)` в `.env` и `make up` — фейковый MAX подпишет бота и будет слать
 апдейты из `/dev/max/updates` на его webhook; `smoke` и e2e работают так же.
+
+
+## Runbook стенда
+
+**Поднять с HTTPS** (только по прямой просьбе — это настоящий MAX и сертификат):
+
+1. `.env`: `SERVICE_TOKEN` (≥ 32 символов, не заглушка), `BOT_WEBHOOK_SECRET` (`openssl rand -hex 24`),
+   `STAND_DOMAIN`, `ACME_EMAIL`, токен MAX; `BOT_USERNAME` — имя бота после модерации.
+2. `make stand-config` — `deploy/stand-check.sh` проверяет `.env`, затем `docker compose config` обоих файлов.
+3. `make deploy` — Caddy на 80/443 получает сертификат Let's Encrypt для `STAND_DOMAIN`, бот стартует в
+   `BOT_MAX_MODE=real`, `BOT_UPDATES_MODE=webhook` (пока адаптер MAX не выбран, бот в `real` не стартует).
+
+**Проверить подписку webhook.** При каждом старте бот вызывает `ensureSubscription` — в логах бота `max_subscribed`
+(`make logs SERVICE=bot`). Снаружи: `curl -i -X POST https://$STAND_DOMAIN/webhook/max` без секрета — 401
+(значит, Caddy пропускает только webhook, а бот проверяет секрет); `https://$STAND_DOMAIN/internal/v1/notify` — 404.
+
+**Найти запрос.** Пользователь видит «Код: ab12f0» — это первые 6 символов `trace_id`.
+`make logs TRACE=ab12f0` покажет путь по всем сервисам: бот (`update_handled`, `max_message_sent`), ASR,
+агент (`user_resolved`, `turn_finished` с `outcome` и `error_code`), MCP (`tool_called`). Для уведомлений —
+`notification_handled` и `focus_set`. Тексты пользователя в логах не пишутся — только события и коды.
+
+**Типовые проблемы**
+
+| Симптом | Причина | Что делать |
+|---|---|---|
+| Бот перестал получать сообщения | MAX отписал бота: 8 ч без ответа 200 на webhook (бот лежал или Caddy без сертификата) | перезапустить бот (`docker compose … restart bot`) — подписка восстановится при старте; проверить `max_subscribed` в логах |
+| «Кнопка устарела» у свежих кнопок, повторы ответов | Redis упёрся в `maxmemory` и вытесняет ключи с TTL (`volatile-lru`) | `make redis-check`; `INFO memory` в Redis; оценка — ≈ 20 КБ на активного пользователя в сутки (`docs/redis-keys.md`); поднять `--maxmemory` в compose или сократить TTL кнопок |
+| «Что-то пошло не так… Код» на всё | Redis недоступен | `make ps`, `make logs SERVICE=redis`; после возврата Redis бот и агент работают без перезапуска |
+| «Сервис записей сейчас недоступен… Код» | mcp-контейнер (MCP и J8) лежит или не отвечает за 5 с | `make logs SERVICE=mcp`; агент переподключится сам |
+| Caddy не получает сертификат | DNS `STAND_DOMAIN` не указывает на сервер, закрыт 80/443 или превышен лимит Let's Encrypt | `docker compose … logs caddy`; проверить DNS и порты; при лимите — подождать или временно staging-CA |
+| Сервис убит при остановке (`exit 137`) | не уложился в `stop_grace_period` (30 с) | долгие ходы при остановке обрываются по таймауту uvicorn (15 с) — так задумано; бюджет — `tests/deploy/test_stop_budget.py` |
+
+**После синхронизации папки с другого компьютера** mypy иногда падает с `INTERNAL ERROR` или видит старые
+модули — это кеш, а не код: `rm -rf .mypy_cache` (скрипты коммитов `.transfer/commit-*.sh` делают это сами).
