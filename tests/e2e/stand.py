@@ -151,8 +151,26 @@ def itemIdOf(message: Json) -> str:
 async def notify(
     client: httpx.AsyncClient, chat: Chat, itemId: str, title: str, remindAt: datetime
 ) -> Json:
+    response = await notifyRaw(client, chat, itemId, title, remindAt)
+    assert response.status_code == 200, response.text
+    data: Json = response.json()
+    return data
+
+
+# Примечание: один запрос J4 как есть: свой notification_id, номер попытки и X-Trace-Id
+async def notifyRaw(
+    client: httpx.AsyncClient,
+    chat: Chat,
+    itemId: str,
+    title: str,
+    remindAt: datetime,
+    *,
+    notificationId: str | None = None,
+    attempt: int = 1,
+    traceId: str | None = None,
+) -> httpx.Response:
     body = {
-        "notification_id": str(uuid.uuid4()),
+        "notification_id": notificationId or str(uuid.uuid4()),
         "kind": "reminder",
         "user": {"max_user_id": chat.userId, "max_chat_id": chat.chatId, "tz": str(USER_TZ)},
         "item": {
@@ -165,13 +183,9 @@ async def notify(
             "status": "open",
         },
         "fire_at": remindAt.isoformat(),
-        "attempt": 1,
+        "attempt": attempt,
     }
-    response = await client.post(
-        "/internal/v1/notify",
-        json=body,
-        headers={"Authorization": f"Bearer {serviceToken()}"},
-    )
-    assert response.status_code == 200, response.text
-    data: Json = response.json()
-    return data
+    headers = {"Authorization": f"Bearer {serviceToken()}"}
+    if traceId is not None:
+        headers["X-Trace-Id"] = traceId
+    return await client.post("/internal/v1/notify", json=body, headers=headers)
