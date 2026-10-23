@@ -6,7 +6,8 @@ Streamable HTTP на /mcp, четыре обязательных инструм�
 list → {items, range, truncated}, search → {results: [{item, score}], best_match_confident},
 ошибка → isError + конверт {"error": {code, message, details}}.
 Повтор с тем же (user_id, idempotency_key) возвращает тот же ответ. В лог — caller, без текста.
-J8: POST /internal/v1/users/resolve — user_id по max_user_id (в памяти, с 17), под SERVICE_TOKEN;
+J8: POST /internal/v1/users/resolve — user_id = 17 + max_user_id (стабилен между рестартами),
+под SERVICE_TOKEN;
 POST /internal/v1/dialog-turns — ход в памяти по trace_id, повтор — 202 без дубля.
 """
 
@@ -456,9 +457,11 @@ class StubTools:
         end = datetime(last.year, last.month, last.day, tzinfo=zone)
         kinds = _asList(args.get("kind"))
         status = str(args.get("status") or "open")
+        # фикстуры — на своих днях от «сегодня» пользователя, как у поиска и правок (не от from)
+        today = self._clock().astimezone(zone).date()
         items = [
             item
-            for item in self._visible(self._materialize(first, zone), userId)
+            for item in self._visible(self._materialize(today, zone), userId)
             if _when(item) is not None
             and start <= _itemTime(item) < end
             and (not kinds or item["kind"] in kinds)
@@ -691,7 +694,8 @@ def buildServer(stub: StubTools | None = None) -> Server[object]:
 # Примечание: пользователи J8 в памяти: max_user_id → user_id; пояс и настройки — по умолчанию,
 # пока их не поменяет PATCH настроек (S3); resolve отдаёт сохранённое
 class StubUsers:
-    # Примечание: id выдаются по порядку с 17 — как в contracts/examples/users
+    # Примечание: user_id = 17 + max_user_id — один и тот же и после перезапуска заглушки: иначе
+    # после рестарта новый пользователь получил бы id старого и его фокус и историю из Redis агента
     def __init__(self) -> None:
         self._ids: dict[int, int] = {}
         self._tz: dict[int, str] = {}
@@ -700,7 +704,7 @@ class StubUsers:
     def resolve(self, maxUserId: int) -> Json:
         created = maxUserId not in self._ids
         if created:
-            self._ids[maxUserId] = FIRST_USER_ID + len(self._ids)
+            self._ids[maxUserId] = FIRST_USER_ID + maxUserId
         return self._user(self._ids[maxUserId], created=created)
 
     # Примечание: PATCH пояса; незнакомый user_id — None (404)

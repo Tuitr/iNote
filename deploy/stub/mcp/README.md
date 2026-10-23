@@ -29,7 +29,7 @@
 - поиск — по началу слов (первые 4 буквы слова запроса длиной от 4): «звонок» найдёт «Позвонить»;
 - время без смещения → `validation_error`, в прошлом → `past_time`, нет `caller` → `validation_error`;
 - повтор с тем же `(user_id, idempotency_key)` возвращает тот же ответ (id записи — от ключа);
-- J8 `POST /internal/v1/users/resolve`: `user_id` по `max_user_id` в памяти (с 17, повтор — тот же, `created=false`),
+- J8 `POST /internal/v1/users/resolve`: `user_id` = 17 + `max_user_id` (один и тот же и после перезапуска заглушки; повтор — `created=false`),
   пояс `Europe/Moscow`; с `SERVICE_TOKEN` в окружении требует `Authorization: Bearer` (иначе 401/403);
 - J8 `PATCH /internal/v1/users/{user_id}/settings` (S3, черновик C — у D метода ещё нет): `{tz}` →
   пользователь как у resolve; нет пояса или он не IANA — 400, незнакомый `user_id` — 404; `resolve` дальше
