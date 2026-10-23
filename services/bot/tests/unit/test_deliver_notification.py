@@ -12,6 +12,7 @@ from bot.application.reply_mapper import OpenAppMode, ReplyToMaxMapper
 from bot.domain.notifications import DeliveryFailure, NotifyOutcome
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
 from bot.presentation.templates import RussianNotificationTexts
+from contracts.notify import NotifyRequest
 from services.bot.tests.fakes import (
     InMemoryCallbackStore,
     InMemoryNotificationLedger,
@@ -33,12 +34,18 @@ class Rig:
         self.gateway = FakeMaxGateway(FakeMaxOptions(sendDelayS=sendDelayS))
         self.ledger = ledger or InMemoryNotificationLedger()
         self.callbacks = InMemoryCallbackStore()
+        self.focused: list[NotifyRequest] = []
         self.deliver = DeliverNotification(
             ledger=self.ledger,
             gateway=self.gateway,
             mapper=ReplyToMaxMapper(self.callbacks, mode=OpenAppMode.OPEN_APP, botUsername="bot"),
             texts=RussianNotificationTexts(lambda: NOW),
+            focus=self,
         )
+
+    # Примечание: FocusNotifier — запоминает, про какие уведомления сказали агенту
+    def itemDelivered(self, request: NotifyRequest) -> None:
+        self.focused.append(request)
 
 
 # Примечание: доставка: текст и кнопки напоминания, «доставлено» с id сообщения MAX
@@ -168,3 +175,15 @@ async def test_eventAndTaskButtons() -> None:
     labels = [b["text"] for b in meeting.attachments[0]["payload"]["buttons"][0]]  # type: ignore[index]
     assert labels == ["Отложить на 1 ч", "Завтра"]
     assert deadline.text == "Срок задачи: Сдать отчёт\nЗавтра, пн 19 октября"
+
+
+# Примечание: S3 — запись в фокус агента ставится только после первой доставки: не при
+# duplicate, не при отказе MAX
+async def test_focusOnlyAfterDelivery() -> None:
+    rig = Rig()
+    rig.gateway.planFailure(CHAT, DeliveryFailure.UNAVAILABLE, 1)
+    await rig.deliver(notifyRequest())
+    assert rig.focused == []
+    await rig.deliver(notifyRequest(attempt=2))
+    await rig.deliver(notifyRequest(attempt=3))
+    assert [str(r.notificationId) for r in rig.focused] == [NID]

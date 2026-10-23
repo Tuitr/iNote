@@ -20,6 +20,7 @@ from bot.infrastructure.audio_downloader import HttpAudioDownloader
 from bot.infrastructure.fake_max import FakeMaxGateway, FakeMaxOptions
 from bot.infrastructure.http_agent import HttpAgentGateway
 from bot.infrastructure.http_asr import HttpAsrGateway
+from bot.infrastructure.http_focus import HttpFocusNotifier
 from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
@@ -135,6 +136,7 @@ def createApp(
                     gateway=gateway,
                     mapper=mapper,
                     texts=RussianNotificationTexts(),
+                    focus=HttpFocusNotifier(agentHttp, tasks),
                 )
                 dispatcher = UpdateDispatcher(handler, tasks, config.maxConcurrentUpdates)
                 app.state.dispatcher = dispatcher

@@ -5,12 +5,14 @@
    сообщение, а получает in_progress (Scheduler повторит позже).
 3. Отправка в MAX; «доставлено» с message_id пишется только после ответа MAX — иначе повтор
    Scheduler'а после сбоя потерял бы уведомление.
-4. Отказ MAX → причина для кода ответа: чат не найден — без повторов, 429 и 5xx — повторить.
+4. После доставки запись — в фокус агента (фоном): «перенеси его на завтра» — про неё.
+5. Отказ MAX → причина для кода ответа: чат не найден — без повторов, 429 и 5xx — повторить.
 """
 
 from typing import Final
 
 from bot.application.ports import (
+    FocusNotifier,
     MaxGateway,
     NotificationLedger,
     NotificationTexts,
@@ -60,8 +62,10 @@ class DeliverNotification:
         gateway: MaxGateway,
         mapper: ReplyToMaxMapper,
         texts: NotificationTexts,
+        focus: FocusNotifier | None = None,
         claimTtlS: int = DEFAULT_CLAIM_TTL_S,
     ) -> None:
+        self._focus = focus
         self._ledger = ledger
         self._gateway = gateway
         self._mapper = mapper
@@ -121,6 +125,7 @@ class DeliverNotification:
             _log.exception("notification_send_failed", notification_id=notificationId)
             return DeliveryResult(NotifyOutcome.UNAVAILABLE)
         await self._markDelivered(notificationId, messageId)
+        self._setFocus(request)
         return DeliveryResult(NotifyOutcome.DELIVERED, messageId)
 
     # Примечание: текст и кнопки → сообщение MAX в чат пользователя
@@ -161,6 +166,15 @@ class DeliverNotification:
             await self._ledger.markDelivered(notificationId, messageId)
         except Exception:  # noqa: BLE001
             _log.exception("notification_mark_failed", notification_id=notificationId)
+
+    # Примечание: только первая доставка (не duplicate): «перенеси его» — про эту запись
+    def _setFocus(self, request: NotifyRequest) -> None:
+        if self._focus is None:
+            return
+        try:
+            self._focus.itemDelivered(request)
+        except Exception:  # noqa: BLE001 — фокус не важнее ответа Scheduler'у
+            _log.exception("focus_schedule_failed")
 
     # Примечание: снять «в работе»; не вышло — ключ истечёт сам через claimTtlS
     async def _release(self, notificationId: str, token: str) -> None:

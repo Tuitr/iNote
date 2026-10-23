@@ -49,6 +49,13 @@ class AgentGateway(Protocol):
     async def sendAction(self, request: ActionRequest) -> Reply: ...
 
 
+# Примечание: «эта запись теперь в фокусе» — агенту после доставленного уведомления (POST
+# /v1/focus); не ждёт ответа и не бросает: уведомление уже у пользователя
+class FocusNotifier(Protocol):
+    # Примечание: ставит вызов в фон
+    def itemDelivered(self, request: NotifyRequest) -> None: ...
+
+
 # Примечание: что лежит за callback-кнопкой: действие, аргументы для /v1/actions и чат, куда
 # ушла кнопка (нажатие из другого чата — например, пересланное сообщение — не принимаем)
 @dataclass(frozen=True)
