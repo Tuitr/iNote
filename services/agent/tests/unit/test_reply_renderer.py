@@ -4,7 +4,7 @@ import tomllib
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from importlib import resources
-from typing import Final
+from typing import Final, get_args
 
 import pytest
 import structlog
@@ -17,9 +17,17 @@ from agent.domain.periods import periodRange
 from agent.domain.user import UserContext
 from agent.presentation.reply_renderer import TemplateReplyRenderer, openApp
 from agent.presentation.templates import REQUIRED_ERROR_KEYS, ReplyTemplates, loadTemplates
+from common.errors import ErrorCode
 from common.markdown import escapeMarkdown
 from common.ru_dates import DateFormatter
-from contracts.agent_side import Clarify, ExecutedAction, ToolResult, TurnResult
+from contracts.agent_side import (
+    BrainErrorCode,
+    Clarify,
+    ExecutedAction,
+    ToolErrorCode,
+    ToolResult,
+    TurnResult,
+)
 from contracts.reply import REPLY_TEXT_MAX_LENGTH, ReplyState
 from contracts.start_param import StartParam
 from services.agent.tests.fakes import USAGE, FixedClock
@@ -207,8 +215,12 @@ def test_answerText() -> None:
     assert render(turn("answer"))["text"] == "Готово."
 
 
-# Примечание: у каждого кода — свой текст и короткий код цепочки; незнакомый код — общий текст
-@pytest.mark.parametrize("code", sorted(REQUIRED_ERROR_KEYS - {"code", "default"}))
+# Примечание: у каждого кода хода (Brain и инструменты) — свой текст и короткий код цепочки;
+# незнакомый код — общий текст
+@pytest.mark.parametrize(
+    "code",
+    sorted({*get_args(BrainErrorCode.__value__), *get_args(ToolErrorCode.__value__)}),
+)
 def test_errorTexts(code: str) -> None:
     reply = render(turn("error", errorCode=code))
     templates = loadTemplates()
@@ -216,6 +228,16 @@ def test_errorTexts(code: str) -> None:
     assert reply["text"] == f"{templates.errors[code]}\nКод: ab12f0"
     renderer = TemplateReplyRenderer(templates, FixedClock(NOW))
     assert renderer.failure("something_new", TRACE).text.startswith(templates.errors["default"])
+
+
+# Примечание: сбой каркаса (AppError от J8, MCP, лока) — текст по коду стандарта и код цепочки
+@pytest.mark.parametrize("code", sorted(ErrorCode))
+def test_failureTextsForStandardCodes(code: ErrorCode) -> None:
+    templates = loadTemplates()
+    reply = TemplateReplyRenderer(templates, FixedClock(NOW)).failure(code, TRACE)
+    assert reply.state is ReplyState.ERROR
+    assert reply.text == f"{templates.errors[code]}\nКод: ab12f0"
+    assert set(REQUIRED_ERROR_KEYS) >= {code}
 
 
 # Примечание: названия экранируются — пользователь не ломает разметку ответа
