@@ -88,7 +88,12 @@ class RedisCallbackStore:
     async def save(self, action: StoredAction) -> str:
         key = secrets.token_urlsafe(CALLBACK_KEY_BYTES)
         payload = json.dumps(
-            {"action": action.action, "args": action.args, "chat_id": action.chatId},
+            {
+                "action": action.action,
+                "args": action.args,
+                "chat_id": action.chatId,
+                "label": action.label,
+            },
             ensure_ascii=False,
         )
         await self._store.setValue(_callbackKey(key), payload, ttlS=self._ttlS)
@@ -108,12 +113,15 @@ class RedisCallbackStore:
             chatId = data.get("chat_id")
             if chatId is not None and (isinstance(chatId, bool) or not isinstance(chatId, int)):
                 raise TypeError(chatId)
+            label = data.get("label")
+            if label is not None and not isinstance(label, str):
+                raise TypeError(label)
         except (ValueError, KeyError, TypeError, ValidationError):
             _log.warning("callback_corrupted")
             return None
         if not _ACTION_RE.fullmatch(action):
             return None
-        return StoredAction(action=action, args=args, chatId=chatId)
+        return StoredAction(action=action, args=args, chatId=chatId, label=label)
 
 
 # Примечание: ключ Redis кнопки

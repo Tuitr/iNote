@@ -63,8 +63,9 @@ async def test_callbackKeyAndTtl(redisClient: Redis, uniqueId: str) -> None:
     assert await store.load("A" * 16) is None
     await redisClient.set(f"va:v1:bot:cb:{'B' * 16}", "{битый", ex=60)
     assert await store.load("B" * 16) is None
-    bound = await store.save(StoredAction("undo", {"item_id": uniqueId}, chatId=500600700))
-    assert await store.load(bound) == StoredAction("undo", {"item_id": uniqueId}, chatId=500600700)
+    stored = StoredAction("undo", {"item_id": uniqueId}, chatId=500600700, label="Отменить")
+    bound = await store.save(stored)
+    assert await store.load(bound) == stored
     await redisClient.set(
         f"va:v1:bot:cb:{'C' * 16}", '{"action": "undo", "args": {}, "chat_id": "x"}', ex=60
     )

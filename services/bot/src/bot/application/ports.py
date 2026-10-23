@@ -54,6 +54,8 @@ class StoredAction:
     action: str
     args: dict[str, ArgValue]
     chatId: MaxChatId | None = None
+    # подпись кнопки — реплика пользователя в истории диалога (ActionRequest.label)
+    label: str | None = None
 
 
 # Примечание: payload кнопки MAX — короткий ключ; само действие — в Redis на 24 ч

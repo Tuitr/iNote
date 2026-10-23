@@ -161,14 +161,25 @@ class HandleUpdate:
         if name not in COMMAND_ACTIONS:
             return await self._sendText(chatId, self._d.texts.unknownCommand(name))
         action, args = COMMAND_ACTIONS[name]
-        return await self._sendAction(update, chatId, action, args)
+        return await self._sendAction(update, chatId, action, args, label=f"/{name}")
 
-    # Примечание: действие без LLM → /v1/actions под «печатает…»
+    # Примечание: действие без LLM → /v1/actions под «печатает…»; label — как это сказал
+    # пользователь (команда) — для истории диалога
     async def _sendAction(
-        self, update: IncomingUpdate, chatId: MaxChatId, action: str, args: dict[str, ArgValue]
+        self,
+        update: IncomingUpdate,
+        chatId: MaxChatId,
+        action: str,
+        args: dict[str, ArgValue],
+        *,
+        label: str | None = None,
     ) -> HandleOutcome:
         request = ActionRequest(
-            maxUserId=update.maxUserId, maxChatId=chatId, action=action, args=dict(args)
+            maxUserId=update.maxUserId,
+            maxChatId=chatId,
+            action=action,
+            args=dict(args),
+            label=label,
         )
         return await self._askAgent(chatId, lambda: self._d.agent.sendAction(request))
 
@@ -190,6 +201,7 @@ class HandleUpdate:
             action=stored.action,
             args=stored.args,
             callbackId=callbackId,
+            label=stored.label,
         )
         return await self._askAgent(update.maxChatId, lambda: self._d.agent.sendAction(request))
 

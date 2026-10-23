@@ -45,10 +45,11 @@ async def test_actionStoredBehindKey() -> None:
     assert (undo.kind, undo.text) == (ButtonKind.CALLBACK, "Отменить")
     assert undo.payload is not None
     stored = store.saved[undo.payload]
-    assert (stored.action, stored.args, stored.chatId) == (
+    assert (stored.action, stored.args, stored.chatId, stored.label) == (
         "undo",
         {"item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"},
         5,
+        "Отменить",
     )
     assert reschedule.payload != undo.payload
 

@@ -67,7 +67,9 @@ class ReplyToMaxMapper:
     # действие кнопки привязано к чату, куда она ушла
     async def _button(self, button: ReplyButton, chatId: MaxChatId) -> KeyboardButton | None:
         if isinstance(button, ActionButton):
-            stored = StoredAction(button.action, dict(button.args), chatId=chatId)
+            stored = StoredAction(
+                button.action, dict(button.args), chatId=chatId, label=button.text
+            )
             key = await self._callbacks.save(stored)
             return KeyboardButton(ButtonKind.CALLBACK, button.text, payload=key)
         return self._appButton(button)

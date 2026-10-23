@@ -101,7 +101,7 @@ async def test_callbackGoesToAgent(
     agent: FakeAgent,
     callbacks: InMemoryCallbackStore,
 ) -> None:
-    key = await callbacks.save(StoredAction("undo", {"item_id": "7f3a9c2e"}))
+    key = await callbacks.save(StoredAction("undo", {"item_id": "7f3a9c2e"}, label="Отменить"))
     update = dataclasses.replace(loadIncoming("callback"), callbackPayload=key)
     assert await handler(update) is HandleOutcome.HANDLED
     [answer] = gateway.callbackAnswers()
@@ -109,6 +109,7 @@ async def test_callbackGoesToAgent(
     [request] = agent.actions
     assert (request.action, request.args) == ("undo", {"item_id": "7f3a9c2e"})
     assert request.callbackId == "cb.synthetic.0001"
+    assert request.label == "Отменить"
     assert len(gateway.sentMessages()) == 1
 
 
@@ -146,6 +147,7 @@ async def test_commandsGoToActions(
     await handler(dataclasses.replace(loadIncoming("command"), commandName=command))
     [request] = agent.actions
     assert (request.action, request.args, request.callbackId) == (action, args, None)
+    assert request.label == f"/{command.lower().split('@')[0]}"
     assert len(gateway.sentMessages()) == 1
 
 
