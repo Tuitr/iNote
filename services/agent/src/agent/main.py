@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from redis.asyncio import Redis
 
 from agent.application.handle_action import HandleAction
+from agent.application.handle_focus import HandleFocus
 from agent.application.handle_message import HandleMessage
 from agent.application.ports import (
     Clock,
@@ -126,6 +127,7 @@ def createApp(
             )
             app.state.handleMessage = HandleMessage(pipeline)
             app.state.handleAction = HandleAction(pipeline)
+            app.state.handleFocus = HandleFocus(deps, lockWaitS=config.lockWaitS)
             _log.info("agent_started", brain=config.brain if custom.brain is None else "override")
             try:
                 yield

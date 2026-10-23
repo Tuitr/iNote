@@ -489,3 +489,102 @@ async def test_rescheduleFocused(phrase: str, focus: int, expected: str | None) 
     # запись в фокусе — напоминание: двигаем remind_at (у D у напоминания starts_at = null)
     assert tools.calls == [("update_item", {"id": ITEM_ID, "remind_at": expected})]
     assert result.outcome == "done"
+
+
+OTHER_ID: Final = "2b8d4e61-0c3f-4a7b-8e95-1f6a2d3c4b57"
+
+
+# Примечание: ход с записями в фокусе (первая — ITEM, вторая — другая запись в то же время)
+def focusTurn(phrase: str, focus: int) -> TurnInput:
+    brief = ItemBrief.fromWire(ITEM)
+    other = ItemBrief.fromWire({**ITEM, "id": OTHER_ID, "title": "Купить хлеб"})
+    return turnAt(phrase, "2026-10-21T21:30").model_copy(update={"focus": [brief, other][:focus]})
+
+
+# Примечание: S3 — «перенеси его/её…», «на час позже», «отметь выполненной», «удали её»
+# с одной записью в фокусе: вызов по её id, без вопросов
+@pytest.mark.parametrize(
+    ("phrase", "call"),
+    [
+        (
+            "перенеси его на завтра в 15",
+            ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-22T15:00:00+03:00"}),
+        ),
+        (
+            "Сдвинь её на 2 часа позже",
+            ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-22T12:00:00+03:00"}),
+        ),
+        (
+            "перенеси на час позже",
+            ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-22T11:00:00+03:00"}),
+        ),
+        ("отметь её выполненной", ("complete_item", {"id": ITEM_ID})),
+        ("Отметь как сделано", ("complete_item", {"id": ITEM_ID})),
+        ("удали её", ("delete_item", {"id": ITEM_ID})),
+    ],
+)
+async def test_focusCommandOneItem(phrase: str, call: tuple[str, dict[str, object]]) -> None:
+    assert ITEM["starts_at"] == "2026-10-22T10:00:00+03:00"  # от этого времени «на час позже»
+    tools = RecordingTools(ToolResult(ok=True, summary="ok", data={"item": ITEM}))
+    result = await ScriptedBrain().run(focusTurn(phrase, 1), tools)
+    assert tools.calls == [call]
+    assert result.outcome == "done"
+    assert [str(i) for i in result.focus] == [ITEM_ID]
+
+
+# Примечание: фокус пуст — вопрос «Какую запись …?» без вариантов и без вызовов
+async def test_focusCommandEmptyFocusAsks() -> None:
+    tools = RecordingTools()
+    result = await ScriptedBrain().run(focusTurn("перенеси её на завтра в 15", 0), tools)
+    assert tools.calls == []
+    assert result.outcome == "answer"
+    assert result.say is not None
+    assert result.say.startswith("Какую запись перенести?")
+
+
+# Примечание: в фокусе две записи (после списка) — варианты с временем; выбор второй переносит её;
+# фокус на время вопроса сохраняется
+async def test_focusCommandPicksFromSeveral() -> None:
+    turn = focusTurn("перенеси на завтра в 15", 2)
+    tools = RecordingTools(ToolResult(ok=True, summary="ok", data={"item": ITEM}))
+    brain = ScriptedBrain()
+    asked = await brain.run(turn, tools)
+    assert tools.calls == []
+    assert asked.outcome == "clarify"
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["Позвонить Ивану — завтра 10:00", "Купить хлеб — завтра 10:00"]
+    assert [str(i) for i in asked.focus] == [ITEM_ID, OTHER_ID]
+    picked = turn.model_copy(update={"text": "2", "pending": asked.clarify.pending})
+    done = await brain.resume(picked, "1", tools)
+    assert tools.calls == [
+        ("update_item", {"id": OTHER_ID, "remind_at": "2026-10-22T15:00:00+03:00"})
+    ]
+    assert done.outcome == "done"
+
+
+# Примечание: «перенеси её» без времени — просим назвать время, ничего не вызываем
+async def test_focusMoveWithoutTimeAsks() -> None:
+    tools = RecordingTools()
+    result = await ScriptedBrain().run(focusTurn("перенеси её куда-нибудь", 1), tools)
+    assert tools.calls == []
+    assert result.say is not None
+    assert result.say.startswith("На когда перенести?")
+
+
+# Примечание: вариант для задачи на весь день — только день, без «0:00»
+async def test_focusPickAllDayLabel() -> None:
+    task = ItemBrief.fromWire(
+        {
+            **ITEM,
+            "id": OTHER_ID,
+            "kind": "task",
+            "title": "Купить хлеб",
+            "all_day": True,
+            "starts_at": "2026-10-22T00:00:00+03:00",
+        }
+    )
+    turn = focusTurn("удали его", 1).model_copy(update={"focus": [ItemBrief.fromWire(ITEM), task]})
+    asked = await ScriptedBrain().run(turn, RecordingTools())
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["Позвонить Ивану — завтра 10:00", "Купить хлеб — завтра"]
+    assert asked.say == "Какую запись удалить?"

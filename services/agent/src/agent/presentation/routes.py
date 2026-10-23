@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response, status
 
 from agent.application.handle_action import HandleAction
+from agent.application.handle_focus import HandleFocus
 from agent.application.handle_message import HandleMessage
+from contracts.focus import FocusRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
 
 
@@ -14,6 +16,12 @@ def _messageHandler(request: Request) -> HandleMessage:
 # Примечание: use case из app.state — собран в lifespan
 def _actionHandler(request: Request) -> HandleAction:
     handler: HandleAction = request.app.state.handleAction
+    return handler
+
+
+# Примечание: use case из app.state — собран в lifespan
+def _focusHandler(request: Request) -> HandleFocus:
+    handler: HandleFocus = request.app.state.handleFocus
     return handler
 
 
@@ -30,5 +38,11 @@ def buildAgentRouter() -> APIRouter:
     @router.post("/actions")
     async def actions(request: Request, body: ActionRequest) -> Reply:
         return await _actionHandler(request)(body)
+
+    # Примечание: бот доставил напоминание → эта запись в фокусе («перенеси его…»)
+    @router.post("/focus", status_code=status.HTTP_204_NO_CONTENT)
+    async def focus(request: Request, body: FocusRequest) -> Response:
+        await _focusHandler(request)(body)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     return router

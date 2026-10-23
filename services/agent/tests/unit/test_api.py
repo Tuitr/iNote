@@ -142,7 +142,7 @@ async def test_unknownActionAnswered(client: httpx.AsyncClient) -> None:
 
 
 # Примечание: без токена 401, с неверным 403 — на обоих путях
-@pytest.mark.parametrize("path", ["/v1/messages", "/v1/actions"])
+@pytest.mark.parametrize("path", ["/v1/messages", "/v1/actions", "/v1/focus"])
 async def test_serviceTokenRequired(client: httpx.AsyncClient, path: str) -> None:
     assert (await client.post(path, json={})).status_code == 401
     wrong = await client.post(path, json={}, headers={"Authorization": "Bearer nope"})
@@ -205,3 +205,37 @@ async def test_dialogTurnsWrittenInBackground(app: FastAPI, mcpHttp: FakeMcpHttp
     assert [t["role"] for t in body["turns"]] == ["user", "assistant"]
     assert body["turns"][0] == {"role": "user", "text": "Отменить", "input_type": "text"}
     assert written.headers["Idempotency-Key"] == f"dialog-turns:{TRACE}"
+
+
+# Примечание: S3 — бот доставил напоминание → /v1/focus (204, ключ фокуса с TTL 2 ч) →
+# «перенеси его на завтра в 15» двигает именно эту запись, без вопросов
+async def test_focusThenMoveIt(app: FastAPI, tools: RecordingToolFactory) -> None:
+    tools.responses["update_item"] = mutation("updated")
+    focus = example("focus_request.json")
+    assert isinstance(focus, dict)
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://agent") as client:
+            set_ = await client.post("/v1/focus", json=focus, headers=AUTH)
+            assert set_.status_code == 204
+            assert set_.content == b""
+            redis = app.state.redis
+            ttl = await redis.ttl("va:v1:agent:focus:17")
+            assert 2 * 60 * 60 - 5 <= ttl <= 2 * 60 * 60
+            message = {**focus, "text": "перенеси его на завтра в 15", "source": "text"}
+            del message["item"]
+            response = await client.post("/v1/messages", json=message, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["state"] == "done"
+    [(name, args)] = tools.calls
+    assert (name, args["id"]) == ("update_item", focus["item"]["id"])
+    assert set(args) == {"id", "remind_at"}
+
+
+# Примечание: /v1/focus не по контракту (нет item) — 400, фокус не трогаем
+async def test_focusInvalid(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/v1/focus", json={"max_user_id": 1, "max_chat_id": 2}, headers=AUTH
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"

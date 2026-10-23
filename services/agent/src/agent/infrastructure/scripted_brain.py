@@ -17,11 +17,13 @@ from datetime import datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
-from agent.application.item_time import moveArgs, timeField
+from agent.application.item_time import isItemKind, moveArgs, timeField
 from agent.domain.periods import Period, periodRange
+from agent.infrastructure.scripted_focus import FocusCommand, parseFocusCommand
 from contracts.agent_side import (
     Clarify,
     ExecutedAction,
+    ItemBrief,
     ToolErrorCode,
     ToolExecutor,
     TurnInput,
@@ -43,6 +45,19 @@ WRITE_TEXT: Final = "Хорошо, напиши текстом."
 ASK_SLOT: Final = "В это время уже есть: {busy}. Выбери свободное время:"
 NO_SLOTS: Final = "В это время уже есть: {busy}, а свободных окон рядом нет. Назови другое время."
 BAD_CHOICE: Final = "Не понял выбор — повтори просьбу."
+# Фразы про запись в фокусе (S3): какую запись, если их несколько или фокус пуст
+ASK_WHICH: Final[dict[str, str]] = {
+    "move": "Какую запись перенести?",
+    "complete": "Какую запись отметить выполненной?",
+    "delete": "Какую запись удалить?",
+}
+# названия записи ScriptedBrain не разбирает — сначала показать её (список или поиск)
+NAME_IT: Final = (
+    "Сначала покажи её: «что у меня завтра» или «найди звонок» — потом «перенеси её на …»."
+)
+NO_MOMENT: Final = "У этой записи нет времени — назови новое, например: «на завтра в 15»."
+ASK_MOVE_TIME: Final = "На когда перенести? Например: «перенеси на завтра в 15»."
+MAX_PICK: Final = 5
 # Варианты времени по таблице толкования: утро, день, вечер
 TIME_OPTIONS: Final = (9, 13, 19)
 
@@ -93,6 +108,8 @@ class ScriptedBrain:
                 started=started,
             )
         pending = turn.pending
+        if (command := parseFocusCommand(text)) is not None:
+            return await self._onFocus(turn, tools, command, started)
         if pending and pending.get("kind") == "time":
             if (when := _timeAnswer(turn, text)) is not None:
                 return await self._completeWithTime(turn, tools, pending, when, started)
@@ -122,11 +139,68 @@ class ScriptedBrain:
         if kind == "time" and 0 <= index < len(options):
             when = datetime.fromisoformat(options[index])
             return await self._completeWithTime(turn, tools, pending, when, started)
+        picked = _focusList(pending.get("items"))
+        if kind == "pick_item" and 0 <= index < len(picked):
+            command = _commandFrom(pending)
+            if command is not None:
+                return await self._applyFocus(turn, tools, command, picked[index], started)
         slots = _slotList(pending.get("slots"))
         if kind == "slot" and 0 <= index < len(slots):
             args = {**_asArgs(pending.get("args")), **slots[index]}
             return await self._createEvent(turn, tools, args, started)
         return _answer(BAD_CHOICE, started)
+
+    # Примечание: «перенеси её…», «отметь выполненной», «удали её»: одна запись в фокусе —
+    # сразу; несколько — «Какую запись …?» с вариантами из фокуса; фокус пуст — вопрос без вариантов
+    async def _onFocus(
+        self, turn: TurnInput, tools: ToolExecutor, command: FocusCommand, started: float
+    ) -> TurnResult:
+        focus = turn.focus[:MAX_PICK]
+        if len(focus) == 1:
+            return await self._applyFocus(turn, tools, command, _focusItem(focus[0]), started)
+        verb = ASK_WHICH[command.op]
+        if not focus:
+            return _answer(verb + " " + NAME_IT, started)
+        labels = [_briefLabel(b, turn.now, turn.tz) for b in focus]
+        pending: dict[str, object] = {
+            "kind": "pick_item",
+            "op": command.op,
+            "when_text": command.whenText,
+            "shift_min": int(command.shift.total_seconds() // 60) if command.shift else None,
+            "items": [_focusItem(b) for b in focus],
+        }
+        # фокус не теряем: «Какую?» → ответ текстом снова увидит те же записи
+        focusIds = [b.id for b in turn.focus]
+        return _clarify(verb, ["item"], labels, pending, started=started, focus=focusIds)
+
+    # Примечание: команда над конкретной записью (id — из фокуса): перенос, выполнено, удалить
+    async def _applyFocus(
+        self,
+        turn: TurnInput,
+        tools: ToolExecutor,
+        command: FocusCommand,
+        item: Mapping[str, object],
+        started: float,
+    ) -> TurnResult:
+        itemId, kind = str(item["id"]), item.get("kind")
+        known = kind if isItemKind(kind) else None
+        if command.op == "complete":
+            return await self._call(tools, "complete_item", {"id": itemId}, "done", started)
+        if command.op == "delete":
+            return await self._call(tools, "delete_item", {"id": itemId}, "done", started)
+        if command.shift is not None:
+            raw = item.get("moment")
+            if not isinstance(raw, str):
+                return _answer(NO_MOMENT, started)
+            when = datetime.fromisoformat(raw) + command.shift
+        else:
+            parsed = _timeAnswer(turn, command.whenText or "")
+            if parsed is None:
+                return _answer(ASK_MOVE_TIME, started)
+            when = parsed
+        return await self._call(
+            tools, "update_item", moveArgs(itemId, known, when), "done", started
+        )
 
     # Примечание: обычная фраза: список, напоминание, задача, встреча, поиск или подсказка
     async def _parse(
@@ -363,14 +437,56 @@ def _clarify(
     *,
     started: float,
     actions: Sequence[ExecutedAction] = (),
+    focus: Sequence[uuid.UUID] = (),
 ) -> TurnResult:
     return TurnResult(
         outcome="clarify",
         say=say,
         clarify=Clarify(missing=missing, options=options, pending=pending),
         actions=list(actions),
+        focus=list(focus),
         usage=_usage(started),
     )
+
+
+# Примечание: запись фокуса для pending: id, вид и «когда» (для «на час позже»)
+def _focusItem(brief: ItemBrief) -> dict[str, object]:
+    moment = brief.moment
+    return {
+        "id": str(brief.id),
+        "kind": brief.kind,
+        "title": brief.title,
+        "moment": moment.isoformat() if moment else None,
+    }
+
+
+# Примечание: записи фокуса из pending (что показали кнопками)
+def _focusList(raw: object) -> list[dict[str, object]]:
+    return [dict(i) for i in _asList(raw) if isinstance(i, dict) and isinstance(i.get("id"), str)]
+
+
+# Примечание: команда из pending вопроса «Какую запись …?»
+def _commandFrom(pending: Mapping[str, object]) -> FocusCommand | None:
+    op = pending.get("op")
+    if op not in {"move", "complete", "delete"}:
+        return None
+    shift = pending.get("shift_min")
+    whenText = pending.get("when_text")
+    return FocusCommand(
+        op,
+        whenText=whenText if isinstance(whenText, str) else None,
+        shift=timedelta(minutes=shift) if isinstance(shift, int) else None,
+    )
+
+
+# Примечание: подпись варианта «Позвонить Ивану — завтра 10:00»
+def _briefLabel(brief: ItemBrief, now: datetime, tz: str) -> str:
+    moment = brief.moment
+    if moment is None:
+        return brief.title
+    if brief.allDay:  # задача на день — без «0:00»
+        return f"{brief.title} — {_dayLabel(moment, now, tz)}"
+    return f"{brief.title} — {_momentLabel(moment, now, tz)}"
 
 
 # Примечание: время записи по полю D: у напоминания — remind_at, у задачи — starts_at (срок)
@@ -405,11 +521,16 @@ def _timeOptions(now: datetime, tz: str, day: DayWord | None) -> list[datetime]:
 
 # Примечание: подпись варианта: «сегодня 19:00» / «завтра 9:00» / «пт 23.10 9:00»
 def _momentLabel(moment: datetime, now: datetime, tz: str) -> str:
+    local = moment.astimezone(ZoneInfo(tz))
+    return f"{_dayLabel(moment, now, tz)} {local.hour}:{local:%M}"
+
+
+# Примечание: день «сегодня» / «завтра» / «24.10» в поясе пользователя
+def _dayLabel(moment: datetime, now: datetime, tz: str) -> str:
     zone = ZoneInfo(tz)
-    days = (moment.astimezone(zone).date() - now.astimezone(zone).date()).days
     local = moment.astimezone(zone)
-    day = {0: "сегодня", 1: "завтра"}.get(days, f"{local:%d.%m}")
-    return f"{day} {local.hour}:{local:%M}"
+    days = (local.date() - now.astimezone(zone).date()).days
+    return {0: "сегодня", 1: "завтра"}.get(days, f"{local:%d.%m}")
 
 
 # Примечание: свободное окно {starts_at, ends_at} из ответа инструмента; не по форме — None
