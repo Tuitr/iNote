@@ -1,0 +1,13 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "item": {
+    "id": "7f3c9a12-4b5e-4d6f-8a9b-0c1d2e3f4a5b",
+    "kind": "reminder",
+    "title": "Позвонить Ивану",
+    "starts_at": null,
+    "all_day": false,
+    "status": "open",
+    "remind_at": "2026-10-22T07:00:00Z"
+  }
+}
