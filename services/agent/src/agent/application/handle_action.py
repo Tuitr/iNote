@@ -1,34 +1,45 @@
 """POST /v1/actions: кнопки и команды без LLM — в том же каркасе хода (лок, контекст, caller).
 
 Каталог (application/actions.py): pick_option → Brain.resume, cancel, undo → delete_item,
-reschedule → update_item или вопрос «На когда перенести?», list_period → list_items, start и help.
+reschedule → update_item или вопрос «На когда перенести?», list_period → list_items, start и help;
+complete, snooze, confirm_conflict — application/reminder_actions.py.
 Инструменты зовутся через ToolExecutor хода: caller и ключи идемпотентности ставит агент,
 из args кнопки берутся только поля каталога. Незнакомое действие — «Не понял кнопку».
 """
 
 import dataclasses
-import re
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
-from typing import Final, cast, get_args
 
+from agent.application.action_tools import (
+    NOT_FOUND,
+    callTool,
+    errorCode,
+    focusKind,
+    itemIdArg,
+    momentArg,
+    toolResult,
+)
 from agent.application.actions import (
     CANCEL,
     CHOICE_ARG,
+    COMPLETE,
+    CONFIRM_CONFLICT,
     HELP,
-    ITEM_ID_ARG,
     KIND_ARG,
     LIST_PERIOD,
     PERIOD_ARG,
     PICK_OPTION,
     RESCHEDULE,
+    SNOOZE,
     START,
     STARTS_AT_ARG,
     UNDO,
 )
 from agent.application.item_time import ItemKind, isItemKind, moveArgs
 from agent.application.ports import Notice, UserInput, Welcome
+from agent.application.reminder_actions import ReminderActions
 from agent.application.reschedule import rescheduleOptions
 from agent.application.turn_pipeline import (
     Session,
@@ -37,25 +48,11 @@ from agent.application.turn_pipeline import (
     TurnPipeline,
     nextFocus,
 )
-from agent.application.turn_rules import briefsFromActions
 from agent.domain.periods import Period, isPeriod, periodRange
 from common.errors import ErrorCode
 from common.logging import getLogger
 from common.trace import currentTraceId, newTraceId
-from contracts.agent_side import (
-    ExecutedAction,
-    ToolErrorCode,
-    TurnOutcome,
-    TurnResult,
-    Usage,
-)
 from contracts.reply import ActionRequest, ArgValue, Reply
-
-ACTION_MODEL: Final = "action"
-NOT_FOUND: Final = "not_found"
-# id записи из кнопки: uuid целиком или первые 8 символов (J3 принимает оба)
-_ITEM_ID_RE: Final = re.compile(r"^[0-9a-fA-F-]{8,36}$")
-_TOOL_ERRORS: Final = frozenset(get_args(ToolErrorCode.__value__))
 
 _log = getLogger(__name__)
 
@@ -65,6 +62,7 @@ class HandleAction:
     # Примечание: всё нужное — в каркасе: renderer, Brain, инструменты хода
     def __init__(self, pipeline: TurnPipeline) -> None:
         self._pipeline = pipeline
+        self._reminders = ReminderActions(pipeline)
 
     # Примечание: имя действия в лог можно — это код кнопки, не текст пользователя
     async def __call__(self, request: ActionRequest) -> Reply:
@@ -94,6 +92,9 @@ class HandleAction:
             UNDO: self._undoStep,
             RESCHEDULE: self._rescheduleStep,
             LIST_PERIOD: self._listStep,
+            COMPLETE: self._reminders.completeStep,
+            SNOOZE: self._reminders.snoozeStep,
+            CONFIRM_CONFLICT: self._reminders.confirmConflictStep,
             START: lambda _: self._welcome(Welcome.START),
             HELP: lambda _: self._welcome(Welcome.HELP),
         }
@@ -126,7 +127,7 @@ class HandleAction:
 
     # Примечание: undo без item_id или с чужим форматом id — «Не понял кнопку»
     def _undoStep(self, args: Mapping[str, ArgValue]) -> Step | None:
-        itemId = _itemId(args)
+        itemId = itemIdArg(args)
         return None if itemId is None else self._undo(itemId)
 
     # Примечание: период только из каталога (today | tomorrow | week)
@@ -139,11 +140,11 @@ class HandleAction:
         # Примечание: шаг: удаление и подтверждение из данных; запись уходит из фокуса
         async def step(session: Session) -> StepOutcome:
             started = time.perf_counter()
-            action = await _callTool(session, "delete_item", {"id": itemId})
-            if _errorCode(action) == NOT_FOUND:
+            action = await callTool(session, "delete_item", {"id": itemId})
+            if errorCode(action) == NOT_FOUND:
                 renderer = self._pipeline.deps.renderer
                 return StepOutcome(renderer.notice(Notice.ALREADY_UNDONE, session.traceId))
-            result = _result(action, "done", started)
+            result = toolResult(action, "done", started)
             focus = tuple(b for b in session.context.focus if not str(b.id).startswith(itemId))
             context = dataclasses.replace(session.context, focus=focus)
             return StepOutcome(self._pipeline.render(session, result), context)
@@ -152,7 +153,7 @@ class HandleAction:
 
     # Примечание: «Изменить время»: со starts_at — перенос, без — вопрос; starts_at не ISO — None
     def _rescheduleStep(self, args: Mapping[str, ArgValue]) -> Step | None:
-        itemId = _itemId(args)
+        itemId = itemIdArg(args)
         if itemId is None:
             return None
         rawKind = args.get(KIND_ARG)
@@ -161,7 +162,7 @@ class HandleAction:
         kind = rawKind if isItemKind(rawKind) else None
         if STARTS_AT_ARG not in args:
             return self._askWhen(itemId, kind)
-        startsAt = _moment(args[STARTS_AT_ARG])
+        startsAt = momentArg(args[STARTS_AT_ARG])
         return None if startsAt is None else self._move(itemId, kind, startsAt)
 
     # Примечание: update_item с новым временем (у напоминания — remind_at); подтверждение — из
@@ -170,9 +171,9 @@ class HandleAction:
         # Примечание: шаг: перенос, фокус — на перенесённой записи
         async def step(session: Session) -> StepOutcome:
             started = time.perf_counter()
-            known = kind or _focusKind(session, itemId)
+            known = kind or focusKind(session, itemId)
             args = moveArgs(itemId, known, startsAt)
-            result = _result(await _callTool(session, "update_item", args), "done", started)
+            result = toolResult(await callTool(session, "update_item", args), "done", started)
             context = dataclasses.replace(
                 session.context, focus=nextFocus(session.context, result) or session.context.focus
             )
@@ -209,7 +210,7 @@ class HandleAction:
             # J3 у D: from и to — даты, to не включается
             span = periodRange(period, session.now, session.user.tz)
             args = {"from": span.start.date().isoformat(), "to": span.end.date().isoformat()}
-            result = _result(await _callTool(session, "list_items", args), "answer", started)
+            result = toolResult(await callTool(session, "list_items", args), "answer", started)
             context = dataclasses.replace(session.context, focus=nextFocus(session.context, result))
             return StepOutcome(self._pipeline.render(session, result), context)
 
@@ -222,64 +223,6 @@ class HandleAction:
             return StepOutcome(self._pipeline.deps.renderer.welcome(kind, session.traceId))
 
         return step
-
-
-# Примечание: вид записи из фокуса (если она там) — чтобы двигать нужное поле времени
-def _focusKind(session: Session, itemId: str) -> ItemKind | None:
-    brief = next((b for b in session.context.focus if str(b.id).startswith(itemId)), None)
-    return brief.kind if brief is not None else None
-
-
-# Примечание: вызов инструмента хода; результат — как у Brain, для рендера из данных
-async def _callTool(session: Session, name: str, args: Mapping[str, object]) -> ExecutedAction:
-    result = await session.tools.call(name, args)
-    _log.info("action_tool_called", tool=name, ok=result.ok, error_code=_code(result.error))
-    return ExecutedAction(name=name, args=dict(args), result=result)
-
-
-# Примечание: TurnResult из одного вызова: ошибка инструмента → outcome=error с его кодом
-def _result(action: ExecutedAction, success: TurnOutcome, started: float) -> TurnResult:
-    usage = Usage(
-        model=ACTION_MODEL,
-        llmCalls=0,
-        tokensIn=0,
-        tokensOut=0,
-        latencyMs=round((time.perf_counter() - started) * 1000),
-    )
-    code = _errorCode(action)
-    if code is not None:
-        errorCode = cast("ToolErrorCode", code if code in _TOOL_ERRORS else "internal")
-        return TurnResult(outcome="error", actions=[action], errorCode=errorCode, usage=usage)
-    focus = list(briefsFromActions([action]))
-    return TurnResult(outcome=success, actions=[action], focus=focus, usage=usage)
-
-
-# Примечание: код ошибки вызова; None — успех
-def _errorCode(action: ExecutedAction) -> str | None:
-    return None if action.result.ok else (_code(action.result.error) or "internal")
-
-
-# Примечание: код из ErrorInfo без падения на None
-def _code(error: object) -> str | None:
-    code = getattr(error, "code", None)
-    return code if isinstance(code, str) else None
-
-
-# Примечание: id записи из args кнопки; не строка или не похоже на uuid — None
-def _itemId(args: Mapping[str, ArgValue]) -> str | None:
-    raw = args.get(ITEM_ID_ARG)
-    return raw.lower() if isinstance(raw, str) and _ITEM_ID_RE.match(raw) else None
-
-
-# Примечание: время из args — ISO 8601 строго со смещением (правило 2)
-def _moment(raw: object) -> datetime | None:
-    if not isinstance(raw, str):
-        return None
-    try:
-        moment = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    return moment if moment.utcoffset() is not None else None
 
 
 # Примечание: номер варианта из args кнопки; не число или вне списка — None (старая кнопка)

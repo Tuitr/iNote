@@ -16,6 +16,8 @@ from pydantic import ValidationError
 from agent.application.actions import (
     CANCEL,
     CHOICE_ARG,
+    CONFIRM_CONFLICT,
+    ENDS_AT_ARG,
     ITEM_ID_ARG,
     KIND_ARG,
     LIST_PERIOD,
@@ -23,6 +25,7 @@ from agent.application.actions import (
     PICK_OPTION,
     RESCHEDULE,
     STARTS_AT_ARG,
+    TITLE_ARG,
     UNDO,
 )
 from agent.application.item_time import ItemKind
@@ -111,6 +114,7 @@ class TemplateReplyRenderer:
             Notice.PENDING_EXPIRED: n.pendingExpired,
             Notice.CANCELLED: n.cancelled,
             Notice.ALREADY_UNDONE: n.alreadyUndone,
+            Notice.ALREADY_COMPLETED: n.alreadyCompleted,
             Notice.UNKNOWN_ACTION: n.unknownAction,
         }
         state = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
@@ -144,6 +148,21 @@ class TemplateReplyRenderer:
             rows.append([ActionButton(text=label, action=RESCHEDULE, args=args)])
         rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
         return _plain(t.question, ReplyState.CLARIFY, traceId, buttons=rows)
+
+    # Примечание: «Напомню завтра, чт 22 октября, 10:00 / Позвонить Ивану» — момент из remind_at
+    # записи, которую вернул update_item; кнопка — запись в календаре
+    def snoozed(self, result: TurnResult, user: UserContext, traceId: str) -> Reply:
+        scope = self._scope(user, traceId)
+        action = next((a for a in reversed(result.actions) if a.result.ok), None)
+        item = _replyItem((action.result.data or {}).get("item")) if action else None
+        if item is None or item.remindAt is None:
+            return self.render(result, user, traceId)
+        when = scope.dates.moment(item.remindAt.astimezone(scope.zone), allDay=False)
+        text = "\n".join([self._t.snooze.done.format(when=when), escapeMarkdown(item.title)])
+        app = OpenAppButton(
+            text=self._t.buttons.openItem, startParam=str(StartParam.forItem(item.id))
+        )
+        return _markdown(text, ReplyState.DONE, traceId, buttons=[[app]], items=[item])
 
     # Примечание: приветствие / справка: тексты агента, кнопки периода и «Мой день» (J6 today)
     def welcome(self, kind: Welcome, traceId: str) -> Reply:
@@ -183,10 +202,36 @@ class TemplateReplyRenderer:
         rows: Rows = [
             buttons[i : i + OPTIONS_PER_ROW] for i in range(0, len(buttons), OPTIONS_PER_ROW)
         ]
+        # пересечение встреч: «Всё равно создать» — по аргументам того create_event, что вернул
+        # conflict (данные инструмента, а не pending Brain)
+        if (force := self._forceButton(result.actions)) is not None:
+            rows.append([force])
         # «Отмена» — всегда отдельным рядом: уточнение можно бросить, не отвечая
         rows.append([ActionButton(text=self._t.buttons.cancel, action=CANCEL)])
         text = result.say or self._t.answer.clarify
         return _plain(text, ReplyState.CLARIFY, scope.traceId, buttons=rows)
+
+    # Примечание: кнопка confirm_conflict для последнего create_event со status=conflict
+    def _forceButton(self, actions: Sequence[ExecutedAction]) -> ActionButton | None:
+        conflicted = next(
+            (
+                a
+                for a in reversed(actions)
+                if a.name == "create_event"
+                and a.result.ok
+                and (a.result.data or {}).get("status") == "conflict"
+            ),
+            None,
+        )
+        if conflicted is None:
+            return None
+        title, startsAt = conflicted.args.get("title"), conflicted.args.get("starts_at")
+        if not isinstance(title, str) or not isinstance(startsAt, str):
+            return None
+        args: dict[str, str | int | bool] = {TITLE_ARG: title[:200], STARTS_AT_ARG: startsAt}
+        if isinstance(endsAt := conflicted.args.get("ends_at"), str):
+            args[ENDS_AT_ARG] = endsAt
+        return ActionButton(text=self._t.buttons.forceCreate, action=CONFIRM_CONFLICT, args=args)
 
     # Примечание: подтверждение по каждому успешному изменению; кнопки — если запись одна
     def _confirm(self, mutations: Sequence[ExecutedAction], scope: _Scope) -> Reply:

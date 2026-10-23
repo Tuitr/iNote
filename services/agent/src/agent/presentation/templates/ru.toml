@@ -56,6 +56,8 @@ today = "Сегодня"
 tomorrow = "Завтра"
 week = "Неделя"
 cancel = "Отмена"
+# пересечение встреч — создать вопреки (confirm_conflict, allow_conflict у D)
+force_create = "Всё равно создать"
 
 # ответы действий без LLM (/v1/actions)
 [notices]
@@ -63,6 +65,7 @@ pending_expired = "Вопрос устарел — повтори просьбу
 cancelled = "Хорошо, отменил."
 # второй «Отменить» по той же записи — не ошибка
 already_undone = "Уже отменено."
+already_completed = "Уже отмечено выполненным."
 unknown_action = "Не понял кнопку — напиши, что сделать, словами."
 
 # кнопка «Изменить время» без нового времени
@@ -71,6 +74,10 @@ question = "На когда перенести? Выбери вариант ил
 in_hour = "Через час"
 same_time_tomorrow = "Завтра в {time}"
 tomorrow_morning = "Завтра в {time}"
+
+# «Отложить на 1 ч» и «Завтра» в напоминании
+[snooze]
+done = "Напомню: {when}"
 
 # «Начать», /start и /help
 [welcome]

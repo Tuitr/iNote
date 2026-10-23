@@ -370,3 +370,31 @@ def test_reminderTimeFromRemindAt() -> None:
     assert lines[1:] == ["10:00–11:00 Созвон с командой", "19:00 Позвонить маме"]
     week = render(turn("answer", listed("2026-10-19", "2026-10-26", dShaped)))
     assert str(week["text"]).startswith("Неделя, 19–25 октября:")
+
+
+# Примечание: вопрос о свободном окне после конфликта — рядом с окнами «Всё равно создать»
+# с аргументами того create_event, что вернул conflict; без конфликта кнопки нет
+def test_clarifyConflictForceButton() -> None:
+    conflictArgs: Json = {
+        "title": "Встреча с Петром",
+        "starts_at": "2026-10-22T09:30:00+03:00",
+        "ends_at": "2026-10-22T10:30:00+03:00",
+    }
+    conflicted = action(
+        "create_event",
+        {"status": "conflict", "item": None, "conflicts": [EVENT], "free_slots": []},
+        conflictArgs,
+    )
+    clarify = Clarify(missing=["starts_at"], options=["11:00–12:00"], pending={"kind": "slot"})
+    reply = render(turn("clarify", conflicted, say="Занято", clarify=clarify))
+    rows = reply["buttons"]
+    assert isinstance(rows, list)
+    assert [[b["text"] for b in row] for row in rows] == [
+        ["11:00–12:00"],
+        ["Всё равно создать"],
+        ["Отмена"],
+    ]
+    assert rows[1][0]["action"] == "confirm_conflict"
+    assert rows[1][0]["args"] == conflictArgs
+    plain = render(turn("clarify", say="Когда?", clarify=clarify))
+    assert "Всё равно создать" not in str(plain["buttons"])

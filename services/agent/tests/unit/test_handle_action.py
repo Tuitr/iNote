@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from typing import Final
 
+import pytest
+
 from agent.application.handle_action import HandleAction
 from agent.application.ports import DialogContext
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
@@ -324,4 +326,96 @@ async def test_rescheduleMovesFieldByKind() -> None:
         {"id": ITEM_ID, "remind_at": when},
     ]
     bad = await Rig().press("reschedule", {"item_id": ITEM_ID, "starts_at": when, "kind": "x"})
+    assert bad.text == TEMPLATES.notices.unknownAction
+
+
+DONE_ITEM: Final = {**ITEM, "status": "done"}
+
+
+# Примечание: «Выполнено» → complete_item только с id (user_id из args не доходит); ответ из
+# данных без «Отменить» и «Изменить время»; повтор (unchanged) — «Уже отмечено»; удалённая —
+# текст not_found
+async def test_complete() -> None:
+    rig = Rig(responses={"complete_item": mutation("completed", DONE_ITEM)})
+    reply = await rig.press("complete", {"item_id": ITEM_ID, "kind": "reminder", "user_id": 1})
+    assert rig.tools.calls == [("complete_item", {"id": ITEM_ID})]
+    assert reply.text.splitlines()[:2] == [TEMPLATES.changed.completed, "Позвонить Ивану"]
+    assert [[b[0] for b in row] for row in buttons(reply)] == [["В календаре"]]
+    assert [str(b.id) for b in rig.store.contexts[USER_ID].focus] == [ITEM_ID]
+    again = Rig(responses={"complete_item": mutation("unchanged", DONE_ITEM)})
+    repeated = await again.press("complete", {"item_id": ITEM_ID})
+    assert (repeated.text, repeated.state) == (
+        TEMPLATES.notices.alreadyCompleted,
+        ReplyState.ANSWER,
+    )
+    gone = await Rig(responses={"complete_item": toolError("not_found")}).press(
+        "complete", {"item_id": ITEM_ID}
+    )
+    assert gone.text.startswith(TEMPLATES.errors["not_found"])
+
+
+# Примечание: «Отложить на 1 ч» — remind_at = «сейчас» + 60 мин в поясе пользователя;
+# «Завтра» — время напоминания из фокуса завтра; ответ «Напомню …»
+async def test_snooze() -> None:
+    later = {**ITEM, "remind_at": "2026-10-21T22:30:00+03:00", "starts_at": None}
+    rig = Rig(responses={"update_item": mutation("updated", later)})
+    reply = await rig.press("snooze", {"item_id": ITEM_ID, "kind": "reminder", "minutes": 60})
+    assert rig.tools.calls == [
+        ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-21T22:30:00+03:00"})
+    ]
+    assert reply.text == "Напомню: Сегодня, ср 21 октября, 22:30\nПозвонить Ивану"
+    assert reply.state is ReplyState.DONE
+    focused = ItemBrief.fromWire(
+        {**ITEM, "starts_at": None, "remind_at": "2026-10-21T21:00:00+03:00"}
+    )
+    tomorrow = Rig(
+        context=DialogContext(focus=(focused,)),
+        responses={"update_item": mutation("updated", later)},
+    )
+    await tomorrow.press("snooze", {"item_id": ITEM_ID, "until": "tomorrow"})
+    assert tomorrow.tools.calls == [
+        ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-22T21:00:00+03:00"})
+    ]
+
+
+# Примечание: snooze с плохими args — «Не понял кнопку», без вызовов
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"item_id": ITEM_ID},
+        {"item_id": ITEM_ID, "minutes": 0},
+        {"item_id": ITEM_ID, "minutes": 2000},
+        {"item_id": ITEM_ID, "minutes": True},
+        {"item_id": ITEM_ID, "until": "monday"},
+        {"item_id": ITEM_ID, "minutes": 60, "until": "tomorrow"},
+        {"item_id": ITEM_ID, "minutes": 60, "kind": "memo"},
+    ],
+)
+async def test_snoozeBadArgs(args: dict[str, str | int | bool]) -> None:
+    rig = Rig()
+    reply = await rig.press("snooze", args)
+    assert reply.text == TEMPLATES.notices.unknownAction
+    assert rig.tools.calls == []
+
+
+# Примечание: «Всё равно создать» — create_event c allow_conflict по данным кнопки, вопрос снят;
+# без живого вопроса — «Вопрос устарел» и ничего не создаётся
+async def test_confirmConflict() -> None:
+    event = {**ITEM, "kind": "event", "title": "Встреча с Петром", "remind_at": None}
+    args: dict[str, str | int | bool] = {
+        "title": "Встреча с Петром",
+        "starts_at": "2026-10-22T09:30:00+03:00",
+        "ends_at": "2026-10-22T10:30:00+03:00",
+    }
+    rig = Rig(context=asked(), responses={"create_event": mutation("created", event)})
+    reply = await rig.press("confirm_conflict", args)
+    assert rig.tools.calls == [("create_event", {**args, "allow_conflict": True})]
+    assert reply.text.splitlines()[0] == TEMPLATES.created.event
+    saved = rig.store.contexts[USER_ID]
+    assert (saved.pending, saved.options) == (None, ())
+    stale = Rig(responses={"create_event": mutation("created", event)})
+    expired = await stale.press("confirm_conflict", args)
+    assert expired.text == TEMPLATES.notices.pendingExpired
+    assert stale.tools.calls == []
+    bad = await Rig(context=asked()).press("confirm_conflict", {"title": "x"})
     assert bad.text == TEMPLATES.notices.unknownAction

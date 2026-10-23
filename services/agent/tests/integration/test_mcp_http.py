@@ -484,6 +484,11 @@ async def test_reminderLifecycleInDShape(stub: StubProcess, uniqueId: str) -> No
         assert done.structured is not None
         assert done.structured["status"] == "completed"
         assert done.structured["item"]["status"] == "done"  # type: ignore[index]
+        twice = await mcp.callTool(
+            "complete_item", withCaller(caller, f"{uniqueId}:31", id=itemId), 5
+        )
+        assert twice.structured is not None
+        assert twice.structured["status"] == "unchanged"
         openOnly = await mcp.callTool(
             "list_items", withCaller(caller, f"{uniqueId}:4", **period), 5
         )

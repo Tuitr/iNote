@@ -80,6 +80,7 @@ class ButtonTemplates(_Section):
     tomorrow: str
     week: str
     cancel: str
+    forceCreate: str
 
 
 # Примечание: ответы действий без LLM: имена ключей совпадают с Notice (application/ports)
@@ -87,7 +88,13 @@ class NoticeTemplates(_Section):
     pendingExpired: str
     cancelled: str
     alreadyUndone: str
+    alreadyCompleted: str
     unknownAction: str
+
+
+# Примечание: ответ на «Отложить»: когда напомню снова
+class SnoozeTemplates(_Section):
+    done: str
 
 
 # Примечание: вопрос «На когда перенести?» и подписи вариантов (RescheduleChoice)
@@ -115,6 +122,7 @@ class ReplyTemplates(_Section):
     buttons: ButtonTemplates
     notices: NoticeTemplates
     reschedule: RescheduleTemplates
+    snooze: SnoozeTemplates
     welcome: WelcomeTemplates
     errors: dict[str, str]
 

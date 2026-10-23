@@ -88,6 +88,7 @@ class Notice(StrEnum):
     PENDING_EXPIRED = "pending_expired"
     CANCELLED = "cancelled"
     ALREADY_UNDONE = "already_undone"
+    ALREADY_COMPLETED = "already_completed"
     UNKNOWN_ACTION = "unknown_action"
 
 
@@ -119,6 +120,9 @@ class ReplyRenderer(Protocol):
         user: UserContext,
         traceId: str,
     ) -> Reply: ...
+
+    # Примечание: «Напомню завтра, чт 22 октября, 10:00 / Позвонить Ивану» по ответу update_item
+    def snoozed(self, result: TurnResult, user: UserContext, traceId: str) -> Reply: ...
 
     # Примечание: приветствие или справка с примерами фраз и кнопкой «Мой день» (open_app today)
     def welcome(self, kind: Welcome, traceId: str) -> Reply: ...

@@ -12,6 +12,10 @@ RESCHEDULE: Final = "reschedule"
 LIST_PERIOD: Final = "list_period"
 START: Final = "start"
 HELP: Final = "help"
+# S3: кнопки напоминаний и конфликта (предложение к каталогу G3)
+COMPLETE: Final = "complete"
+SNOOZE: Final = "snooze"
+CONFIRM_CONFLICT: Final = "confirm_conflict"
 
 # аргументы кнопок
 CHOICE_ARG: Final = "choice"
@@ -20,3 +24,10 @@ STARTS_AT_ARG: Final = "starts_at"
 PERIOD_ARG: Final = "period"
 # вид записи у «Изменить время»: какое поле времени двигать (application/item_time.py)
 KIND_ARG: Final = "kind"
+# snooze: на сколько минут или «tomorrow» — то же время завтра
+MINUTES_ARG: Final = "minutes"
+UNTIL_ARG: Final = "until"
+UNTIL_TOMORROW: Final = "tomorrow"
+# confirm_conflict: что создать вопреки пересечению — из того вызова, что вернул conflict
+TITLE_ARG: Final = "title"
+ENDS_AT_ARG: Final = "ends_at"
