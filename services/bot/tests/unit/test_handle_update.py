@@ -18,6 +18,7 @@ from services.bot.tests.fakes import (
     FakeAsr,
     FakeDownloader,
     InMemoryCallbackStore,
+    InMemoryDeduplicator,
     exampleReply,
     loadIncoming,
 )
@@ -304,3 +305,33 @@ async def test_logsWithoutUserText(handler: HandleUpdate) -> None:
     with structlog.testing.capture_logs() as logs:
         await handler(loadIncoming("text"))
     assert "позвонить" not in str(logs).lower()
+
+
+# Примечание: S4 — Redis недоступен (дедуп или кнопки падают): пользователь получает текст с
+# кодом цепочки, а не тишину; ошибка — в лог
+@pytest.mark.parametrize("broken", ["dedup", "callbacks"])
+async def test_redisDownStillAnswers(
+    *,
+    broken: str,
+    handler: HandleUpdate,
+    gateway: FakeMaxGateway,
+    dedup: InMemoryDeduplicator,
+    callbacks: InMemoryCallbackStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Примечание: вызов Redis, который падает соединением
+    async def down(*_: object) -> None:
+        raise ConnectionError("redis down")
+
+    if broken == "dedup":
+        monkeypatch.setattr(dedup, "isFirstSeen", down)
+        update = loadIncoming("text")
+    else:
+        monkeypatch.setattr(callbacks, "load", down)
+        update = loadIncoming("callback")
+    with traceContext(TRACE), structlog.testing.capture_logs() as logs:
+        outcome = await handler(update)
+    assert outcome.value == "failed"
+    [sent] = gateway.sentMessages()
+    assert sent.text == "Что-то пошло не так. Попробуй ещё раз через минуту.\nКод: ab12f0"
+    assert any(e["event"] == "update_failed" for e in logs)
