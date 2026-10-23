@@ -20,3 +20,15 @@ def escapeMarkdown(text: str) -> str:
     escaped = _INLINE_RE.sub(r"\\\1", flat)
     escaped = _BLOCK_START_RE.sub(r"\\\1", escaped)
     return _ORDERED_START_RE.sub(r"\1\\\2", escaped)
+
+
+# Примечание: обрезка до limit символов с многоточием, не разрывая экранирование: если граница
+# пришлась между «\» и символом, «\» уходит вместе с хвостом (иначе MAX покажет «\…»)
+def cutText(text: str, limit: int, ellipsis: str = "…") -> str:
+    if len(text) <= limit:
+        return text
+    head = text[: limit - len(ellipsis)]
+    trailing = len(head) - len(head.rstrip("\\"))
+    if trailing % 2 == 1:
+        head = head[:-1]
+    return head + ellipsis

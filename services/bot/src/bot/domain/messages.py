@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Final
 
 from bot.domain.updates import MaxChatId
+from common.markdown import cutText
 
 type MessageId = str
 
@@ -90,6 +91,6 @@ def _checkKeyboard(keyboard: Keyboard) -> None:
             raise ValueError(msg)
 
 
-# Примечание: обрезает текст до лимита MAX с многоточием
+# Примечание: обрезает текст до лимита MAX с многоточием; экранирование markdown не рвёт
 def fitToLimit(text: str, limit: int = MAX_TEXT_LENGTH) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    return cutText(text, limit)

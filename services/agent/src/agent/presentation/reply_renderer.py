@@ -39,7 +39,7 @@ from agent.domain.timezones import RU_TIMEZONES, ruTimezone, utcOffset
 from agent.domain.user import UserContext
 from agent.presentation.templates import ReplyTemplates
 from common.logging import getLogger
-from common.markdown import escapeMarkdown
+from common.markdown import cutText, escapeMarkdown
 from common.ru_dates import DateFormatter
 from common.trace import shortTraceId
 from contracts.agent_side import ExecutedAction, TurnResult
@@ -536,9 +536,9 @@ def _fit(header: str, lines: Sequence[str], more: str) -> str:
     return _cut(text, REPLY_TEXT_MAX_LENGTH)
 
 
-# Примечание: обрезка до limit символов с многоточием
+# Примечание: обрезка до limit символов с многоточием; пару «\*» не рвёт (common.markdown)
 def _cut(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - len(ELLIPSIS)] + ELLIPSIS
+    return cutText(text, limit, ELLIPSIS)
 
 
 # Примечание: кнопка мини-приложения только через валидатор J6: не собралась (дата или id не по
