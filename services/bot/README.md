@@ -36,6 +36,9 @@ main.py          composition root: createApp() и lifespan
 пользователя, `libs/common/ru_dates.py`); кнопки «Выполнено» (не у встречи), «Отложить на 1 ч», «Завтра» и
 «В календаре» (`item_<id>`). Отказы MAX в фейке — `POST /dev/max/failures {chat_id, reason, times}`.
 Сценарии — `contracts/examples/notify/notify.sh once|repeat|parallel|chat-not-found|all`.
+После первой доставки (не `duplicate`) бот фоном шлёт агенту `POST /v1/focus` с записью уведомления
+(`infrastructure/http_focus.py`): «перенеси его на завтра в 15» относится к ней. Ответ J4 его не ждёт, сбой —
+`warning focus_failed`.
 
 `HandleUpdate`: дубль пропускается, сверх лимита (20 в минуту) — «Слишком часто». Текст → агент
 `/v1/messages` (с именем и языком из апдейта), пока ждём — «печатает…» (`typing_on` сразу и раз в 4 с).
