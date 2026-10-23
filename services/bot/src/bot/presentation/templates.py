@@ -26,6 +26,8 @@ AGENT_FAILED: Final = (
     "Не получилось связаться с ассистентом. Попробуй ещё раз через минуту.\nКод: {code}"
 )
 BUTTON_EXPIRED: Final = "Кнопка устарела — повтори запрос."
+# сбой самого бота (например, Redis недоступен) — не тишина, а текст с кодом цепочки
+BOT_FAILED: Final = "Что-то пошло не так. Попробуй ещё раз через минуту.\nКод: {code}"
 # Уведомления J4 (Scheduler → бот): текст строит бот, Scheduler формата MAX не знает.
 # Название экранируется под markdown, время — в поясе пользователя
 NOTIFY_REMINDER: Final = "⏰ {title}\n{when}"
@@ -57,6 +59,10 @@ class RussianTexts:
     # Примечание: агент не ответил или ответил ошибкой
     def agentFailed(self, code: str) -> str:
         return AGENT_FAILED.format(code=code)
+
+    # Примечание: сбой самого бота
+    def botFailed(self, code: str) -> str:
+        return BOT_FAILED.format(code=code)
 
     # Примечание: ключа кнопки уже нет в Redis (24 ч) — уведомление на нажатие
     def buttonExpired(self) -> str:

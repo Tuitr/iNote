@@ -54,6 +54,8 @@ class HandleOutcome(StrEnum):
     AGENT_FAILED = "agent_failed"
     VOICE_FAILED = "voice_failed"
     BUTTON_EXPIRED = "button_expired"
+    # сбой самого бота (Redis, кнопки): пользователь получил текст с кодом
+    FAILED = "failed"
 
 
 # Примечание: зависимости use case — порты и помощники, собираются в main.py
@@ -77,15 +79,15 @@ class HandleUpdate:
     def __init__(self, deps: BotDeps) -> None:
         self._d = deps
 
-    # Примечание: дубль не считается в лимит; в лог — вид и итог, без текста пользователя
+    # Примечание: апдейт целиком, никогда не бросает (сбой — ответ с кодом); в лог — вид и итог,
+    # без текста пользователя
     async def __call__(self, update: IncomingUpdate) -> HandleOutcome:
         started = time.perf_counter()
-        if not await self._d.deduplicator.isFirstSeen(update.updateId):
-            outcome = HandleOutcome.DUPLICATE
-        elif not (decision := await self._d.rateLimiter.check(update.maxUserId)).allowed:
-            outcome = await self._replyTooOften(update, notify=decision.notify)
-        else:
-            outcome = await self._dispatch(update)
+        try:
+            outcome = await self._handle(update)
+        except Exception:  # noqa: BLE001 — Redis и прочее: ответ с кодом, а не тишина
+            _log.exception("update_failed", update_id=update.updateId, kind=update.kind.value)
+            outcome = await self._failed(update)
         _log.info(
             "update_handled",
             update_id=update.updateId,
@@ -94,6 +96,23 @@ class HandleUpdate:
             duration_ms=round((time.perf_counter() - started) * 1000),
         )
         return outcome
+
+    # Примечание: дедуп → лимит → маршрутизация; исключения (например, Redis недоступен) — выше
+    async def _handle(self, update: IncomingUpdate) -> HandleOutcome:
+        if not await self._d.deduplicator.isFirstSeen(update.updateId):
+            return HandleOutcome.DUPLICATE
+        if not (decision := await self._d.rateLimiter.check(update.maxUserId)).allowed:
+            return await self._replyTooOften(update, notify=decision.notify)
+        return await self._dispatch(update)
+
+    # Примечание: сбой бота — «Что-то пошло не так… Код»; не удалось и это — только лог
+    async def _failed(self, update: IncomingUpdate) -> HandleOutcome:
+        if update.maxChatId is not None:
+            try:
+                await self._sendText(update.maxChatId, self._d.texts.botFailed(shortTraceId()))
+            except Exception:  # noqa: BLE001
+                _log.exception("bot_failed_reply_failed", update_id=update.updateId)
+        return HandleOutcome.FAILED
 
     # Примечание: маршрутизация по виду апдейта: кнопка, текст, команда, голосовое (через ASR, J1)
     async def _dispatch(self, update: IncomingUpdate) -> HandleOutcome:

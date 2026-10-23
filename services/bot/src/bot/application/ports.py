@@ -115,6 +115,9 @@ class BotTexts(Protocol):
     # Примечание: агент не ответил; code — первые 6 символов trace_id
     def agentFailed(self, code: str) -> str: ...
 
+    # Примечание: сбой самого бота (Redis недоступен и т. п.); code — первые 6 символов trace_id
+    def botFailed(self, code: str) -> str: ...
+
     # Примечание: кнопка из старого сообщения — ключа в Redis уже нет
     def buttonExpired(self) -> str: ...
 
