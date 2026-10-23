@@ -31,8 +31,8 @@
 - повтор с тем же `(user_id, idempotency_key)` возвращает тот же ответ (id записи — от ключа);
 - J8 `POST /internal/v1/users/resolve`: `user_id` по `max_user_id` в памяти (с 17, повтор — тот же, `created=false`),
   пояс `Europe/Moscow`; с `SERVICE_TOKEN` в окружении требует `Authorization: Bearer` (иначе 401/403);
-- J8 `PATCH /internal/v1/users/{user_id}/settings` (S3, черновик C — у D метода ещё нет): `{tz?, voice_replies?}` →
-  пользователь как у resolve; пустое тело и пояс не IANA — 400, незнакомый `user_id` — 404; `resolve` дальше
+- J8 `PATCH /internal/v1/users/{user_id}/settings` (S3, черновик C — у D метода ещё нет): `{tz}` →
+  пользователь как у resolve; нет пояса или он не IANA — 400, незнакомый `user_id` — 404; `resolve` дальше
   отдаёт сохранённое (в памяти процесса);
 - J8 `POST /internal/v1/dialog-turns` (`input_type` у реплики пользователя — только `voice|text`, как у D): ход хранится в памяти по `trace_id`, повтор — 202 без дубля
   (`dialog_turns_stored` / `dialog_turns_duplicate` в логе, без текстов); под тем же токеном;

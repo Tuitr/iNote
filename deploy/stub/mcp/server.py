@@ -689,7 +689,6 @@ class StubUsers:
     def __init__(self) -> None:
         self._ids: dict[int, int] = {}
         self._tz: dict[int, str] = {}
-        self._voice: dict[int, bool] = {}
 
     # Примечание: идемпотентно по max_user_id: повтор возвращает того же пользователя
     def resolve(self, maxUserId: int) -> Json:
@@ -698,21 +697,18 @@ class StubUsers:
             self._ids[maxUserId] = FIRST_USER_ID + len(self._ids)
         return self._user(self._ids[maxUserId], created=created)
 
-    # Примечание: PATCH: только заданные поля; незнакомый user_id — None (404)
-    def update(self, userId: int, tz: str | None, voiceReplies: bool | None) -> Json | None:
+    # Примечание: PATCH пояса; незнакомый user_id — None (404)
+    def update(self, userId: int, tz: str) -> Json | None:
         if userId not in self._ids.values():
             return None
-        if tz is not None:
-            self._tz[userId] = tz
-        if voiceReplies is not None:
-            self._voice[userId] = voiceReplies
+        self._tz[userId] = tz
         return self._user(userId, created=False)
 
     # Примечание: пользователь в форме ответа resolve
     def _user(self, userId: int, *, created: bool) -> Json:
         settings: Json = {
             "default_event_min": DEFAULT_EVENT_MIN,
-            "voice_replies": self._voice.get(userId, False),
+            "voice_replies": False,
         }
         return {
             "user_id": userId,
@@ -771,7 +767,7 @@ def buildResolveRoute(users: StubUsers) -> Route:
 
 
 # Примечание: PATCH /internal/v1/users/{user_id}/settings (J8, черновик C — у D метода ещё нет):
-# {tz?, voice_replies?} → пользователь как у resolve; пустое тело, чужой пояс — 400, нет id — 404
+# {tz} → пользователь как у resolve; нет пояса или он не IANA — 400, нет id — 404
 def buildSettingsRoute(users: StubUsers) -> Route:
     # Примечание: разбор тела и проверка пояса (ZoneInfo), токен — как у resolve
     async def patchSettings(request: Request) -> JSONResponse:
@@ -783,12 +779,10 @@ def buildSettingsRoute(users: StubUsers) -> Route:
             return _errorResponse(request, 400, "validation_error", "тело не JSON")
         if not isinstance(body, dict):
             return _errorResponse(request, 400, "validation_error", "тело — объект")
-        tz, voice = body.get("tz"), body.get("voice_replies")
-        badTz = tz is not None and (not isinstance(tz, str) or not _knownTz(tz))
-        badVoice = voice is not None and not isinstance(voice, bool)
-        if badTz or badVoice or (tz is None and voice is None):
-            return _errorResponse(request, 400, "validation_error", "нужны tz или voice_replies")
-        user = users.update(int(request.path_params["user_id"]), tz, voice)
+        tz = body.get("tz")
+        if not isinstance(tz, str) or not _knownTz(tz):
+            return _errorResponse(request, 400, "validation_error", "нужен tz — пояс IANA")
+        user = users.update(int(request.path_params["user_id"]), tz)
         if user is None:
             return _errorResponse(request, 404, "not_found", "нет такого пользователя")
         log(
