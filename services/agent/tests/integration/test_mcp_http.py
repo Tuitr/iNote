@@ -589,3 +589,49 @@ async def test_updateConflictAndDialogInputType(stub: StubProcess, uniqueId: str
             headers={"Authorization": f"Bearer {SERVICE_TOKEN}"},
         )
     assert rejected.status_code == 400
+
+
+# Примечание: S4 (демо) — фикстуры заглушки стоят на своих днях от «сегодня» пользователя, а не
+# от начала запрошенного периода: «Позвонить Ивану» (сегодня 10:00) не попадает в «завтра», а
+# «Стоматолог» (завтра 9:30) — попадает; список и поиск видят одни и те же даты
+async def test_fixturesOnTheirDays(stub: StubProcess, uniqueId: str) -> None:
+    today = datetime.now(ZoneInfo(TZ)).date()
+    tomorrow = {
+        "from": (today + timedelta(days=1)).isoformat(),
+        "to": (today + timedelta(days=2)).isoformat(),
+    }
+    async with connection(stub.url) as mcp:
+        tools = McpToolExecutor(mcp, callerFor(uniqueId))
+        listed = await tools.call("list_items", tomorrow)
+        found = await tools.call("search_items", {"query": "звонок Ивану", "limit": 5})
+    # поиск находит ту же запись «сегодня» — даты фикстур одни для списка и поиска
+    assert found.data is not None
+    assert listed.ok, listed
+    assert found.ok, found
+    assert listed.data is not None
+    items = listed.data["items"]
+    assert isinstance(items, list)
+    titles = [str(i["title"]) for i in items if isinstance(i, dict)]
+    assert "Стоматолог" in titles
+    assert "Позвонить Ивану" not in titles
+
+
+# Примечание: S4 — перезапуск заглушки не раздаёт внутренние user_id заново: иначе новый
+# пользователь получил бы id старого и его фокус и историю из Redis агента (нестабильный e2e
+# после пересборки mcp без перезапуска Redis); один max_user_id — тот же id и после рестарта
+async def test_userIdsSurviveRestart(stub: StubProcess, uniqueId: str) -> None:
+    maxA, maxB = int(uniqueId[:12], 16), int(uniqueId[12:24], 16)
+
+    # Примечание: свежий resolve без кеша агента
+    async def resolve(maxUserId: int) -> int:
+        async with ServiceHttpClient(
+            baseUrl=stub.root, timeoutS=5, serviceToken=SecretStr(SERVICE_TOKEN), upstreamName="mcp"
+        ) as http:
+            cache = KeyedRedis(fakeredis.FakeAsyncRedis())
+            return (await HttpUserResolver(http, cache).resolve(maxUserId, 5, None)).userId
+
+    first = await resolve(maxA)
+    stub.stop()
+    stub.start()
+    assert await resolve(maxB) != first
+    assert await resolve(maxA) == first
