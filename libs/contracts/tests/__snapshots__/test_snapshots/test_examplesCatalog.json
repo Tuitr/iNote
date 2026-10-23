@@ -1,4 +1,146 @@
 {
+  "actions/cancel.json": {
+    "action": "cancel",
+    "args": {},
+    "callback_id": "cb.synthetic.cancel",
+    "label": "Отмена",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/complete.json": {
+    "action": "complete",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder"
+    },
+    "callback_id": "cb.synthetic.complete",
+    "label": "Выполнено",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/confirm_conflict.json": {
+    "action": "confirm_conflict",
+    "args": {
+      "ends_at": "2026-10-22T10:30:00+03:00",
+      "starts_at": "2026-10-22T09:30:00+03:00",
+      "title": "Встреча с Петром"
+    },
+    "callback_id": "cb.synthetic.confirm_conflict",
+    "label": "Всё равно создать",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/help.json": {
+    "action": "help",
+    "args": {},
+    "callback_id": null,
+    "label": "/help",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/list_period.json": {
+    "action": "list_period",
+    "args": {
+      "period": "tomorrow"
+    },
+    "callback_id": "cb.synthetic.list_period",
+    "label": "Завтра",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/pick_option.json": {
+    "action": "pick_option",
+    "args": {
+      "choice": 0
+    },
+    "callback_id": "cb.synthetic.pick_option",
+    "label": "9:00",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/reschedule.json": {
+    "action": "reschedule",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder",
+      "starts_at": "2026-10-22T09:00:00+03:00"
+    },
+    "callback_id": "cb.synthetic.reschedule",
+    "label": "Завтра в 9:00",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/reschedule_ask.json": {
+    "action": "reschedule",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder"
+    },
+    "callback_id": "cb.synthetic.reschedule_ask",
+    "label": "Изменить время",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/set_tz.json": {
+    "action": "set_tz",
+    "args": {
+      "tz": "Asia/Yekaterinburg"
+    },
+    "callback_id": "cb.synthetic.set_tz",
+    "label": "Екатеринбург",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/settings.json": {
+    "action": "settings",
+    "args": {},
+    "callback_id": null,
+    "label": "/settings",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/snooze.json": {
+    "action": "snooze",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder",
+      "minutes": 60
+    },
+    "callback_id": "cb.synthetic.snooze",
+    "label": "Отложить на 1 ч",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/snooze_tomorrow.json": {
+    "action": "snooze",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+      "kind": "reminder",
+      "until": "tomorrow"
+    },
+    "callback_id": "cb.synthetic.snooze_tomorrow",
+    "label": "Завтра",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/start.json": {
+    "action": "start",
+    "args": {},
+    "callback_id": null,
+    "label": "/start",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
+  "actions/undo.json": {
+    "action": "undo",
+    "args": {
+      "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+    },
+    "callback_id": "cb.synthetic.undo",
+    "label": "Отменить",
+    "max_chat_id": 500600700,
+    "max_user_id": 100200300
+  },
   "agent/action_request.json": {
     "action": "undo",
     "args": {
@@ -247,6 +389,27 @@
     "duplicate": true,
     "message_id": "mid.0000000000000001"
   },
+  "notify/in_progress.json": {
+    "error": {
+      "code": "upstream_unavailable",
+      "details": {
+        "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a",
+        "reason": "in_progress"
+      },
+      "message": "уведомление уже отправляется",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    }
+  },
+  "notify/rate_limited.json": {
+    "error": {
+      "code": "rate_limited",
+      "details": {
+        "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a"
+      },
+      "message": "MAX ограничил отправку",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    }
+  },
   "notify/request.json": {
     "attempt": 1,
     "fire_at": "2026-10-18T10:00:00+03:00",
@@ -267,6 +430,16 @@
       "max_chat_id": 500600700,
       "max_user_id": 100200300,
       "tz": "Europe/Moscow"
+    }
+  },
+  "notify/unavailable.json": {
+    "error": {
+      "code": "upstream_unavailable",
+      "details": {
+        "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a"
+      },
+      "message": "MAX недоступен",
+      "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
     }
   },
   "reply/confirm.json": {

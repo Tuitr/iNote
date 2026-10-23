@@ -1,0 +1,8 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "cancel",
+  "args": {},
+  "callback_id": "cb.synthetic.cancel",
+  "label": "Отмена"
+}

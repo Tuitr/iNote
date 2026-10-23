@@ -1,0 +1,10 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "set_tz",
+  "args": {
+    "tz": "Asia/Yekaterinburg"
+  },
+  "callback_id": "cb.synthetic.set_tz",
+  "label": "Екатеринбург"
+}

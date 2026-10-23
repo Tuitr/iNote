@@ -1,0 +1,12 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "confirm_conflict",
+  "args": {
+    "title": "Встреча с Петром",
+    "starts_at": "2026-10-22T09:30:00+03:00",
+    "ends_at": "2026-10-22T10:30:00+03:00"
+  },
+  "callback_id": "cb.synthetic.confirm_conflict",
+  "label": "Всё равно создать"
+}

@@ -1,0 +1,10 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "pick_option",
+  "args": {
+    "choice": 0
+  },
+  "callback_id": "cb.synthetic.pick_option",
+  "label": "9:00"
+}
