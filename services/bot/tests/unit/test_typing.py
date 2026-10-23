@@ -35,3 +35,15 @@ async def test_typingWhileShuttingDown() -> None:
         done = True
     assert done
     assert gateway.typingActions() == (5,)
+
+
+# Примечание: S4 — имя фоновой задачи «печатает…» без chat_id MAX: при остановке имена
+# недоработанных задач уходят в лог (правило 10)
+async def test_typingTaskNameWithoutChatId() -> None:
+    tasks = TaskRegistry()
+    typing = TypingIndicator(FakeMaxGateway(), tasks, intervalS=10)
+    secretChat: MaxChatId = 555444333
+    async with typing.during(secretChat):
+        report = await tasks.shutdown(timeoutS=0.01)
+    assert report.cancelled
+    assert all(str(secretChat) not in name for name in report.cancelled)

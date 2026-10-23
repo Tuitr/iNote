@@ -145,3 +145,24 @@ async def test_queueLimitPerUser() -> None:
     await dispatcher.join()
     assert len([u for u in handled if u.startswith("u1-")]) == MAX_QUEUE_PER_USER
     assert "u2-0" in handled
+
+
+# Примечание: S4 — имя фоновой задачи попадает в лог shutdown_tasks_cancelled: в нём не должно
+# быть max_user_id MAX (в логах только внутренний user_id, правило 10); update_id — можно
+async def test_taskNamesWithoutMaxIds() -> None:
+    started = asyncio.Event()
+
+    # Примечание: обработчик, который не успевает до таймаута остановки
+    async def stuck(item: IncomingUpdate) -> None:
+        started.set()
+        await asyncio.sleep(10)
+
+    tasks = TaskRegistry()
+    dispatcher = UpdateDispatcher(stuck, tasks)
+    secretUser = 987654321
+    # update_id у MAX строится из mid и id пользователя не содержит
+    dispatcher.submit(dataclasses.replace(update(secretUser, 1), updateId="msg:mid.opaque"))
+    await started.wait()
+    report = await tasks.shutdown(timeoutS=0.05)
+    assert report.cancelled
+    assert all(str(secretUser) not in name for name in report.cancelled)
