@@ -6,9 +6,11 @@ from bot.infrastructure.redis_adapters import (
     CALLBACK_TTL_S,
     DEDUP_TTL_S,
     MARKER_TTL_S,
+    NOTIFICATION_TTL_S,
     RATE_WINDOW_S,
     RedisCallbackStore,
     RedisMarkerStore,
+    RedisNotificationLedger,
     RedisRateLimiter,
     RedisUpdateDeduplicator,
 )
@@ -70,3 +72,23 @@ async def test_callbackKeyAndTtl(redisClient: Redis, uniqueId: str) -> None:
         f"va:v1:bot:cb:{'C' * 16}", '{"action": "undo", "args": {}, "chat_id": "x"}', ex=60
     )
     assert await store.load("C" * 16) is None
+
+
+# Примечание: учёт уведомлений J4: «в работе» SET NX с коротким TTL и токеном, «доставлено» —
+# message_id на 24 ч; снять «в работе» можно только своим токеном
+async def test_notificationLedgerKeys(redisClient: Redis, uniqueId: str) -> None:
+    ledger = RedisNotificationLedger(KeyedRedis(redisClient))
+    assert await ledger.deliveredMessage(uniqueId) is None
+    token = await ledger.claim(uniqueId, 60)
+    assert token is not None
+    assert await ledger.claim(uniqueId, 60) is None
+    lockTtl = await redisClient.ttl(f"va:v1:bot:notif_lock:{uniqueId}")
+    assert 55 < lockTtl <= 60
+    await ledger.release(uniqueId, "чужой")
+    assert await redisClient.exists(f"va:v1:bot:notif_lock:{uniqueId}") == 1
+    await ledger.markDelivered(uniqueId, "mid.1")
+    await ledger.release(uniqueId, token)
+    assert await redisClient.exists(f"va:v1:bot:notif_lock:{uniqueId}") == 0
+    assert await ledger.deliveredMessage(uniqueId) == "mid.1"
+    ttl = await redisClient.ttl(f"va:v1:bot:notif:{uniqueId}")
+    assert NOTIFICATION_TTL_S - 5 < ttl <= NOTIFICATION_TTL_S

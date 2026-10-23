@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Response
 from pydantic import Field
 
 from bot.application.dev_console import DevMaxConsole
+from bot.domain.notifications import DeliveryFailure
 from common.errors import AppError, ErrorCode
 from common.wire import WireModel
 
@@ -32,6 +33,14 @@ class SentMessageDto(WireModel):
 class CallbackAnswerDto(WireModel):
     callbackId: str
     notification: str | None
+
+
+# Примечание: отказ MAX для чата: chat_not_found | rate_limited | unavailable; times=-1 — всегда,
+# 0 — сбросить
+class PlanFailure(WireModel):
+    chatId: int
+    reason: DeliveryFailure
+    times: int = Field(default=1, ge=-1)
 
 
 # Примечание: подписка webhook (секрет не показываем)
@@ -77,6 +86,12 @@ def buildDevRouter() -> APIRouter:
         if voice is None:
             raise AppError(ErrorCode.NOT_FOUND, "файла нет")
         return Response(content=voice.content, media_type=voice.mime)
+
+    # Примечание: следующие отправки в чат упадут с заданной причиной (сценарии J4)
+    @router.post("/failures")
+    async def planFailure(request: Request, body: PlanFailure) -> dict[str, bool]:
+        _console(request).planFailure(body.chatId, body.reason, body.times)
+        return {"planned": True}
 
     # Примечание: подписки webhook, которые бот оформил при старте (ensureSubscription)
     @router.get("/subscriptions")

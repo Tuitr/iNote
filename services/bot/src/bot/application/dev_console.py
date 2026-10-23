@@ -2,6 +2,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from bot.domain.notifications import DeliveryFailure
+
 
 # Примечание: запись журнала отправленного сообщения (фейковый MAX)
 @dataclass(frozen=True)
@@ -58,3 +60,6 @@ class DevMaxConsole(Protocol):
 
     # Примечание: подписки webhook, которые оформил бот (по порядку вызовов)
     def subscriptions(self) -> tuple[SubscriptionRecord, ...]: ...
+
+    # Примечание: сымитировать отказ MAX при отправке в чат (для сценариев J4)
+    def planFailure(self, chatId: int, reason: DeliveryFailure, times: int) -> None: ...

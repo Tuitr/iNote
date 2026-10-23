@@ -232,7 +232,7 @@
   "notify/duplicate.json": {
     "delivered": true,
     "duplicate": true,
-    "message_id": null
+    "message_id": "mid.0000000000000001"
   },
   "notify/request.json": {
     "attempt": 1,
@@ -244,7 +244,7 @@
       "kind": "reminder",
       "notes": null,
       "remind_at": "2026-10-18T10:00:00+03:00",
-      "starts_at": "2026-10-18T10:00:00+03:00",
+      "starts_at": null,
       "status": "open",
       "title": "Позвонить Ивану"
     },

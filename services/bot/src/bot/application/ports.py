@@ -4,6 +4,7 @@ from typing import Protocol
 from bot.domain.messages import MessageId, OutgoingMessage
 from bot.domain.updates import MaxChatId, MaxUserId, UpdateBatch, UpdateId, VoiceRef
 from bot.domain.voice import AudioFile, Transcript, VoiceFailureReason
+from contracts.notify import NotifyRequest
 from contracts.reply import ActionRequest, ArgValue, MessageRequest, Reply
 
 
@@ -12,7 +13,8 @@ class MaxGateway(Protocol):
     # Примечание: long polling: ждёт апдейты до timeoutS; marker=None — «ещё не полученные»
     async def fetchUpdates(self, marker: int | None, timeoutS: int) -> UpdateBatch: ...
 
-    # Примечание: отправить сообщение, вернуть id созданного сообщения
+    # Примечание: отправить сообщение, вернуть id созданного сообщения; отказ MAX (чат не найден,
+    # 429, сеть или 5xx) — MaxDeliveryError с причиной
     async def sendMessage(self, message: OutgoingMessage) -> MessageId: ...
 
     # Примечание: ответ на нажатие кнопки (POST /answers): всплывающее уведомление
@@ -111,3 +113,36 @@ class BotTexts(Protocol):
 
     # Примечание: неизвестная команда — подсказка со списком команд
     def unknownCommand(self, name: str) -> str: ...
+
+
+# Примечание: учёт доставки уведомлений J4: «доставлено» на 24 ч и короткий ключ «в работе»
+class NotificationLedger(Protocol):
+    # Примечание: id сообщения MAX, если уведомление уже доставлено; None — ещё нет
+    async def deliveredMessage(self, notificationId: str) -> MessageId | None: ...
+
+    # Примечание: взять «в работе» (SET NX с TTL); токен владельца или None — уже кто-то шлёт
+    async def claim(self, notificationId: str, ttlS: int) -> str | None: ...
+
+    # Примечание: записать «доставлено» с id сообщения — только после ответа MAX
+    async def markDelivered(self, notificationId: str, messageId: MessageId) -> None: ...
+
+    # Примечание: снять «в работе», если ключ всё ещё наш
+    async def release(self, notificationId: str, token: str) -> None: ...
+
+
+# Примечание: подписи кнопок уведомления: выполнено, отложить, завтра, в календаре
+@dataclass(frozen=True)
+class NotificationButtonTexts:
+    done: str
+    snoozeHour: str
+    tomorrow: str
+    openItem: str
+
+
+# Примечание: тексты уведомлений — в шаблонах бота: Scheduler формата MAX не знает
+class NotificationTexts(Protocol):
+    # Примечание: текст по kind в поясе пользователя (markdown, название экранировано)
+    def notificationBody(self, request: NotifyRequest) -> str: ...
+
+    # Примечание: подписи кнопок уведомления
+    def notificationButtons(self) -> NotificationButtonTexts: ...

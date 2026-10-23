@@ -19,6 +19,9 @@ MARKER_TTL_S: Final = DEDUP_TTL_S
 DEFAULT_RATE_LIMIT: Final = 20
 # va:v1:bot:cb:{key} — 24 ч, как живёт клавиатура в чате (править сообщение MAX даёт 24 ч)
 CALLBACK_TTL_S: Final = 24 * 60 * 60
+# va:v1:bot:notif:{notification_id} — 24 ч (доставлено, значение — message_id);
+# va:v1:bot:notif_lock:{notification_id} — на время отправки («в работе», SET NX)
+NOTIFICATION_TTL_S: Final = 24 * 60 * 60
 CALLBACK_KEY_BYTES: Final = 12
 # token_urlsafe(12) — 16 символов [A-Za-z0-9_-]; чужой payload (старый, подделка) — мимо Redis
 _CALLBACK_KEY_RE: Final = re.compile(r"^[A-Za-z0-9_-]{16}$")
@@ -127,3 +130,39 @@ class RedisCallbackStore:
 # Примечание: ключ Redis кнопки
 def _callbackKey(key: str) -> RedisKey:
     return RedisKey("bot", "cb", key)
+
+
+# Примечание: учёт доставки уведомлений J4 в Redis: «доставлено» 24 ч и «в работе» SET NX
+class RedisNotificationLedger:
+    # Примечание: ключи и TTL проверяет KeyedRedis
+    def __init__(self, store: KeyedRedis, ttlS: int = NOTIFICATION_TTL_S) -> None:
+        self._store = store
+        self._ttlS = ttlS
+
+    # Примечание: id сообщения MAX у доставленного уведомления
+    async def deliveredMessage(self, notificationId: str) -> str | None:
+        return await self._store.getValue(_notifKey(notificationId))
+
+    # Примечание: SET NX с TTL; токен — чтобы снять только свой ключ
+    async def claim(self, notificationId: str, ttlS: int) -> str | None:
+        token = secrets.token_hex(8)
+        taken = await self._store.setIfAbsent(_lockKey(notificationId), token, ttlS=ttlS)
+        return token if taken else None
+
+    # Примечание: «доставлено» на 24 ч — после ответа MAX
+    async def markDelivered(self, notificationId: str, messageId: str) -> None:
+        await self._store.setValue(_notifKey(notificationId), messageId, ttlS=self._ttlS)
+
+    # Примечание: снять «в работе», если ключ всё ещё наш
+    async def release(self, notificationId: str, token: str) -> None:
+        await self._store.deleteIfEquals(_lockKey(notificationId), token)
+
+
+# Примечание: ключ «доставлено»
+def _notifKey(notificationId: str) -> RedisKey:
+    return RedisKey("bot", "notif", notificationId)
+
+
+# Примечание: ключ «в работе»
+def _lockKey(notificationId: str) -> RedisKey:
+    return RedisKey("bot", "notif_lock", notificationId)

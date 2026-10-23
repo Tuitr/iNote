@@ -9,10 +9,12 @@ from bot.application.ports import RateDecision, StoredAction
 from bot.domain.updates import IncomingUpdate, MaxUserId, UpdateId, VoiceRef
 from bot.domain.voice import AudioFile, Transcript, VoiceFailureError
 from bot.infrastructure.max_mapper import mapRawUpdate
+from contracts.notify import NotifyRequest
 from contracts.reply import ActionRequest, MessageRequest, Reply
 
 FIXTURES_DIR: Final = Path(__file__).parent / "fixtures" / "max_updates"
-REPLY_EXAMPLES: Final = Path(__file__).resolve().parents[3] / "contracts" / "examples" / "reply"
+EXAMPLES: Final = Path(__file__).resolve().parents[3] / "contracts" / "examples"
+REPLY_EXAMPLES: Final = EXAMPLES / "reply"
 FIXTURE_NAMES: Final = ("text", "command", "voice", "callback", "bot_started")
 
 
@@ -157,3 +159,54 @@ class FakeAsr:
             lowConfidence=self.low,
             durationMs=2100,
         )
+
+
+# Примечание: учёт доставки уведомлений в памяти с семантикой SET NX; failRead/failMark — сбои
+class InMemoryNotificationLedger:
+    # Примечание: delivered — id уведомления → message_id; locks — «в работе» с токеном
+    def __init__(self, *, failRead: bool = False, failMark: bool = False) -> None:
+        self.delivered: dict[str, str] = {}
+        self.locks: dict[str, str] = {}
+        self.claims: list[str] = []
+        self.failRead = failRead
+        self.failMark = failMark
+
+    # Примечание: доставленное — id сообщения
+    async def deliveredMessage(self, notificationId: str) -> str | None:
+        if self.failRead:
+            msg = "redis down"
+            raise ConnectionError(msg)
+        return self.delivered.get(notificationId)
+
+    # Примечание: SET NX: занято — None
+    async def claim(self, notificationId: str, ttlS: int) -> str | None:
+        if notificationId in self.locks:
+            return None
+        token = f"token-{len(self.claims)}"
+        self.claims.append(notificationId)
+        self.locks[notificationId] = token
+        return token
+
+    # Примечание: «доставлено» или сбой записи
+    async def markDelivered(self, notificationId: str, messageId: str) -> None:
+        if self.failMark:
+            msg = "redis down"
+            raise ConnectionError(msg)
+        self.delivered[notificationId] = messageId
+
+    # Примечание: снять свой ключ
+    async def release(self, notificationId: str, token: str) -> None:
+        if self.locks.get(notificationId) == token:
+            del self.locks[notificationId]
+
+
+# Примечание: запрос J4 из contracts/examples/notify/request.json с правками полей
+def notifyRequest(**patch: object) -> NotifyRequest:
+    raw: dict[str, object] = json.loads(
+        (EXAMPLES / "notify" / "request.json").read_text(encoding="utf-8")
+    )
+    itemPatch = patch.pop("item", {})
+    base = raw["item"]
+    assert isinstance(base, dict)
+    assert isinstance(itemPatch, dict)
+    return NotifyRequest.fromWire({**raw, **patch, "item": {**base, **itemPatch}})

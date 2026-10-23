@@ -15,6 +15,7 @@ from bot.application.dev_console import (
     VoiceFileRecord,
 )
 from bot.domain.messages import MessageId, OutgoingMessage
+from bot.domain.notifications import DeliveryFailure, MaxDeliveryError
 from bot.domain.updates import WEBHOOK_SECRET_HEADER, MaxChatId, UpdateBatch
 from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.max_outgoing import attachments
@@ -57,6 +58,16 @@ class FakeMaxGateway:
         self._webhook: tuple[httpx.AsyncClient, TaskRegistry] | None = None
         # доставка по webhook — по одной и в порядке подкладывания (asyncio.Lock — FIFO)
         self._delivery = asyncio.Lock()
+        # отказы MAX на отправку в чат: chat_id → (причина, сколько раз; -1 — всегда)
+        self._failures: dict[MaxChatId, tuple[DeliveryFailure, int]] = {}
+
+    # Примечание: сымитировать отказ MAX при отправке в чат (/dev/max/failures): чат не найден,
+    # 429 или 5xx/таймаут; times — сколько отправок подряд, -1 — пока не сбросят (times=0)
+    def planFailure(self, chatId: MaxChatId, reason: DeliveryFailure, times: int) -> None:
+        if times == 0:
+            self._failures.pop(chatId, None)
+            return
+        self._failures[chatId] = (reason, times)
 
     # Примечание: режим webhook: после подписки апдейты не копятся для GET /updates, а уходят
     # POST-ом на адрес подписки с секретом — как у настоящего MAX; client — HTTP к самому боту
@@ -150,6 +161,7 @@ class FakeMaxGateway:
     async def sendMessage(self, message: OutgoingMessage) -> MessageId:
         if self._options.sendDelayS > 0:
             await asyncio.sleep(self._options.sendDelayS)
+        self._failIfPlanned(message.chatId)
         messageId = f"fake-mid-{next(self._messageIds)}"
         # Вложения — ровно то, что ушло бы в POST /messages: так тесты видят формат MAX
         self._sent.append(
@@ -163,6 +175,20 @@ class FakeMaxGateway:
         )
         _log.info("max_message_sent", message_id=messageId, fake=True)
         return messageId
+
+    # Примечание: запланированный отказ для чата — MaxDeliveryError, как у настоящего адаптера
+    def _failIfPlanned(self, chatId: MaxChatId) -> None:
+        planned = self._failures.get(chatId)
+        if planned is None:
+            return
+        reason, times = planned
+        if times > 0:
+            if times == 1:
+                del self._failures[chatId]
+            else:
+                self._failures[chatId] = (reason, times - 1)
+        _log.info("max_message_rejected", fake=True, reason=reason.value)
+        raise MaxDeliveryError(reason, "fake")
 
     # Примечание: ответ на callback — тоже в журнал
     async def answerCallback(self, callbackId: str, notification: str | None) -> None:

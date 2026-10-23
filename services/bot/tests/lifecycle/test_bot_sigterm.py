@@ -4,6 +4,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -14,7 +15,7 @@ import pytest
 import redis
 
 from bot.infrastructure.max_mapper import deriveUpdateId
-from services.bot.tests.fakes import loadMaxUpdate
+from services.bot.tests.fakes import EXAMPLES, loadMaxUpdate
 
 pytestmark = [pytest.mark.lifecycle, pytest.mark.integration]
 
@@ -194,3 +195,77 @@ def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) 
     assert events.index("update_handled") < events.index("bot_stopped")
     assert "shutdown_tasks_cancelled" not in events
     assert "polling_started" not in events
+
+
+# Примечание: J4: SIGTERM, пока уведомление «отправляется» (1,5 с): запрос Scheduler'а получает
+# 200 delivered, «доставлено» записано, остановка штатная
+def test_sigtermDuringNotification(redisContainerUrl: str, tmp_path: Path) -> None:
+    port, agentPort = freePort(), freePort()
+    base = f"http://127.0.0.1:{port}"
+    logFile = tmp_path / "bot.log"
+    token = "t" * 32
+    agent = subprocess.Popen(  # noqa: S603 — своя заглушка из репо
+        [sys.executable, str(AGENT_STUB)],
+        env={**os.environ, "STUB_NAME": "agent", "STUB_OWNER": "C", "STUB_PORT": str(agentPort)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    env = {
+        **os.environ,
+        "SERVICE_TOKEN": token,
+        "REDIS_URL": redisContainerUrl,
+        "BOT_MAX_MODE": "fake",
+        "BOT_POLL_TIMEOUT_S": "1",
+        "BOT_SHUTDOWN_TIMEOUT_S": "10",
+        "BOT_FAKE_SEND_DELAY_MS": str(SEND_DELAY_MS),
+        "LOG_FORMAT": "json",
+        "BOT_AGENT_URL": f"http://127.0.0.1:{agentPort}",
+    }
+    command = [sys.executable, "-m", "uvicorn", "bot.main:createApp", "--factory"]
+    with logFile.open("w") as out:
+        proc = subprocess.Popen(  # noqa: S603 — свой сервис текущим интерпретатором
+            [*command, "--host", "127.0.0.1", "--port", str(port)],
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+    notificationId = str(uuid.uuid4())
+    request = json.loads((EXAMPLES / "notify" / "request.json").read_text())
+    request["notification_id"] = notificationId
+    responses: list[httpx.Response] = []
+    try:
+        waitUntil(lambda: isReady(base), 15, "ready")
+
+        # Примечание: Scheduler ждёт ответ, пока бот «отправляет» в MAX
+        def send() -> None:
+            responses.append(
+                httpx.post(
+                    f"{base}/internal/v1/notify",
+                    json=request,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=15,
+                )
+            )
+
+        thread = threading.Thread(target=send)
+        thread.start()
+        client = redis.Redis.from_url(redisContainerUrl)
+        lockKey = f"va:v1:bot:notif_lock:{notificationId}"
+        waitUntil(lambda: client.exists(lockKey) == 1, 5, "начало отправки")
+        proc.send_signal(signal.SIGTERM)
+        thread.join(timeout=20)
+        proc.wait(timeout=20)
+        delivered = client.get(f"va:v1:bot:notif:{notificationId}")
+        client.close()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        agent.terminate()
+        agent.wait(timeout=5)
+    [response] = responses
+    assert response.status_code == 200, logFile.read_text()
+    assert response.json()["delivered"] is True
+    assert delivered is not None
+    events = readEvents(logFile)
+    assert events.index("notification_handled") < events.index("bot_stopped")
+    assert "shutdown_tasks_cancelled" not in events

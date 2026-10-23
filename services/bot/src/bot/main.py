@@ -11,6 +11,7 @@ import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from bot.application.deliver_notification import DeliverNotification
 from bot.application.handle_update import BotDeps, HandleUpdate
 from bot.application.reply_mapper import ReplyToMaxMapper
 from bot.application.typing import TypingIndicator
@@ -24,13 +25,15 @@ from bot.infrastructure.memory_marker import InMemoryMarkerStore
 from bot.infrastructure.real_max import createRealMaxGateway
 from bot.infrastructure.redis_adapters import (
     RedisCallbackStore,
+    RedisNotificationLedger,
     RedisRateLimiter,
     RedisUpdateDeduplicator,
 )
 from bot.infrastructure.settings import BotSettings
 from bot.presentation.dev_routes import buildDevRouter
+from bot.presentation.notify_routes import buildNotifyRouter
 from bot.presentation.polling import PollingLoop
-from bot.presentation.templates import RussianTexts
+from bot.presentation.templates import RussianNotificationTexts, RussianTexts
 from bot.presentation.webhook import buildWebhookRouter
 from common.errors import installErrorHandlers
 from common.health import HealthCheck, buildHealthRouter
@@ -105,6 +108,9 @@ def createApp(
         app.state.redis = redis
         app.state.agentHttp = agentHttp
         try:
+            mapper = ReplyToMaxMapper(
+                callbacks, mode=config.openAppMode, botUsername=config.username
+            )
             async with managedTasks(config.shutdownTimeoutS) as tasks:
                 handler = HandleUpdate(
                     BotDeps(
@@ -114,9 +120,7 @@ def createApp(
                         texts=RussianTexts(),
                         agent=HttpAgentGateway(agentHttp),
                         callbacks=callbacks,
-                        mapper=ReplyToMaxMapper(
-                            callbacks, mode=config.openAppMode, botUsername=config.username
-                        ),
+                        mapper=mapper,
                         typing=TypingIndicator(gateway, tasks, config.typingIntervalS),
                         downloader=HttpAudioDownloader(
                             filesHttp,
@@ -125,6 +129,12 @@ def createApp(
                         ),
                         asr=HttpAsrGateway(asrHttp),
                     )
+                )
+                app.state.deliverNotification = DeliverNotification(
+                    ledger=RedisNotificationLedger(store),
+                    gateway=gateway,
+                    mapper=mapper,
+                    texts=RussianNotificationTexts(),
                 )
                 dispatcher = UpdateDispatcher(handler, tasks, config.maxConcurrentUpdates)
                 app.state.dispatcher = dispatcher
@@ -160,15 +170,21 @@ def createApp(
     app = FastAPI(title="va-bot", lifespan=lifespan)
     installErrorHandlers(app)
     installMiddleware(app, serviceToken=config.serviceToken)
+    _includeRouters(app, config)
+    return app
+
+
+# Примечание: роуты: health и J4 — всегда, webhook — в режиме webhook, /dev/max/* — с фейком
+def _includeRouters(app: FastAPI, config: BotSettings) -> None:
     # Готов, когда доступны Redis и агент (план зоны C); MAX в readiness не дёргаем
     app.include_router(buildHealthRouter({"redis": _redisCheck(app), "agent": _agentCheck(app)}))
+    app.include_router(buildNotifyRouter())
     if config.updatesMode == "webhook":
         app.include_router(
             buildWebhookRouter(config.webhookSecret.get_secret_value(), mapRawUpdate)
         )
     if config.maxMode == "fake":
         app.include_router(buildDevRouter())
-    return app
 
 
 # Примечание: клиент Redis появляется в lifespan, поэтому проверка берёт его из app.state при вызове

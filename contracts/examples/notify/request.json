@@ -11,7 +11,7 @@
     "kind": "reminder",
     "title": "Позвонить Ивану",
     "notes": null,
-    "starts_at": "2026-10-18T10:00:00+03:00",
+    "starts_at": null,
     "ends_at": null,
     "all_day": false,
     "remind_at": "2026-10-18T10:00:00+03:00",
