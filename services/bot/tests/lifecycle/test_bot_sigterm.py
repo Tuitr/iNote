@@ -62,6 +62,19 @@ def uniqueText() -> dict[str, object]:
     return raw
 
 
+# Примечание: записи JSON-логов процесса с событием name, по порядку
+def readRecords(logFile: Path, name: str) -> list[dict[str, object]]:
+    found = []
+    for line in logFile.read_text().splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(record, dict) and record.get("event") == name:
+            found.append(record)
+    return found
+
+
 # Примечание: события JSON-логов процесса по порядку
 def readEvents(logFile: Path) -> list[str]:
     events = []
@@ -73,7 +86,8 @@ def readEvents(logFile: Path) -> list[str]:
     return events
 
 
-# Примечание: SIGTERM посреди отправки ответа — ответ уходит, остановка штатная
+# Примечание: SIGTERM посреди отправки ответа — ответ уходит, marker страницы фиксируется после
+# обработки (polling_stopped с marker), остановка штатная
 def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: Path) -> None:
     port, agentPort = freePort(), freePort()
     base = f"http://127.0.0.1:{port}"
@@ -130,10 +144,12 @@ def test_sigtermDuringProcessingDeliversReply(redisContainerUrl: str, tmp_path: 
     assert events.index("max_message_sent") < events.index("update_handled")
     assert events.index("update_handled") < events.index("polling_stopped")
     assert "shutdown_tasks_cancelled" not in events
+    [stopped] = readRecords(logFile, "polling_stopped")
+    assert stopped["marker"] is not None, "marker не сдвинут после обработанной страницы"
 
 
-# Примечание: webhook: два апдейта приняты (200), SIGTERM, пока первый «отправляется» —
-# оба доработаны до остановки, задачи не отменены, цикла опроса нет
+# Примечание: webhook: два апдейта одного пользователя приняты (200), SIGTERM, пока первый
+# «отправляется» — оба доработаны до остановки по порядку, задачи не отменены, цикла опроса нет
 def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) -> None:
     port, agentPort = freePort(), freePort()
     base = f"http://127.0.0.1:{port}"
@@ -191,6 +207,12 @@ def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) 
     events = readEvents(logFile)
     assert proc.returncode in {0, -signal.SIGTERM}, logFile.read_text()
     assert events.count("update_handled") == 2
+    order = [r["update_id"] for r in readRecords(logFile, "update_handled")]
+    mids = [str(second["message"]["body"]["mid"])]
+    firstMessage = first["message"]
+    assert isinstance(firstMessage, dict)
+    mids.insert(0, str(firstMessage["body"]["mid"]))
+    assert order == [deriveUpdateId("msg", mid) for mid in mids]
     assert events.index("bot_stopping") < events.index("max_message_sent")
     assert events.index("update_handled") < events.index("bot_stopped")
     assert "shutdown_tasks_cancelled" not in events
@@ -198,7 +220,7 @@ def test_sigtermWebhookFinishesAccepted(redisContainerUrl: str, tmp_path: Path) 
 
 
 # Примечание: J4: SIGTERM, пока уведомление «отправляется» (1,5 с): запрос Scheduler'а получает
-# 200 delivered, «доставлено» записано, остановка штатная
+# 200 delivered, сообщение ушло в MAX раньше, чем записано «доставлено», остановка штатная
 def test_sigtermDuringNotification(redisContainerUrl: str, tmp_path: Path) -> None:
     port, agentPort = freePort(), freePort()
     base = f"http://127.0.0.1:{port}"
@@ -267,5 +289,6 @@ def test_sigtermDuringNotification(redisContainerUrl: str, tmp_path: Path) -> No
     assert response.json()["delivered"] is True
     assert delivered is not None
     events = readEvents(logFile)
+    assert events.index("max_message_sent") < events.index("notification_handled")
     assert events.index("notification_handled") < events.index("bot_stopped")
     assert "shutdown_tasks_cancelled" not in events
