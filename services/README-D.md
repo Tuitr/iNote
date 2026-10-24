@@ -30,12 +30,12 @@ docker compose run --rm mcp python -m services.seed --max-user-id <id в MAX>   
 - Тесты (нужен Docker: testcontainers поднимает `postgres:16` и `redis:7-alpine`):
 
   ```bash
-  pip install -e ".[dev]"
-  ruff check . && ruff format --check .
-  pytest -q --cov --cov-report=term-missing --cov-fail-under=80
+  uv sync --all-packages --frozen
+  uv run ruff check . && uv run ruff format --check .
+  uv run pytest libs/core libs/contracts services/tests --cov=libs/core --cov-fail-under=80
   ```
 
-  То же делает CI `.github/workflows/backend-d.yml` на каждый PR в зону D.
+  То же делает job `backend-d` в `.github/workflows/ci.yml` на каждый PR.
 - Выгрузить контракты после изменения моделей: `python -m services.api.export_openapi`,
   `python -m services.mcp.export_tools` (иначе снапшот-тесты красные).
 
@@ -184,3 +184,11 @@ OpenAPI с примерами — `contracts/openapi/api.json`; по нему E 
 
 Строка на каждый запрос к api и mcp: `GET /v1/me 200 4 ms trace_id=…`; тот же `trace_id` — в конверте
 ошибки. Scheduler пишет `trace_id` каждой доставки. Временно, до `libs/common` роли C (structlog).
+
+## Что улучшил бы
+
+- Чистка старых строк: `notifications` (отправленные и отменённые) и `dialog_log` растут без предела.
+- Ограничения длины входных строк (`query`, `notes`, `source_text`, `init_data`) — это изменение
+  контрактов J3 и J5, решается на G4.
+- Выборка созревших уведомлений без перебора `items` при большом объёме (см. `docs/d-explain.md`).
+- Слабый ETag (`W/"…"`) в `If-None-Match` сейчас не даёт 304.
