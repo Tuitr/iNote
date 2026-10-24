@@ -16,7 +16,6 @@ from typing import Final
 
 from agent.application.action_tools import (
     callTool,
-    errorCode,
     focusKind,
     itemIdArg,
     momentArg,
@@ -38,9 +37,6 @@ from agent.application.turn_pipeline import Session, Step, StepOutcome, TurnPipe
 from contracts.agent_side import TurnResult
 from contracts.reply import ArgValue
 
-# у D complete_item по уже выполненной записи отвечает тем же «completed» — повтор узнаём по
-# статусу «unchanged» (так в заглушке C) — вопрос к D
-UNCHANGED: Final = "unchanged"
 TITLE_MAX_LENGTH: Final = 200
 
 
@@ -85,14 +81,18 @@ class ReminderActions:
     def _complete(self, itemId: str) -> Step:
         # Примечание: шаг: отметить, подтверждение из данных, фокус — на этой записи
         async def step(session: Session) -> StepOutcome:
-            started = time.perf_counter()
-            action = await callTool(session, "complete_item", {"id": itemId})
-            data = action.result.data or {}
-            if errorCode(action) is None and data.get("status") == UNCHANGED:
+            # D на повторное «Выполнено» отвечает тем же «completed» (J3), поэтому повтор узнаём
+            # по фокусу: после первого нажатия в нём эта запись со статусом done
+            if any(
+                str(brief.id).startswith(itemId) and brief.status == "done"
+                for brief in session.context.focus
+            ):
                 notice = self._pipeline.deps.renderer.notice(
                     Notice.ALREADY_COMPLETED, session.traceId
                 )
                 return StepOutcome(notice)
+            started = time.perf_counter()
+            action = await callTool(session, "complete_item", {"id": itemId})
             result = toolResult(action, "done", started)
             return StepOutcome(
                 self._pipeline.render(session, result), self._focused(session, result)

@@ -274,18 +274,17 @@ class StubTools:
             raise ToolFailureError("validation_error", "Встречу нельзя выполнить", {"field": "id"})
         done = args.get("done", True) is not False
         target = "done" if done else "open"
-        if item["status"] == target:
-            # уже в этом статусе — повторное «Выполнено»: агент ответит «Уже отмечено» (вопрос к D)
-            same: Json = {"status": "unchanged", "item": item, "conflicts": [], "free_slots": []}
-            return _ok(f"Без изменений: {_brief(item)}", same)
-        updated = self._patch(item, {"status": target}, userId)
+        # Как у D: повтор ничего не меняет и отвечает тем же статусом; «снова в работу» — updated
+        updated = (
+            item if item["status"] == target else self._patch(item, {"status": target}, userId)
+        )
         data: Json = {
-            "status": "completed" if done else "reopened",
+            "status": "completed" if done else "updated",
             "item": updated,
             "conflicts": [],
             "free_slots": [],
         }
-        return _ok(f"{'Выполнено' if done else 'Открыто снова'}: {_brief(updated)}", data)
+        return _ok(f"{'Выполнено' if done else 'Снова в работе'}: {_brief(updated)}", data)
 
     # Примечание: delete_item: мягкое удаление; restore=true — вернуть; повтор по удалённой —
     # not_found (агент отвечает «Уже отменено»)
@@ -293,7 +292,8 @@ class StubTools:
         if args.get("restore") is True:
             item = self._find(args, zone, userId, deleted=True)
             self._edits.setdefault(userId, {}).pop(str(item["id"]), None)
-            data: Json = {"status": "restored", "item": item, "conflicts": [], "free_slots": []}
+            # Как у D: в J3 нет статуса «восстановлено» — восстановление это изменение записи
+            data: Json = {"status": "updated", "item": item, "conflicts": [], "free_slots": []}
             return _ok(f"Восстановлено: {_brief(item)}", data)
         item = self._find(args, zone, userId)
         self._deleted.setdefault(userId, {})[str(item["id"])] = item

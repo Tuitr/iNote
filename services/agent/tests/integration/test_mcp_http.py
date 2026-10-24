@@ -514,7 +514,8 @@ async def test_reminderLifecycleInDShape(stub: StubProcess, uniqueId: str) -> No
             "complete_item", withCaller(caller, f"{uniqueId}:31", id=itemId), 5
         )
         assert twice.structured is not None
-        assert twice.structured["status"] == "unchanged"
+        # как у D: повтор ничего не меняет и отвечает тем же «completed»
+        assert twice.structured["status"] == "completed"
         openOnly = await mcp.callTool(
             "list_items", withCaller(caller, f"{uniqueId}:4", **period), 5
         )
@@ -524,7 +525,8 @@ async def test_reminderLifecycleInDShape(stub: StubProcess, uniqueId: str) -> No
             "delete_item", withCaller(caller, f"{uniqueId}:6", id=itemId, restore=True), 5
         )
         assert restored.structured is not None
-        assert restored.structured["status"] == "restored"
+        # как у D: в J3 нет «restored» — восстановление это изменение записи
+        assert restored.structured["status"] == "updated"
 
 
 # Примечание: перенос встречи на занятое время — conflict (сама встреча не мешает);
