@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 import time_machine
 
-from agent.infrastructure.brains import LLM_NOT_CONNECTED, BrainNotConnectedError, buildBrain
+from agent.infrastructure.brains import openBrain
 from agent.infrastructure.scripted_brain import (
     ASK_TIME,
     BAD_CHOICE,
@@ -14,6 +14,8 @@ from agent.infrastructure.scripted_brain import (
     WRITE_TEXT,
     ScriptedBrain,
 )
+from brain.llm_brain import LlmBrain
+from brain.settings import LlmSettings
 from contracts.agent_side import (
     ErrorInfo,
     ItemBrief,
@@ -476,12 +478,15 @@ async def test_noCallerInArgs() -> None:
     assert all("caller" not in args and "user_id" not in args for _, args in tools.calls)
 
 
-# Примечание: AGENT_BRAIN=llm — понятная ошибка до мержа с B
-async def test_llmMode() -> None:
-    assert isinstance(buildBrain("scripted"), ScriptedBrain)
-    with pytest.raises(BrainNotConnectedError, match="AGENT_BRAIN=scripted"):
-        buildBrain("llm")
-    assert "libs/brain" in LLM_NOT_CONNECTED
+# Примечание: AGENT_BRAIN выбирает Brain: scripted — правила, llm — Brain B (без ключа — fake)
+async def test_brainModes(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in LlmSettings.envNames():
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SERVICE_TOKEN", "s" * 32)
+    async with openBrain("scripted") as scripted:
+        assert isinstance(scripted, ScriptedBrain)
+    async with openBrain("llm") as llm:
+        assert isinstance(llm, LlmBrain)
 
 
 # Примечание: запись в фокусе (после «Изменить время») + ответ временем → update_item по её id;

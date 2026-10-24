@@ -9,11 +9,11 @@ from common.config import BaseServiceSettings
 class AgentSettings(BaseServiceSettings):
     envPrefix: ClassVar[str] = "AGENT_"
 
-    # scripted — правила вместо LLM (моки, e2e); llm — Brain участника B после мержа
+    # scripted — правила вместо LLM (моки, e2e); llm — Brain участника B (libs/brain)
     brain: Literal["scripted", "llm"] = Field(
         default="scripted",
         validation_alias="AGENT_BRAIN",
-        description="`scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (после мержа)",
+        description="`scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (`LLM_*`)",
     )
     # Бюджет хода вместе с ожиданием лока: бот ждёт агента 45 с (docs/standards.md)
     turnTimeoutS: float = Field(

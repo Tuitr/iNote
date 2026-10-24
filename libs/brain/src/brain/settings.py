@@ -6,7 +6,7 @@ Brain живёт в процессе агента, поэтому общие п�
 
 from typing import ClassVar, Final, Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from common.config import BaseServiceSettings
 
@@ -78,6 +78,12 @@ class LlmSettings(BaseServiceSettings):
         validation_alias="LLM_GIGACHAT_API_URL",
         description="адрес API GigaChat (chat/completions)",
     )
+
+    # Примечание: пустая строка из .env («LLM_GIGACHAT_CREDENTIALS=») — «не задано», не пустой ключ
+    @field_validator("gigachatCredentials", "gigachatCaBundle", "fallbackModel", mode="before")
+    @classmethod
+    def _emptyIsUnset(cls, value: object) -> object:
+        return None if value == "" else value
 
     # Примечание: gigachat без ключа — ошибка на старте, а не «Что-то пошло не так» на первом ходе
     @model_validator(mode="after")

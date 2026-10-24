@@ -20,6 +20,13 @@ MAX_USER_ID ?=
 ASR_PROVIDER_mock := fake
 ASR_PROVIDER_full := yandex
 export ASR_PROVIDER := $(ASR_PROVIDER_$(PROFILE))
+# Brain по профилю: mock — правила без LLM (бесплатно, e2e), full — GigaChat (ключ LLM_GIGACHAT_CREDENTIALS)
+AGENT_BRAIN_mock := scripted
+AGENT_BRAIN_full := llm
+export AGENT_BRAIN := $(AGENT_BRAIN_$(PROFILE))
+LLM_PROVIDER_mock := fake
+LLM_PROVIDER_full := gigachat
+export LLM_PROVIDER := $(LLM_PROVIDER_$(PROFILE))
 FILE ?=
 
 help: ## список целей

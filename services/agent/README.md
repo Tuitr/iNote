@@ -6,8 +6,8 @@
 (J8), держит лок, контекст и `pending` в Redis, сам заполняет `caller` для MCP и строит подтверждения из того,
 что реально сохранено. Не ходит в PostgreSQL и не знает формата MAX (отдаёт абстрактный `Reply`).
 
-Brain сейчас — `ScriptedBrain` (правила, `AGENT_BRAIN=scripted`); LLM-Brain участника B подключается после
-мержа (`AGENT_BRAIN=llm`). MCP и J8 на стенде — временная заглушка C (`deploy/stub/mcp`). Голосового ответа нет.
+Brain — `ScriptedBrain` (правила, `AGENT_BRAIN=scripted`, профиль mock) или LLM-Brain участника B из
+`libs/brain` (`AGENT_BRAIN=llm`, профиль full; модель — по `LLM_PROVIDER`). MCP и J8 на стенде — временная заглушка C (`deploy/stub/mcp`). Голосового ответа нет.
 
 ## Слои и порты
 
@@ -43,7 +43,8 @@ main.py          composition root: createApp() и lifespan
   фокус и `pending` — в Redis с TTL (`docs/redis-keys.md`).
 - **Brain**: `AGENT_BRAIN=scripted` — `ScriptedBrain` на правилах («что у меня сегодня/завтра/на неделе»,
   «напомни завтра в 10 …», «напомни через N минут …», «создай задачу …», «встреча …», «найди …», «перенеси его …»);
-  `llm` — Brain участника B после мержа.
+  `llm` — Brain участника B (`libs/brain`, `brain.factory.openLlmBrain`): GigaChat при `LLM_PROVIDER=gigachat`,
+  при `fake` — модель без ответов (агент стартует, каждый ход — ошибка `llm_bad_output`).
 - **MCP** (`infrastructure/mcp_connection.py`, `mcp_executor.py`): одна сессия Streamable HTTP на процесс,
   переподключение при обрыве. `caller` из ответа модели выбрасывается, агент подставляет свой: `user_id`,
   `tz`, `trace_id`, `idempotency_key = <trace_id>:<n>`. Таймаут 5 с и один повтор с тем же ключом;
@@ -111,7 +112,7 @@ main.py          composition root: createApp() и lifespan
 <!-- env:begin -->
 | Переменная | По умолчанию | Зачем |
 |---|---|---|
-| `AGENT_BRAIN` | `scripted` | `scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (после мержа) |
+| `AGENT_BRAIN` | `scripted` | `scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (`LLM_*`) |
 | `AGENT_TURN_TIMEOUT_S` | `40.0` | бюджет хода вместе с ожиданием лока, с (меньше ожидания бота — 45 с) |
 | `AGENT_LOCK_WAIT_S` | `10.0` | сколько ждать лок пользователя, с; не дождались — «Ещё обрабатываю…» |
 | `AGENT_MCP_URL` | `http://mcp:8000/mcp` | MCP (J3), одна сессия Streamable HTTP на процесс |

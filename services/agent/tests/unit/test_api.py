@@ -10,7 +10,6 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 
-from agent.infrastructure.brains import BrainNotConnectedError
 from agent.infrastructure.scripted_brain import HELP
 from agent.infrastructure.settings import AgentSettings
 from agent.main import AgentOverrides, createApp
@@ -181,13 +180,25 @@ async def test_notReadyWithoutMcp(client: httpx.AsyncClient, mcpHttp: FakeMcpHtt
     assert ready.json()["checks"] == {"redis": "ok", "mcp": "fail"}
 
 
-# Примечание: AGENT_BRAIN=llm до мержа с B — агент не стартует, причина в ошибке
-async def test_llmBrainFailsStartup(agentEnv: pytest.MonkeyPatch) -> None:
+# Примечание: AGENT_BRAIN=llm с LLM_PROVIDER=fake — агент стартует с Brain B без сети и денег;
+# у фейка нет ответов, поэтому ход — ошибка с кодом, а не 5xx
+async def test_llmBrainStarts(
+    agentEnv: pytest.MonkeyPatch, mcpHttp: FakeMcpHttp, tools: RecordingToolFactory
+) -> None:
     agentEnv.setenv("AGENT_BRAIN", "llm")
-    app = createApp(AgentSettings(), AgentOverrides(redisFactory=fakeRedis))
-    with pytest.raises(BrainNotConnectedError, match="libs/brain"):
-        async with app.router.lifespan_context(app):
-            pass
+    agentEnv.setenv("LLM_PROVIDER", "fake")
+    overrides = AgentOverrides(redisFactory=fakeRedis, mcpTransport=mcpHttp.transport, tools=tools)
+    app = createApp(AgentSettings(), overrides)
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://agent") as c:
+            response = await c.post(
+                "/v1/messages",
+                json={**example("message_request.json"), "text": "привет"},  # type: ignore[dict-item]
+                headers={**AUTH, "X-Trace-Id": TRACE},
+            )
+    assert response.status_code == 200
+    assert response.json()["state"] == "error"
 
 
 # Примечание: ход через HTTP пишет историю J8 в фоне: тот же trace_id, внутренний user_id;

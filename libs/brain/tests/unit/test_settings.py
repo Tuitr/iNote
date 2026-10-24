@@ -51,3 +51,15 @@ def test_envNamesHavePrefix() -> None:
     }
     assert own
     assert all(name.startswith("LLM_") for name in own)
+
+
+# Примечание: пустые строки из .env.example — «не задано»: нет пустого ключа и пустого пути
+def test_emptyValuesAreUnset(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("LLM_GIGACHAT_CREDENTIALS", "LLM_GIGACHAT_CA_BUNDLE", "LLM_FALLBACK_MODEL"):
+        monkeypatch.setenv(name, "")
+    settings = LlmSettings()
+    assert (settings.gigachatCredentials, settings.gigachatCaBundle) == (None, None)
+    assert settings.fallbackModel is None
+    monkeypatch.setenv("LLM_PROVIDER", "gigachat")
+    with pytest.raises(ValidationError, match="LLM_GIGACHAT_CREDENTIALS"):
+        LlmSettings()
