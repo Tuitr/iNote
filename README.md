@@ -10,7 +10,8 @@
 сообщение и кнопки MAX, доставка напоминаний Scheduler'а (J4). **Агент** (`services/agent`) — ход ассистента:
 пользователь (J8), лок, контекст в Redis, Brain, инструменты MCP с `caller`, ответ по шаблонам из сохранённых
 данных. **`libs/common`** — конфиг, логи, trace, middleware, lifecycle, health, HTTP-клиент, ключи Redis.
-**`deploy/`** — compose, образ, заглушки чужих сервисов, Caddy, демо и проверки стенда.
+**ASR** (`services/asr`, J1) — голосовое OGG/Opus → текст: на `mock` — фейк, на `full` — Yandex SpeechKit
+(ключ в `.env`). **`deploy/`** — compose, образ, заглушки чужих сервисов, Caddy, демо и проверки стенда.
 
 ### Быстрый старт (стенд на фейках, без ключей)
 
@@ -22,6 +23,8 @@ make e2e                # все сценарии tests/e2e + аудит Redis; 
 make demo               # демо на 3–5 минут: диалог в фейковом MAX, напечатанный как чат
 make logs TRACE=ab12f0  # путь запроса по первым 6 символам trace_id (их бот показывает в ошибках)
 make redis-check        # ключи Redis стенда: из реестра, с TTL; maxmemory и политика
+make up PROFILE=full    # то же, но asr — настоящий SpeechKit (ASR_YANDEX_API_KEY в .env) — платно
+make asr-try FILE=voice.ogg PROFILE=full   # распознать свой OGG/Opus — платно
 make down
 ```
 
@@ -52,10 +55,11 @@ Scheduler D → bot POST /internal/v1/notify (J4) → одно сообщени�
 | `services/agent` | ход агента, шаблоны ответа, `ScriptedBrain` | C |
 | `libs/common` | общие инструменты сервисов | C |
 | `libs/contracts`, `contracts/examples` | модели и примеры стыков J1–J8 | владелец стыка |
+| `services/asr` | ASR по J1: фейк и Yandex SpeechKit (написан C по плану A, верх у A) | C → A |
 | `deploy/` | стенд: compose, Dockerfile, заглушки, Caddy, демо, проверки | C |
 
-Остальные зоны (ASR — A, Brain — B, MCP/API/Scheduler/core — D, MAX app — E) появятся после мержа; до него на их
-месте заглушки C (`deploy/stub/{asr,mcp}`), `notify.sh` и `ScriptedBrain`.
+Brain (B) ещё не в репо — вместо него `ScriptedBrain`; MCP на стенде C — заглушка `deploy/stub/mcp` (код D уже в
+`main`, подключение к стенду — следующий шаг), Scheduler — `notify.sh`.
 
 ### Проверки
 
