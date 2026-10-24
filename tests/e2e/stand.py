@@ -99,6 +99,14 @@ async def messagesTo(client: httpx.AsyncClient, chat: Chat, count: int) -> list[
             await asyncio.sleep(0.1)
 
 
+# Примечание: на стенде настоящий D — у нового пользователя записей нет; тест сам создаёт
+# нужную запись фразой текстом и дожидается подтверждения
+async def given(client: httpx.AsyncClient, chat: Chat, phrase: str) -> None:
+    before = len(await messagesTo(client, chat, 0))
+    await push(client, chat.text(phrase))
+    await messagesTo(client, chat, before + 1)
+
+
 # Примечание: кнопки сообщения (вложение inline_keyboard) по рядам
 def buttons(message: Json) -> list[list[dict[str, str]]]:
     attachments = _MESSAGES.validate_python(message["attachments"])

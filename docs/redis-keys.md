@@ -30,16 +30,16 @@
 | `va:v1:agent:pending:{user_id}` | агент | агент → Brain | 10 мин | `{brain: <pending B как есть>, options: [подписи кнопок]}` | **в коде** (S2: `resume` по `pick_option`) |
 | `va:v1:agent:user:{max_user_id}` | агент | агент | 1 ч | кеш ответа J8 resolve: внутренний `user_id`, пояс, настройки (без `created`; чат — из запроса); удаляется после PATCH настроек (`/settings`, S3) | **в коде** |
 | `va:v1:asr:cache:{sha256}` | ASR | ASR | 7 дней | кеш распознавания по хешу аудио | **предложение C** — в плане было `va:v1:asr:{sha256}` без сущности; подтвердить A |
-| `va:v1:mcp:ver:{user_id}` | MCP и API при записи | API | **без TTL** | версия данных пользователя для ETag; единственный ключ без TTL | план (S1, D) |
+| `va:v1:mcp:ver:{user_id}` | mcp (инструменты, J8 settings) и scheduler (сдвиг серий) после коммита | API | **без TTL** | версия данных пользователя для ETag; единственный ключ без TTL | в коде D (`libs/core/services/versioning.py`) |
 | `va:v1:mcp:emb:{sha256}` | MCP | MCP | 1 день | кеш эмбеддингов | план (S1, D) |
-| `va:v1:api:list:{user_id}.{ver}.{hash}` | API | API | 5 мин | кеш списков для MAX app | **предложение C** — в плане `…:{user_id}:{ver}:{hash}`, `:` в id ломает разбор; подтвердить D |
+| `va:v1:api:list:{user_id}:{ver}:{hash}` | API | API | 5 мин | кеш списков для MAX app (`hash` — 16 hex от sha256 параметров) | в коде D (`services/api/list_cache.py`); аудит сверяет по префиксу `va:v1:api:list:`, двоеточия дальше ему не мешают |
 
 ## Проверки (S4)
 
 - `tests/deploy/test_redis_registry.py` — реестр ↔ код: ключи, которые строит `RedisKey(...)` в боте и агенте,
   совпадают со строками зоны C (ни лишних, ни пропущенных), и каждый адаптер пишет ключ с TTL ровно как в таблице.
 - `make redis-check` (`deploy/redis_check.py`) — на поднятом стенде: каждый ключ `va:v1:*` из реестра и с TTL > 0
-  (без TTL — только `va:v1:mcp:ver:*`, зона C его не пишет), `maxmemory` задан, политика `volatile-lru`. Запускается
+  (без TTL — только `va:v1:mcp:ver:*`, его пишет D), `maxmemory` задан, политика `volatile-lru`. Запускается
   и после `make e2e`; то же — e2e-тест `tests/e2e/test_zz_redis_audit.py`.
 
 ## Память (замер S4, 23.10.2026)

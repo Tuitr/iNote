@@ -1,7 +1,8 @@
 # Стенд разработки S0 (зона C, вместе с D). Запуск: `make up` (профиль mock).
 #   mock — всё на фейках, без внешних ключей: фейковый MAX, заглушки чужих сервисов
 #   full — пока совпадает с mock; после S1 сюда добавятся реальные ASR/LLM/MAX (платно, только по просьбе)
-# Наружу (на 127.0.0.1) опубликован только бот — ради /dev/max/* в режиме fake. /internal/* не публикуем.
+# Наружу (на 127.0.0.1) опубликованы бот — ради /dev/max/* в режиме fake — и api — ради
+# `npm run dev` мини-приложения. /internal/* не публикуем.
 
 name: va
 
@@ -28,6 +29,15 @@ x-python-service: &python-service
     retries: 10
     start_period: 10s
 
+# --- зона D: один образ (Dockerfile в корне), сервисы отличаются командой ---
+x-backend-d: &backend-d
+  <<: *python-service
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  image: va/backend-d:local
+
+# --- конец зоны D ---
 x-stub: &stub
   <<: *python-service
   build:
@@ -39,16 +49,18 @@ services:
   # --- инфраструктура ---
   postgres:
     <<: *profiles
-    image: pgvector/pgvector:pg16
+    # Без pgvector: эмбеддер D убран, поиск — полнотекст и триграммы (pg_trgm есть в образе)
+    image: postgres:16
+    # Учётка — из .env (POSTGRES_*), её же содержит DATABASE_URL сервисов D
     environment:
-      POSTGRES_USER: va
-      POSTGRES_PASSWORD: va
-      POSTGRES_DB: va
+      POSTGRES_USER: ${POSTGRES_USER:-inote}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-dev-only}
+      POSTGRES_DB: ${POSTGRES_DB:-inote}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks: [internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U va -d va"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -122,39 +134,50 @@ services:
     image: va/stub-asr:local
     restart: "no"
 
-  mcp:
-    # ВРЕМЕННО (S1, C): MCP-заглушка с инструментами из deploy/stub/mcp/fixtures.
-    # После мержа заменить на заглушку D, затем на build: services/mcp (владелец D)
-    <<: *python-service
-    build:
-      context: stub/mcp
-    image: va/stub-mcp:local
+  # --- зона D ---
+  migrate:
+    # Одноразово накатывает схему (alembic upgrade head) и выходит; mcp, api, scheduler ждут его
+    <<: *backend-d
+    command: ["alembic", "upgrade", "head"]
     restart: "no"
+    healthcheck:
+      disable: true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate: { condition: service_healthy }
+
+  mcp:
+    # 8 инструментов MCP (J3) на /mcp и служебный REST /internal/v1 (J8) для агента
+    <<: *backend-d
+    # access-лог uvicorn выключен: строку на запрос с trace_id пишет RequestLogMiddleware D
+    command: ["uvicorn", "services.mcp.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
 
   api:
-    # Владелец D. После мержа заменить на build: services/api
-    <<: *stub
-    environment: { STUB_NAME: api, STUB_OWNER: D }
+    # REST /v1 для мини-приложения (J5), только чтение
+    <<: *backend-d
+    command: ["uvicorn", "services.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+    # на 127.0.0.1 — для `npm run dev` мини-приложения; на стенде с HTTPS — только через Caddy
+    ports:
+      - "127.0.0.1:${API_DEV_PORT:-8000}:8000"
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
 
   scheduler:
-    # Владелец D. После мержа заменить на build: services/scheduler
-    <<: *stub
-    environment: { STUB_NAME: scheduler, STUB_OWNER: D }
+    # Напоминания в бот (J4, SCHED_BOT_URL) и сдвиг повторяющихся записей; без веб-сервера
+    <<: *backend-d
+    command: ["python", "-m", "services.scheduler.main"]
+    healthcheck:
+      disable: true
     depends_on:
       postgres: { condition: service_healthy }
-
-  migrate:
-    # Владелец D. После мержа заменить на build: services/migrate (Alembic, одноразовый запуск:
-    # restart: "no" и depends_on: condition: service_completed_successfully у потребителей)
-    <<: *stub
-    environment: { STUB_NAME: migrate, STUB_OWNER: D }
-    depends_on:
-      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+  # --- конец зоны D ---
 
   max_app:
     # Владелец E. После мержа заменить на build: max_app (статика за Caddy на стенде)

@@ -36,6 +36,10 @@ services:
     # на стенде /dev/max/* не публикуем: бот доступен только через Caddy
     ports: !reset []
 
+  api:
+    # на стенде api доступен только через Caddy (/api/v1/*)
+    ports: !reset []
+
 volumes:
   caddy_data:
   caddy_config:

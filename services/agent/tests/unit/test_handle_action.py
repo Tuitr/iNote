@@ -341,8 +341,8 @@ DONE_ITEM: Final = {**ITEM, "status": "done"}
 
 
 # Примечание: «Выполнено» → complete_item только с id (user_id из args не доходит); ответ из
-# данных без «Отменить» и «Изменить время»; повтор (unchanged) — «Уже отмечено»; удалённая —
-# текст not_found
+# данных без «Отменить» и «Изменить время»; повтор (в фокусе уже done) — «Уже отмечено» без
+# вызова MCP; удалённая — текст not_found
 async def test_complete() -> None:
     rig = Rig(responses={"complete_item": mutation("completed", DONE_ITEM)})
     reply = await rig.press("complete", {"item_id": ITEM_ID, "kind": "reminder", "user_id": 1})
@@ -350,12 +350,13 @@ async def test_complete() -> None:
     assert reply.text.splitlines()[:2] == [TEMPLATES.changed.completed, "Позвонить Ивану"]
     assert [[b[0] for b in row] for row in buttons(reply)] == [["В календаре"]]
     assert [str(b.id) for b in rig.store.contexts[USER_ID].focus] == [ITEM_ID]
-    again = Rig(responses={"complete_item": mutation("unchanged", DONE_ITEM)})
+    again = Rig(context=DialogContext(focus=(ItemBrief.fromWire(DONE_ITEM),)))
     repeated = await again.press("complete", {"item_id": ITEM_ID})
     assert (repeated.text, repeated.state) == (
         TEMPLATES.notices.alreadyCompleted,
         ReplyState.ANSWER,
     )
+    assert again.tools.calls == []
     gone = await Rig(responses={"complete_item": toolError("not_found")}).press(
         "complete", {"item_id": ITEM_ID}
     )

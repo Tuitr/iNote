@@ -5,9 +5,12 @@
 | Контейнер | Команда | Что делает |
 | --- | --- | --- |
 | `migrate` | `alembic upgrade head` | Накатывает схему и выходит; остальные ждут его |
-| `mcp` | `uvicorn services.mcp.app:app` (порт 8001 → 8000) | 8 инструментов MCP для агента C (J3) и служебный REST `/internal/v1` (J8) |
-| `api` | `uvicorn services.api.app:app` (порт 8000) | REST `/v1` для мини-приложения E (J5), только чтение |
+| `mcp` | `uvicorn services.mcp.app:app` | 8 инструментов MCP для агента C (J3) и служебный REST `/internal/v1` (J8) |
+| `api` | `uvicorn services.api.app:app` (127.0.0.1:`API_DEV_PORT`, по умолчанию 8000) | REST `/v1` для мини-приложения E (J5), только чтение |
 | `scheduler` | `python -m services.scheduler.main` | Напоминания в бот C (J4), сдвиг повторяющихся записей |
+
+Все четыре — в общем стенде `deploy/docker-compose.yml` рядом с ботом и агентом C (образ —
+`Dockerfile` в корне, зависимости по `uv.lock`).
 
 Логика — в `libs/core` (сервисы → репозитории), контейнеры — тонкие адаптеры. Модели контрактов —
 `libs/contracts`, снапшоты и примеры — `contracts/`. Решения и их причины — `docs/PROJECT_LOG.md`,
@@ -16,26 +19,31 @@
 ## Как запустить
 
 ```bash
-cp .env.example .env        # заполнить POSTGRES_PASSWORD, SERVICE_TOKEN, API_* (см. ниже)
-docker compose up -d --build   # postgres, redis, migrate (схема с нуля), mcp, api, scheduler
-docker compose run --rm mcp python -m services.seed --max-user-id <id в MAX>   # демо-данные
+cp .env.example .env    # заполнить секреты; учётка POSTGRES_* и DATABASE_URL должны совпадать
+make up                 # стенд: postgres, redis, migrate (схема с нуля), mcp, api, scheduler, bot, agent
+make seed MAX_USER_ID=<id в MAX>   # демо-данные D
+make e2e                # сценарии ТЗ через фейковый MAX на настоящем D
 ```
 
-- База с нуля: `docker compose down -v && docker compose up -d --build` — `migrate` строит схему
-  одной командой.
+Без `make` (Windows) — те же команды напрямую:
+`docker compose -f deploy/docker-compose.yml --env-file .env --profile mock up -d --build --wait` и
+`docker compose -f deploy/docker-compose.yml --env-file .env --profile mock run --rm mcp python -m services.seed --max-user-id <id>`.
+
+- База с нуля: `make down`, удалить том (`docker volume rm va_pgdata`), `make up` — `migrate` строит
+  схему одной командой.
 - Сид — только вручную: 18 записей за месяц назад и неделю вперёд (встречи, задачи, выполненные,
   удалённая, планёрка по понедельникам). Повторный запуск ничего не дублирует.
-- Готовность: `curl localhost:8000/health/ready` и `curl localhost:8001/health/ready` →
-  `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`.
+- Готовность: `make ps` — все сервисы `healthy` (у `scheduler` проверки нет, `migrate` выходит с кодом 0);
+  `curl localhost:8000/health/ready` → `{"status": "ok", "checks": {"postgres": "ok", "redis": "ok"}}`.
 - Тесты (нужен Docker: testcontainers поднимает `postgres:16` и `redis:7-alpine`):
 
   ```bash
-  pip install -e ".[dev]"
-  ruff check . && ruff format --check .
-  pytest -q --cov --cov-report=term-missing --cov-fail-under=80
+  uv sync --all-packages --frozen
+  uv run ruff check . && uv run ruff format --check .
+  uv run pytest libs/core libs/contracts services/tests --cov=libs/core --cov-fail-under=80
   ```
 
-  То же делает CI `.github/workflows/backend-d.yml` на каждый PR в зону D.
+  То же делает job `backend-d` в `.github/workflows/ci.yml` на каждый PR.
 - Выгрузить контракты после изменения моделей: `python -m services.api.export_openapi`,
   `python -m services.mcp.export_tools` (иначе снапшот-тесты красные).
 
@@ -159,7 +167,7 @@ OpenAPI с примерами — `contracts/openapi/api.json`; по нему E 
 
 Опоздавшее напоминание (Scheduler лежал) всё равно отправляется с исходным `fire_at`.
 
-**Несколько реплик**: `docker compose up -d --scale scheduler=2`. Уведомление в аренде другие реплики
+**Несколько реплик**: `docker compose -f deploy/docker-compose.yml --env-file .env --profile mock up -d --scale scheduler=2`. Уведомление в аренде другие реплики
 не видят (`SKIP LOCKED`), упавшая реплика отдаёт пачку по истечении аренды. Тесты
 `services/tests/test_scheduler_replicas.py`: две реплики, 200 созревших — каждое ровно один раз;
 упавшая реплика; сдвинутые часы. Ручная проверка на стенде с ботом C: два `scheduler`, напоминание
@@ -184,3 +192,11 @@ OpenAPI с примерами — `contracts/openapi/api.json`; по нему E 
 
 Строка на каждый запрос к api и mcp: `GET /v1/me 200 4 ms trace_id=…`; тот же `trace_id` — в конверте
 ошибки. Scheduler пишет `trace_id` каждой доставки. Временно, до `libs/common` роли C (structlog).
+
+## Что улучшил бы
+
+- Чистка старых строк: `notifications` (отправленные и отменённые) и `dialog_log` растут без предела.
+- Ограничения длины входных строк (`query`, `notes`, `source_text`, `init_data`) — это изменение
+  контрактов J3 и J5, решается на G4.
+- Выборка созревших уведомлений без перебора `items` при большом объёме (см. `docs/d-explain.md`).
+- Слабый ETag (`W/"…"`) в `If-None-Match` сейчас не даёт 304.

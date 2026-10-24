@@ -15,6 +15,7 @@ from tests.e2e.stand import (
     USER_TZ,
     Chat,
     buttons,
+    given,
     itemIdOf,
     labels,
     messagesTo,
@@ -116,11 +117,12 @@ async def test_moveItByVoiceAfterNotification(bot: httpx.AsyncClient) -> None:
 # Примечание: 5 — пересечение встреч → «Всё равно создать» → встреча создана в то же время
 async def test_conflictForceCreate(bot: httpx.AsyncClient) -> None:
     chat = Chat()
+    await given(bot, chat, "Встреча со стоматологом завтра в 9:30")
     await voice(bot, chat, "Встреча с Петром завтра в 9:30")
-    [asked] = await messagesTo(bot, chat, 1)
+    _, asked = await messagesTo(bot, chat, 2)
     assert "Всё равно создать" in labels(asked), labels(asked)
     await push(bot, chat.press(payloadOf(asked, "Всё равно создать")))
-    _, created = await messagesTo(bot, chat, 2)
+    *_, created = await messagesTo(bot, chat, 3)
     lines = str(created["text"]).split("\n")
     assert lines[:2] == ["Встреча создана", "Встреча с Петром"], lines
     assert lines[2].startswith("Завтра, "), lines

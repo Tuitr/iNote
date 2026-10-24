@@ -33,12 +33,13 @@ def standRedis() -> StandRedis:
     return StandRedis(COMPOSE)
 
 
-# Примечание: ключи после сценариев — все из реестра и с TTL; зона C не пишет mcp:ver
+# Примечание: ключи после сценариев — все из реестра и с TTL; без TTL — только версия данных D
+# va:v1:mcp:ver:{user_id} (белый список реестра): на стенде настоящий D, и он её пишет
 def test_keysInRegistryWithTtl(standRedis: StandRedis) -> None:
     keys = standRedis.dump()
     assert keys, "в Redis стенда нет ключей va:v1:* — сценарии не прогнаны?"
     assert auditKeys(keys, loadRegistry(ROOT / "docs" / "redis-keys.md")) == []
-    assert not any(key.startswith("va:v1:mcp:ver:") for key, _ in keys)
+    assert any(key.startswith("va:v1:mcp:ver:") for key, _ in keys)
 
 
 # Примечание: maxmemory задан (256 МБ из compose), вытеснение — только ключей с TTL

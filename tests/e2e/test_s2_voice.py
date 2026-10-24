@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 import httpx
 import pytest
-from tests.e2e.stand import USER_TZ, Chat, labels, messagesTo, payloadOf, push, voice
+from tests.e2e.stand import USER_TZ, Chat, given, labels, messagesTo, payloadOf, push, voice
 
 pytestmark = pytest.mark.e2e
 
@@ -61,16 +61,17 @@ async def test_voiceMeeting(bot: httpx.AsyncClient) -> None:
 # выбор → resume → встреча создана в выбранное окно
 async def test_voiceMeetingConflict(bot: httpx.AsyncClient) -> None:
     chat = Chat()
+    await given(bot, chat, "Встреча со стоматологом завтра в 9:30")
     said = "Встреча с Петром завтра в 9:30"
     await voice(bot, chat, said)
-    [asked] = await messagesTo(bot, chat, 1)
+    _, asked = await messagesTo(bot, chat, 2)
     lines = body(asked, said)
-    assert lines[0].startswith("В это время уже есть: «Стоматолог»")
+    assert lines[0].startswith("В это время уже есть: «Встреча со стоматологом»"), lines
     slots, cancel = labels(asked)[:-1], labels(asked)[-1]
     assert slots
     assert cancel == "Отмена"
     await push(bot, chat.press(payloadOf(asked, slots[0])))
-    _, created = await messagesTo(bot, chat, 2)
+    *_, created = await messagesTo(bot, chat, 3)
     text = str(created["text"]).split("\n")
     assert text[:2] == ["Встреча создана", "Встреча с Петром"]
     assert text[2].endswith(f", {slots[0].split('–')[0]}")
@@ -79,9 +80,10 @@ async def test_voiceMeetingConflict(bot: httpx.AsyncClient) -> None:
 # Примечание: ТЗ 3 — «Что у меня завтра?» → список на завтра по дням
 async def test_voiceTomorrow(bot: httpx.AsyncClient) -> None:
     chat = Chat()
+    await given(bot, chat, "Напомни завтра в 10 позвонить Ивану")
     said = "Что у меня завтра?"
     await voice(bot, chat, said)
-    [reply] = await messagesTo(bot, chat, 1)
+    _, reply = await messagesTo(bot, chat, 2)
     lines = body(reply, said)
     assert lines[0].startswith("Завтра, ")
     assert f" {tomorrowDay()} " in lines[0]
@@ -92,9 +94,10 @@ async def test_voiceTomorrow(bot: httpx.AsyncClient) -> None:
 # Примечание: ТЗ 4 — «Найди звонок Ивану» → результат поиска
 async def test_voiceSearch(bot: httpx.AsyncClient) -> None:
     chat = Chat()
+    await given(bot, chat, "Напомни завтра в 10 позвонить Ивану")
     said = "Найди звонок Ивану"
     await voice(bot, chat, said)
-    [reply] = await messagesTo(bot, chat, 1)
+    _, reply = await messagesTo(bot, chat, 2)
     lines = body(reply, said)
     assert lines[0] == "Нашёл:"
     assert any("Позвонить Ивану" in line for line in lines[1:])

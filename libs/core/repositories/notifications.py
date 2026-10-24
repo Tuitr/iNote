@@ -126,7 +126,6 @@ class NotificationRepo:
             .where(NotificationRow.id.in_(due.scalar_subquery()))
             .values(
                 status="sending",
-                attempt=NotificationRow.attempt + 1,
                 lease_until=func.now() + lease,
             )
             .returning(NotificationRow)
@@ -134,11 +133,26 @@ class NotificationRepo:
         )
         return list((await self._session.scalars(statement)).all())
 
+    # attempt — сколько попыток доставки закончилось. Растёт только при записи итога:
+    # аренда, истёкшая после падения реплики, попыткой не считается, и номер в J4 не уходит за 6.
+
     async def mark_sent(self, user_id: int, notification_id: UUID) -> None:
-        await self._finish(user_id, notification_id, status="sent", sent_at=func.now())
+        await self._finish(
+            user_id,
+            notification_id,
+            status="sent",
+            sent_at=func.now(),
+            attempt=NotificationRow.attempt + 1,
+        )
 
     async def mark_failed(self, user_id: int, notification_id: UUID, error: str) -> None:
-        await self._finish(user_id, notification_id, status="failed", last_error=error)
+        await self._finish(
+            user_id,
+            notification_id,
+            status="failed",
+            last_error=error,
+            attempt=NotificationRow.attempt + 1,
+        )
 
     async def mark_cancelled(self, user_id: int, notification_id: UUID) -> None:
         await self._finish(user_id, notification_id, status="cancelled")
@@ -152,6 +166,7 @@ class NotificationRepo:
             status="pending",
             next_try_at=func.now() + delay,
             last_error=error,
+            attempt=NotificationRow.attempt + 1,
         )
 
     async def _finish(self, user_id: int, notification_id: UUID, **values: object) -> None:

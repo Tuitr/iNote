@@ -330,8 +330,35 @@ async def test_expired_lease_is_reclaimed_and_sent(
     await run_cycle(reminders, _notifier(bot))
 
     stored = await _notification(session_factory)
-    assert [body["attempt"] for body in bot.bodies()] == [2]
-    assert stored.status == "sent"
+    # Упавшая аренда попыткой не считается: бот получает тот же номер 1.
+    assert [body["attempt"] for body in bot.bodies()] == [1]
+    assert (stored.status, stored.attempt) == ("sent", 1)
+
+
+async def test_attempt_stays_within_six_after_many_crashes(
+    session_factory: async_sessionmaker[AsyncSession],
+    item_service: ItemService,
+    reminders: ReminderService,
+) -> None:
+    # Бот принимает attempt 1…6 (J4): падения реплик не должны выталкивать номер за 6.
+    user_id = await _user(session_factory, MAX_CHAT_ID)
+    await _reminder(item_service, user_id)
+    await _time_passes(session_factory)
+    for _ in range(10):
+        await reminders.claim_due()
+        await _execute(
+            session_factory, "UPDATE notifications SET lease_until = now() - interval '1 s'"
+        )
+        await reminders.reclaim_expired()
+    bot = FakeBot(lambda _: httpx.Response(503))
+    notifier = _notifier(bot)
+
+    for _ in range(8):
+        await _time_passes(session_factory)
+        await run_cycle(reminders, notifier)
+
+    assert [body["attempt"] for body in bot.bodies()] == [1, 2, 3, 4, 5, 6]
+    assert (await _notification(session_factory)).status == "failed"
 
 
 async def test_parallel_claims_do_not_take_the_same_notification(

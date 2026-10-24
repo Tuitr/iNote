@@ -14,6 +14,7 @@ COMPOSE ?= docker compose -f deploy/docker-compose.yml --env-file .env --profile
 UP_FLAGS ?= --build
 SERVICE ?=
 TRACE ?=
+MAX_USER_ID ?=
 
 help: ## список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -95,8 +96,9 @@ demo: ## демо на поднятом стенде mock: диалог в фе�
 redis-check: ## аудит Redis поднятого стенда: ключи из реестра, TTL, maxmemory и политика
 	$(UV) run python deploy/redis_check.py $(COMPOSE)
 
-seed: ## тестовые данные — появится в S1 (владелец D)
-	@echo "seed появится в S1 у владельца D"
+seed: ## демо-данные D на аккаунт MAX: make seed MAX_USER_ID=<id> (нужен make up)
+	@test -n "$(MAX_USER_ID)" || (echo "нужен MAX_USER_ID=<id пользователя в MAX>" >&2 && exit 1)
+	$(COMPOSE) run --rm mcp python -m services.seed --max-user-id $(MAX_USER_ID)
 
 eval: ## LLM eval — платно, только по прямой просьбе (владелец B)
 	@echo "eval появится в S1 у владельца B (tests/eval)"
