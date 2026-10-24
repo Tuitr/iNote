@@ -171,8 +171,19 @@ services:
     # Напоминания в бот (J4, SCHED_BOT_URL) и сдвиг повторяющихся записей; без веб-сервера
     <<: *backend-d
     command: ["python", "-m", "services.scheduler.main"]
+    # HTTP нет: жив, если последний проход цикла (раз в SCHED_INTERVAL_SECONDS) был не дольше
+    # 2 минут назад — Scheduler трогает /tmp/scheduler-heartbeat после каждого прохода.
+    # Без healthcheck `up --wait` в Compose v2 на раннере CI падает («has no healthcheck»)
     healthcheck:
-      disable: true
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/tmp/scheduler-heartbeat') > 120)"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

@@ -6,6 +6,8 @@
 
 import asyncio
 import logging
+import tempfile
+from pathlib import Path
 
 import httpx
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,6 +19,10 @@ from libs.core.services.reminders import ReminderService
 from services.scheduler.notify import NOTIFY_TIMEOUT_SECONDS, BotNotifier
 
 logger = logging.getLogger(__name__)
+
+# Отметка «проход завершён»: по её свежести healthcheck в compose понимает, что цикл жив
+# (веб-сервера у Scheduler нет). Застрял проход или лежит база — отметка стареет.
+HEARTBEAT = Path(tempfile.gettempdir()) / "scheduler-heartbeat"
 
 
 async def run_cycle(reminders: ReminderService, notifier: BotNotifier) -> None:
@@ -51,6 +57,7 @@ async def main() -> None:
             while True:
                 try:
                     await run_cycle(reminders, notifier)
+                    HEARTBEAT.touch()
                 except SQLAlchemyError:
                     # База недоступна: не роняем контейнер, пробуем на следующем проходе.
                     logger.exception("Проход Scheduler не выполнен")
