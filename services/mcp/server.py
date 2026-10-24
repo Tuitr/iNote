@@ -85,12 +85,47 @@ def build_server(services: Callable[[], ToolServices]) -> Server[Any]:
     return Server("inote-mcp", on_list_tools=list_tools, on_call_tool=call_tool)
 
 
+# Тексты для модели пишет B: когда вызывать инструмент и что делать с ответом. Модель выбирает
+# инструмент по этим строкам, поэтому в них правила, а не пересказ схемы.
+TOOL_DESCRIPTIONS: dict[str, str] = {
+    "create_task": (
+        "Создать задачу или напоминание. kind=reminder — напомнить в момент remind_at (время "
+        "обязательно); kind=task — задача со сроком starts_at или без срока. Встречи с людьми — "
+        "create_event."
+    ),
+    "create_event": (
+        "Создать встречу, starts_at обязателен. ends_at передавай, только если названа "
+        "длительность. Если время занято, ответ status=conflict со свободными окнами free_slots: "
+        "встреча не создана, предложи пользователю окно."
+    ),
+    "list_items": (
+        "Показать записи за период: «что у меня сегодня, завтра, на неделе». from и to — даты "
+        "в поясе пользователя, to не включается: на завтра from=завтра, to=послезавтра."
+    ),
+    "search_items": (
+        "Найти записи по смыслу: «звонок Ивану», «договор». Вызывай перед изменением, удалением "
+        "или отметкой, если записи нет в фокусе: в ответе id для следующего вызова."
+    ),
+    "update_item": (
+        "Изменить запись по id: переданные поля заменяются, null очищает поле, остальные не "
+        "меняются. Перенос встречи или срока задачи — starts_at, напоминания — remind_at. "
+        "Конфликт времени — как у create_event."
+    ),
+    "complete_item": "Отметить запись выполненной по id; done=false снимает отметку.",
+    "delete_item": "Удалить запись по id; restore=true восстанавливает удалённую.",
+    "check_conflicts": (
+        "Проверить, свободно ли время для встречи, ничего не создавая: вернёт пересечения и "
+        "свободные окна. exclude_id — запись, которую переносим."
+    ),
+}
+
+
 def list_tool_specs() -> list[Tool]:
     # Схемы строятся из моделей libs/contracts, чтобы сервер и контракт не разошлись.
-    # Описаний нет: их тексты пишет B.
     return [
         Tool(
             name=name,
+            description=TOOL_DESCRIPTIONS[name],
             input_schema=contract.arguments.model_json_schema(),
             output_schema=contract.result.model_json_schema(),
         )

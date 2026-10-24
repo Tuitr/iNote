@@ -35,6 +35,13 @@ Title = Annotated[str, Field(min_length=1, max_length=200)]
 # Синонимы и близкие слова от LLM: по ним запись потом находится по смыслу (поиск без эмбеддера).
 SearchHints = Annotated[str, Field(max_length=500)]
 TaskKind = Literal["task", "reminder"]
+# Описания полей уходят модели в схеме инструмента (B): когда и в каком формате передавать поле
+_RRULE_HINT = (
+    "Повторение RFC 5545 без «RRULE:», например FREQ=WEEKLY;BYDAY=MO; только если просят повторять"
+)
+_SEARCH_HINTS_HINT = (
+    "Синонимы и близкие слова через пробел, по ним запись найдут потом: звонок позвонить созвон"
+)
 
 
 class Caller(BaseModel):
@@ -56,43 +63,91 @@ class _ToolArgs(BaseModel):
 
 
 class CreateTaskArgs(_ToolArgs):
-    title: Title
-    kind: TaskKind = "task"
-    starts_at: DateOrDateTime | None = None
-    remind_at: AwareDatetime | None = None
-    notes: str | None = None
-    rrule: str | None = None
-    source_text: str | None = None
-    search_hints: SearchHints | None = None
+    title: Title = Field(description="Короткое название по-русски, без «напомни», дат и времени")
+    kind: TaskKind = Field(
+        default="task", description="task — задача; reminder — напоминание в момент remind_at"
+    )
+    starts_at: DateOrDateTime | None = Field(
+        default=None,
+        description=(
+            "Срок задачи: дата YYYY-MM-DD (весь день) или время ISO 8601 "
+            "со смещением пояса пользователя"
+        ),
+    )
+    remind_at: AwareDatetime | None = Field(
+        default=None,
+        description=(
+            "Когда напомнить, ISO 8601 со смещением пояса пользователя; обязательно для reminder"
+        ),
+    )
+    notes: str | None = Field(default=None, description="Подробности, если пользователь их назвал")
+    rrule: str | None = Field(
+        default=None,
+        description=_RRULE_HINT,
+    )
+    source_text: str | None = Field(default=None, description="Исходная фраза пользователя")
+    search_hints: SearchHints | None = Field(
+        default=None,
+        description=_SEARCH_HINTS_HINT,
+    )
 
 
 class CreateEventArgs(_ToolArgs):
-    title: Title
-    starts_at: DateOrDateTime
-    ends_at: AwareDatetime | None = None
-    participants: list[str] = Field(default_factory=list)
-    remind_before_min: int | None = Field(default=None, ge=0)
-    notes: str | None = None
-    rrule: str | None = None
-    source_text: str | None = None
-    search_hints: SearchHints | None = None
-    allow_conflict: bool = False
+    title: Title = Field(description="Короткое название по-русски, без «напомни», дат и времени")
+    starts_at: DateOrDateTime = Field(
+        description=(
+            "Начало, ISO 8601 со смещением пояса пользователя; "
+            "дата YYYY-MM-DD — встреча на весь день"
+        )
+    )
+    ends_at: AwareDatetime | None = Field(
+        default=None, description="Конец, только если названа длительность или время окончания"
+    )
+    participants: list[str] = Field(default_factory=list, description="Имена участников из фразы")
+    remind_before_min: int | None = Field(
+        default=None, ge=0, description="За сколько минут напомнить, если пользователь попросил"
+    )
+    notes: str | None = Field(default=None, description="Подробности, если пользователь их назвал")
+    rrule: str | None = Field(
+        default=None,
+        description=_RRULE_HINT,
+    )
+    source_text: str | None = Field(default=None, description="Исходная фраза пользователя")
+    search_hints: SearchHints | None = Field(
+        default=None,
+        description=_SEARCH_HINTS_HINT,
+    )
+    allow_conflict: bool = Field(
+        default=False, description="true — создать несмотря на пересечение; только по явной просьбе"
+    )
 
 
 class ListItemsArgs(_ToolArgs):
-    from_: DateOnly = Field(alias="from")
-    to: DateOnly
-    kind: list[ItemKind] | None = None
-    status: Literal["open", "done", "all"] = "open"
+    from_: DateOnly = Field(alias="from", description="Первый день периода, YYYY-MM-DD")
+    to: DateOnly = Field(description="День после последнего (не включается), YYYY-MM-DD")
+    kind: list[ItemKind] | None = Field(
+        default=None,
+        description="Только эти виды записей; не передавай, если пользователь не уточнил",
+    )
+    status: Literal["open", "done", "all"] = Field(
+        default="open", description="open — невыполненные, done — выполненные, all — все"
+    )
 
 
 class SearchItemsArgs(_ToolArgs):
-    query: str = Field(min_length=1)
-    kind: list[ItemKind] | None = None
-    from_: DateOnly | None = Field(default=None, alias="from")
-    to: DateOnly | None = None
-    include_done: bool = True
-    limit: int = Field(default=5, ge=1, le=10)
+    query: str = Field(min_length=1, description="Что искать, словами пользователя")
+    kind: list[ItemKind] | None = Field(
+        default=None,
+        description="Только эти виды записей; не передавай, если пользователь не уточнил",
+    )
+    from_: DateOnly | None = Field(
+        default=None, alias="from", description="Искать с этого дня, YYYY-MM-DD"
+    )
+    to: DateOnly | None = Field(
+        default=None, description="Искать до этого дня (не включается), YYYY-MM-DD"
+    )
+    include_done: bool = Field(default=True, description="Искать и среди выполненных")
+    limit: int = Field(default=5, ge=1, le=10, description="Сколько записей вернуть")
 
 
 class UpdateItemArgs(_ToolArgs):
@@ -101,35 +156,71 @@ class UpdateItemArgs(_ToolArgs):
     Какие поля переданы, видно по model_fields_set: так null отличается от «не передано».
     """
 
-    id: ItemRef
-    title: Title | None = None
-    kind: TaskKind | None = None
-    starts_at: DateOrDateTime | None = None
-    ends_at: AwareDatetime | None = None
-    remind_at: AwareDatetime | None = None
-    participants: list[str] | None = None
-    remind_before_min: int | None = Field(default=None, ge=0)
-    notes: str | None = None
-    rrule: str | None = None
-    source_text: str | None = None
-    search_hints: SearchHints | None = None
-    allow_conflict: bool = False
+    id: ItemRef = Field(
+        description="id записи: полный или первые 8 символов из фокуса или результата инструмента"
+    )
+    title: Title | None = Field(default=None, description="Новое название")
+    kind: TaskKind | None = Field(
+        default=None, description="Сделать задачей (task) или напоминанием (reminder)"
+    )
+    starts_at: DateOrDateTime | None = Field(
+        default=None,
+        description=(
+            "Новое начало встречи или срок задачи, ISO 8601 со смещением пояса пользователя "
+            "или YYYY-MM-DD"
+        ),
+    )
+    ends_at: AwareDatetime | None = Field(
+        default=None, description="Новый конец встречи, ISO 8601 со смещением пояса пользователя"
+    )
+    remind_at: AwareDatetime | None = Field(
+        default=None,
+        description="Новое время напоминания, ISO 8601 со смещением пояса пользователя",
+    )
+    participants: list[str] | None = Field(default=None, description="Новый список участников")
+    remind_before_min: int | None = Field(
+        default=None, ge=0, description="За сколько минут до встречи напомнить"
+    )
+    notes: str | None = Field(default=None, description="Подробности, если пользователь их назвал")
+    rrule: str | None = Field(
+        default=None,
+        description=_RRULE_HINT,
+    )
+    source_text: str | None = Field(default=None, description="Исходная фраза пользователя")
+    search_hints: SearchHints | None = Field(
+        default=None,
+        description=_SEARCH_HINTS_HINT,
+    )
+    allow_conflict: bool = Field(
+        default=False,
+        description="true — перенести несмотря на пересечение; только по явной просьбе",
+    )
 
 
 class CompleteItemArgs(_ToolArgs):
-    id: ItemRef
-    done: bool = True
+    id: ItemRef = Field(
+        description="id записи: полный или первые 8 символов из фокуса или результата инструмента"
+    )
+    done: bool = Field(default=True, description="false — снять отметку о выполнении")
 
 
 class DeleteItemArgs(_ToolArgs):
-    id: ItemRef
-    restore: bool = False
+    id: ItemRef = Field(
+        description="id записи: полный или первые 8 символов из фокуса или результата инструмента"
+    )
+    restore: bool = Field(default=False, description="true — восстановить удалённую запись")
 
 
 class CheckConflictsArgs(_ToolArgs):
-    starts_at: AwareDatetime
-    ends_at: AwareDatetime
-    exclude_id: ItemRef | None = None
+    starts_at: AwareDatetime = Field(
+        description="Начало проверяемого времени, ISO 8601 со смещением пояса пользователя"
+    )
+    ends_at: AwareDatetime = Field(
+        description="Конец проверяемого времени, ISO 8601 со смещением пояса пользователя"
+    )
+    exclude_id: ItemRef | None = Field(
+        default=None, description="Не считать пересечением эту запись (при переносе)"
+    )
 
 
 class TimeSlot(BaseModel):
