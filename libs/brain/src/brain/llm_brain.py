@@ -6,6 +6,7 @@
 error — код LLM или инструмента. Защиты держит код: повтор того же вызова не выполняется,
 id записи — только известный, время без смещения и validation_error / past_time — одна попытка
 исправиться, «записал» без изменяющего вызова — llm_no_action.
+resume — ответ кнопкой на уточнение: вызов из pending достраивается выбранным вариантом без модели.
 """
 
 import json
@@ -56,6 +57,7 @@ HINT_UNKNOWN_ID: Final = (
 )
 HINT_UNKNOWN_TOOL: Final = "Функции {value} нет. Используй только функции из списка."
 HINT_DUPLICATE: Final = "Этот вызов уже выполнен, его результат выше. Не повторяй его."
+BAD_CHOICE: Final = "Не понял выбор — повтори просьбу."
 
 ASK_USER_SPEC: Final = ToolSpec(
     name=ASK_USER,
@@ -140,17 +142,35 @@ class LlmBrain:
             result = await self._loop(turn, tools, [*specs, ASK_USER_SPEC], state, started)
         except LlmError as exc:
             result = _error(exc.code, state, started)
-        _log.info(
-            "brain_turn",
-            prompt_version=PROMPT_VERSION,
-            outcome=result.outcome,
-            error_code=result.errorCode,
-            actions=[a.name for a in result.actions],
-            llm_calls=state.llmCalls,
-            tokens_in=state.tokensIn,
-            tokens_out=state.tokensOut,
-        )
+        _logTurn(result, state)
         return result
+
+    # Примечание: кнопка уточнения: «call» — вызов без модели по выбранному варианту,
+    # «ask» — подпись кнопки (она уже в turn.text) уходит модели обычным ходом
+    async def resume(self, turn: TurnInput, choice: str, tools: ToolExecutor) -> TurnResult:
+        started = time.perf_counter()
+        pending = turn.pending or {}
+        if pending.get("kind") == "ask":
+            return await self.run(turn, tools)
+        state = _Turn(messages=[], knownIds={str(b.id) for b in turn.focus}, model=self._model)
+        tool, args = pending.get("tool"), pending.get("args")
+        choices = [c for c in _list(pending.get("choices")) if isinstance(c, dict)]
+        index = int(choice) if choice.isdigit() else -1
+        if (
+            pending.get("kind") != "call"
+            or not isinstance(tool, str)
+            or not 0 <= index < len(choices)
+        ):
+            return _result("answer", state, started, say=BAD_CHOICE)
+        base = {str(k): v for k, v in args.items()} if isinstance(args, dict) else {}
+        call = FunctionCall(tool, {**base, **{str(k): v for k, v in choices[index].items()}})
+        result = await tools.call(call.name, call.arguments)
+        state.actions.append(ExecutedAction(name=call.name, args=call.arguments, result=result))
+        # модели нет — исправлять аргументы некому: ошибка инструмента сразу заканчивает ход
+        state.corrections.add("tool_error")
+        outcome = _afterCall(call, result, turn, state, started) or _final("", state, started)
+        _logTurn(outcome, state)
+        return outcome
 
     async def _loop(
         self,
@@ -192,6 +212,20 @@ class LlmBrain:
         state.tokensOut += reply.tokensOut
         state.model = reply.model or state.model
         return reply
+
+
+# Примечание: итог хода в лог — без текста пользователя и ответа модели
+def _logTurn(result: TurnResult, state: _Turn) -> None:
+    _log.info(
+        "brain_turn",
+        prompt_version=PROMPT_VERSION,
+        outcome=result.outcome,
+        error_code=result.errorCode,
+        actions=[a.name for a in result.actions],
+        llm_calls=state.llmCalls,
+        tokens_in=state.tokensIn,
+        tokens_out=state.tokensOut,
+    )
 
 
 # Примечание: системный промпт с блоком времени и фокусом, история (≤10) и фраза пользователя
@@ -286,26 +320,29 @@ def _askUser(
     question = str(raw.get("question") or "").strip()
     options = _strings(raw.get("options"))[:MAX_OPTIONS]
     missing = _strings(raw.get("missing")) or ["details"]
-    tool, args, fieldName = raw.get("tool"), raw.get("args"), raw.get("field")
-    values = _strings(raw.get("values"))
-    pending: JsonObject
-    if (
-        isinstance(tool, str)
-        and tool in names - {ASK_USER}
-        and isinstance(fieldName, str)
-        and len(values) >= len(options) > 0
-    ):
-        pending = {
-            "kind": "call",
-            "tool": tool,
-            "args": dict(args) if isinstance(args, dict) else {},
-            "choices": [{fieldName: value} for value in values[: len(options)]],
-        }
-    else:
-        pending = {"kind": "ask", "question": question}
+    pending = _pendingCall(raw, names, len(options), state) or {"kind": "ask", "question": question}
     clarify = Clarify(missing=missing, options=options, pending=pending)
     focus = [b.id for b in turn.focus]
     return _result("clarify", state, started, say=question or None, clarify=clarify, focus=focus)
+
+
+# Примечание: вызов из ask_user, который кнопка выполнит без модели; каждый вариант проходит те же
+# защиты, что и вызов модели (функция, id, смещение) — иначе вопрос остаётся свободным
+def _pendingCall(
+    raw: JsonObject, names: set[str], optionCount: int, state: _Turn
+) -> JsonObject | None:
+    tool, args, fieldName = raw.get("tool"), raw.get("args"), raw.get("field")
+    values = _strings(raw.get("values"))[:optionCount]
+    if not isinstance(tool, str) or not isinstance(fieldName, str) or tool == ASK_USER:
+        return None
+    if optionCount == 0 or len(values) != optionCount:
+        return None
+    base = {str(k): v for k, v in args.items()} if isinstance(args, dict) else {}
+    choices: list[object] = [{fieldName: value} for value in values]
+    for value in values:
+        if _rejection(FunctionCall(tool, {**base, fieldName: value}), names, state) is not None:
+            return None
+    return {"kind": "call", "tool": tool, "args": base, "choices": choices}
 
 
 # Примечание: встреча пересекается — вопрос со свободными окнами из ответа инструмента

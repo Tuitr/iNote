@@ -354,3 +354,119 @@ async def test_messagesAndTools() -> None:
     assert "Сейчас: 2026-10-24T12:00+03:00 (суббота)" in sent.messages[0].content
     assert [t.name for t in sent.tools][-1] == ASK_USER
     assert len(sent.tools) == len(TOOL_NAMES) + 1
+
+
+TIME_CHOICES: Final = ["2026-10-25T10:00:00+03:00", "2026-10-25T15:00:00+03:00"]
+ASK_TIME: Final = call(
+    ASK_USER,
+    question="На какое время?",
+    missing=["starts_at"],
+    options=["10:00", "15:00"],
+    tool="create_event",
+    args={"title": "Встреча с Иваном"},
+    field="starts_at",
+    values=TIME_CHOICES,
+)
+
+
+# Примечание: сценарий плана: «встреча с Иваном завтра» → варианты → кнопка «15:00» →
+# create_event без второго вызова модели
+async def test_clarifyThenResumeWithoutLlm() -> None:
+    subject, llm = brain(ASK_TIME)
+    created = ok("Создана встреча", {"status": "created", "item": item()})
+    tools = FakeTools({"create_event": [created]})
+    asked = await subject.run(turnInput("встреча с Иваном завтра"), tools)
+    assert asked.clarify is not None
+    picked = turnInput("15:00", pending=asked.clarify.pending)
+    result = await subject.resume(picked, "1", tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        ("create_event", {"title": "Встреча с Иваном", "starts_at": TIME_CHOICES[1]})
+    ]
+    assert (len(llm.calls), result.usage.llmCalls, result.focus) == (1, 0, [ITEM_ID])
+
+
+# Примечание: выбранное окно снова занято — новый вопрос со свободными окнами
+async def test_resumeConflictAgain() -> None:
+    subject, _ = brain()
+    pending = {
+        "kind": "call",
+        "tool": "create_event",
+        "args": {"title": "Встреча"},
+        "choices": [{"starts_at": TIME_CHOICES[0]}],
+    }
+    conflict = ok(
+        "Пересечение",
+        {
+            "status": "conflict",
+            "item": None,
+            "conflicts": [{"id": str(OTHER_ID), "kind": "event", "title": "Планёрка"}],
+            "free_slots": [],
+        },
+    )
+    tools = FakeTools({"create_event": [conflict]})
+    result = await subject.resume(turnInput("10:00", pending=pending), "0", tools)
+    assert result.outcome == "clarify"
+    assert result.say == (
+        "В это время уже есть: «Планёрка», свободных окон рядом нет. Назови другое время."
+    )
+
+
+# Примечание: в resume модели нет — ошибка инструмента сразу заканчивает ход своим кодом
+async def test_resumeToolError() -> None:
+    subject, _ = brain()
+    pending = {
+        "kind": "call",
+        "tool": "create_task",
+        "args": {"title": "Позвонить", "kind": "reminder"},
+        "choices": [{"remind_at": "2026-10-24T09:00:00+03:00"}],
+    }
+    tools = FakeTools({"create_task": [failed("past_time")]})
+    result = await subject.resume(turnInput("9:00", pending=pending), "0", tools)
+    assert (result.outcome, result.errorCode) == ("error", "past_time")
+
+
+# Примечание: свободный вопрос — подпись кнопки уходит модели обычным ходом
+async def test_resumeAskGoesToModel() -> None:
+    subject, llm = brain(call("complete_item", id=str(ITEM_ID)), text("Отметил"))
+    focus = [ItemBrief(id=ITEM_ID, kind="task", title="Купить хлеб")]
+    done = ok("Выполнено", {"status": "completed", "item": item(kind="task")})
+    tools = FakeTools({"complete_item": [done]})
+    pending = {"kind": "ask", "question": "Какую запись?"}
+    picked = turnInput("Купить хлеб", pending=pending, focus=focus)
+    result = await subject.resume(picked, "0", tools)
+    assert result.outcome == "done"
+    assert llm.calls[0].messages[-1].content == "Купить хлеб"
+
+
+# Примечание: номер вне вариантов или pending не наш — просьба повторить, без вызовов
+async def test_resumeBadChoice() -> None:
+    subject, _ = brain()
+    pending = {"kind": "call", "tool": "create_event", "args": {}, "choices": []}
+    tools = FakeTools()
+    result = await subject.resume(turnInput("10:00", pending=pending), "3", tools)
+    assert (result.outcome, result.say, tools.calls) == (
+        "answer",
+        "Не понял выбор — повтори просьбу.",
+        [],
+    )
+
+
+# Примечание: вариант ask_user с чужим id или временем без смещения кнопкой не выполнится —
+# вопрос остаётся свободным
+async def test_askUserUnsafeCallBecomesAsk() -> None:
+    subject, _ = brain(
+        call(
+            ASK_USER,
+            question="На когда перенести?",
+            missing=["starts_at"],
+            options=["10:00"],
+            tool="update_item",
+            args={"id": "deadbeef"},
+            field="starts_at",
+            values=["2026-10-25T10:00:00+03:00"],
+        )
+    )
+    result = await subject.run(turnInput("перенеси созвон"), FakeTools())
+    assert result.clarify is not None
+    assert result.clarify.pending["kind"] == "ask"
