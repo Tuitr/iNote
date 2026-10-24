@@ -6,6 +6,7 @@ requires-python = "==3.12.*"
 members = [
     "inote-backend",
     "va-agent",
+    "va-asr",
     "va-bot",
     "va-common",
     "va-contracts",
@@ -1403,6 +1404,33 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.10,<3" },
     { name = "mcp", specifier = ">=2.3,<3" },
     { name = "pydantic", specifier = ">=2.11" },
+    { name = "redis", specifier = ">=5.2" },
+    { name = "uvicorn", specifier = ">=0.32" },
+    { name = "va-common", editable = "libs/common" },
+    { name = "va-contracts", editable = "libs/contracts" },
+]
+
+[[package]]
+name = "va-asr"
+version = "0.0.0"
+source = { editable = "services/asr" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "redis" },
+    { name = "uvicorn" },
+    { name = "va-common" },
+    { name = "va-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
     { name = "va-common", editable = "libs/common" },

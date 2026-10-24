@@ -65,6 +65,7 @@ members = [
   "libs/contracts",
   "services/bot",
   "services/agent",
+  "services/asr",
   # --- конец зоны C ---
 ]
 
@@ -107,6 +108,7 @@ src = [
   "libs/contracts/src",
   "services/bot/src",
   "services/agent/src",
+  "services/asr/src",
 ]
 extend-exclude = ["**/__snapshots__"]
 
@@ -177,7 +179,7 @@ ignore = [
 # --- зона C ---
 [tool.ruff.lint.isort]
 # services.* и libs.* — хелперы тестов C и пакеты D (импорт полным путём от корня репо)
-known-first-party = ["common", "contracts", "bot", "agent", "services", "libs"]
+known-first-party = ["common", "contracts", "bot", "agent", "asr", "services", "libs"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -217,6 +219,7 @@ mypy_path = [
   "libs/contracts/src",
   "services/bot/src",
   "services/agent/src",
+  "services/asr/src",
   "$MYPY_CONFIG_FILE_DIR",
 ]
 exclude = ['(^|/)\.venv/', '(^|/)build/', '(^|/)__snapshots__/']
@@ -288,7 +291,7 @@ filterwarnings = ["error"]
 
 [tool.coverage.run]
 branch = true
-source = ["common", "contracts", "bot", "agent"]
+source = ["common", "contracts", "bot", "agent", "asr"]
 # Тесты сами себя не считают (порог D для libs/core — в CI, job backend-d)
 omit = ["*/tests/*"]
 
@@ -301,13 +304,13 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
 
 # Слои и границы пакетов проверяет import-linter (`uv run lint-imports`).
 [tool.importlinter]
-root_packages = ["common", "contracts", "bot", "agent"]
+root_packages = ["common", "contracts", "bot", "agent", "asr"]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
-name = "Пакеты: сервисы над contracts над common; bot и agent друг друга не знают"
+name = "Пакеты: сервисы над contracts над common; bot, agent и asr друг друга не знают"
 type = "layers"
-layers = ["bot | agent", "contracts", "common"]
+layers = ["bot | agent | asr", "contracts", "common"]
 
 [[tool.importlinter.contracts]]
 name = "bot: presentation | infrastructure → application → domain"
@@ -322,9 +325,18 @@ containers = ["agent"]
 layers = ["main", "presentation | infrastructure", "application", "domain"]
 
 [[tool.importlinter.contracts]]
+name = "asr: presentation | infrastructure → application → domain"
+type = "layers"
+containers = ["asr"]
+layers = ["main", "presentation | infrastructure", "application", "domain"]
+
+[[tool.importlinter.contracts]]
 name = "domain и application не знают о фреймворках и вводе-выводе"
 type = "forbidden"
-source_modules = ["bot.domain", "bot.application", "agent.domain", "agent.application"]
+source_modules = [
+  "bot.domain", "bot.application", "agent.domain", "agent.application",
+  "asr.domain", "asr.application",
+]
 forbidden_modules = ["fastapi", "starlette", "httpx", "redis", "pydantic_settings", "uvicorn", "mcp"]
 # Запрещён прямой импорт; через common (логи, trace) фреймворки доступны косвенно — это нормально
 allow_indirect_imports = true
@@ -333,8 +345,8 @@ allow_indirect_imports = true
 # Правила 1 и 7 CLAUDE.md: бот и агент не ходят в PostgreSQL, данные D — только через MCP (J3)
 # и служебный REST (J8). Код D (`libs.*`, `services.*`) не входит в образы бота и агента:
 # импорт оттуда упал бы в контейнере, поэтому он запрещён и здесь.
-name = "bot и agent не знают про PostgreSQL и код D (libs.core, services.mcp, …)"
+name = "bot, agent и asr не знают про PostgreSQL и код D (libs.core, services.mcp, …)"
 type = "forbidden"
-source_modules = ["bot", "agent"]
+source_modules = ["bot", "agent", "asr"]
 forbidden_modules = ["libs", "services", "sqlalchemy", "asyncpg", "alembic"]
 # --- конец зоны C ---
