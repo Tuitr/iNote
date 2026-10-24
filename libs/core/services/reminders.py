@@ -138,5 +138,6 @@ def _due(row: NotificationRow, user: UserRow, max_chat_id: int, item: ItemRow) -
         tz=user.tz,
         item=to_item(item, user.tz),
         fire_at=to_user_tz(row.fire_at, user.tz),
-        attempt=row.attempt,
+        # Номер этой попытки для J4: закончившихся попыток было row.attempt.
+        attempt=row.attempt + 1,
     )
