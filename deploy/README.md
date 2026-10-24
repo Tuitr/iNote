@@ -1,7 +1,7 @@
 # deploy — стенд (зона C)
 
 `make up` поднимает стенд (профиль `mock`, всё на фейках, без ключей) и ждёт, пока все сервисы станут healthy;
-`make smoke` — четыре сценария ТЗ голосом через фейковый MAX и ASR-заглушку («напомни завтра в 10 …»,
+`make smoke` — четыре сценария ТЗ голосом через фейковый MAX и asr с фейковым провайдером («напомни завтра в 10 …»,
 «встреча с Иваном завтра в 15», «что у меня завтра», «найди звонок Ивану») и «что у меня сегодня» текстом;
 `make e2e` — `tests/e2e` на стенде (S1 текстом и S2 голосом: кнопки, уточнения, конфликт встреч, `no_speech`,
 `/week`; S3 — уведомления, кнопки уведомления, фокус, кнопки мини-приложения, `/settings`); `make logs TRACE=<trace_id>` — путь голосового через bot → asr → agent → mcp одним `trace_id`; `make down` — остановка (данные Postgres остаются в volume `pgdata`).
@@ -44,11 +44,12 @@ Redis. В конце — таблица «итог → trace_id → сценар
 
 | Файл | Что это |
 |---|---|
-| `docker-compose.yml` | postgres:16 (учётка из `.env`), redis (256 МБ, `volatile-lru`, без персистентности), bot, agent; настоящие сервисы D из `Dockerfile` в корне — migrate (одноразово), mcp, api (на 127.0.0.1:`API_DEV_PORT` для `npm run dev`), scheduler; заглушки asr (A) и max_app (E) |
+| `docker-compose.yml` | postgres:16 (учётка из `.env`), redis (256 МБ, `volatile-lru`, без персистентности), bot, agent, asr (`services/asr`: `mock` — фейк, `full` — SpeechKit); настоящие сервисы D из `Dockerfile` в корне — migrate (одноразово), mcp, api (на 127.0.0.1:`API_DEV_PORT` для `npm run dev`), scheduler; заглушка max_app (E) |
 | `docker/python.Dockerfile` | общий образ Python-сервисов: `uv sync --frozen` без dev, пакеты не editable, пользователь `app`, uvicorn — PID 1 |
 | `stub/` | заглушка чужого сервиса на stdlib: `/health/*` → 200, остальное → 404 в конверте ошибки |
 | `stub/mcp/` | MCP-заглушка C для интеграционных тестов агента (`services/agent/tests/integration`): отвечает в форме D (статусы J3, ответ PATCH settings); в стенде её заменил настоящий `mcp` D |
-| `stub/asr/` | **временная** ASR-заглушка C по J1: «OggS» + текст → текст — до `ASR_MODE=fake` у A |
+| `stub/asr/` | прежняя ASR-заглушка C (S2); на стенде её заменил `services/asr` с `ASR_PROVIDER=fake` (то же поведение); осталась для integration-теста бота `test_asr_stub.py` |
+| `asr_try.sh` | `make asr-try FILE=voice.ogg` — распознать свой OGG/Opus сервисом asr стенда (с `PROFILE=full` — SpeechKit, платно) |
 | `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX (override) |
 | `Caddyfile` | что видно снаружи: webhook MAX, `/api/v1/*`, статика мини-приложения; служебное — 404 |
 | `smoke.sh` | смоук: четыре сценария ТЗ голосом и один текстом через `/dev/max/*` |

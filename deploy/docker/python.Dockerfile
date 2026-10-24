@@ -1,4 +1,4 @@
-# Общий образ Python-сервисов (bot, agent; позже — asr, mcp, api, scheduler у владельцев).
+# Общий образ Python-сервисов (bot, agent, asr; позже — mcp, api, scheduler у владельцев).
 #   docker build -f deploy/docker/python.Dockerfile --build-arg PACKAGE=va-bot --build-arg MODULE=bot .
 # Контекст сборки — корень репо: нужен весь uv workspace и uv.lock.
 
@@ -23,6 +23,7 @@ COPY libs/common/pyproject.toml libs/common/
 COPY libs/contracts/pyproject.toml libs/contracts/
 COPY services/bot/pyproject.toml services/bot/
 COPY services/agent/pyproject.toml services/agent/
+COPY services/asr/pyproject.toml services/asr/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-workspace --package "${PACKAGE}"
 COPY libs libs
