@@ -94,6 +94,10 @@ dev = [
   "pytest-cov>=7.1,<8",
   "ruff>=0.17,<1",
   # --- конец зоны D ---
+  # --- зона B ---
+  # eval Brain: кейсы в tests/eval/cases.yaml (python -m brain.eval)
+  "pyyaml>=6.0",
+  # --- конец зоны B ---
 ]
 
 # ---------------------------------------------------------------------------
@@ -290,6 +294,7 @@ markers = [
   "integration: нужен Docker (testcontainers: Redis, PostgreSQL)",
   "lifecycle: старт и остановка процесса, SIGTERM",
   "e2e: compose с фейковыми MAX и ASR",
+  "eval: eval Brain на настоящей модели — платно, только по прямой просьбе (нужен ключ GigaChat)",
   "anyio: async-тест D; выполняет pytest-asyncio (плагин anyio выключен, см. addopts)",
 ]
 filterwarnings = ["error"]

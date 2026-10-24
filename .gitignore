@@ -28,3 +28,8 @@ CLAUDE.md
 /docs/[A-E] · *.md
 /docs/Команда и протоколы.md
 # --- конец зоны C ---
+
+# --- зона B ---
+# отчёты и трассы eval (python -m brain.eval)
+.eval/
+# --- конец зоны B ---

@@ -6,7 +6,7 @@ UV ?= uv
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
         test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy \
-        stand-config redis-check demo env-docs asr-try
+        stand-config redis-check demo env-docs asr-try eval-fake
 
 # Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
 PROFILE ?= mock
@@ -116,8 +116,13 @@ seed: ## демо-данные D на аккаунт MAX: make seed MAX_USER_ID=
 	@test -n "$(MAX_USER_ID)" || (echo "нужен MAX_USER_ID=<id пользователя в MAX>" >&2 && exit 1)
 	$(COMPOSE) run --rm mcp python -m services.seed --max-user-id $(MAX_USER_ID)
 
-eval: ## LLM eval — платно, только по прямой просьбе (владелец B)
-	@echo "eval появится в S1 у владельца B (tests/eval)"
+EVAL_REPEAT ?= 3
+eval: .env ## eval Brain на GigaChat — платно, только по прямой просьбе владельца B (ключ из .env)
+	set -a && . ./.env && set +a && LLM_PROVIDER=gigachat $(UV) run python -m brain.eval run --provider gigachat \
+		--cases tests/eval/cases.yaml --repeat $(EVAL_REPEAT)
+
+eval-fake: ## eval на оракуле: бесплатно, проверяет раннер и кейсы
+	$(UV) run python -m brain.eval run --provider fake --cases tests/eval/cases.yaml --repeat 1
 
 STAND_COMPOSE ?= docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.stand.yml \
 	--env-file .env --profile full
