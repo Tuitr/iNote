@@ -27,7 +27,7 @@ iNote — голосовой ассистент задач и встреч: бо
 - `mcp` — `/health`, `/internal/v1` (J8) и MCP на `/mcp`: 8 инструментов проверяют аргументы; настоящие
   (`create_task`, `create_event`, `list_items`) работают с базой, остальные до S2 отвечают примерами. Всё, кроме `/health`, — по `SERVICE_TOKEN`.
 - `api` — `/health` и заглушка `/v1`: отвечает примерами J5, умеет ETag/304.
-- `compose.yaml` — postgres, redis, migrate, mcp, api, scheduler.
+- Стенд — общий `deploy/docker-compose.yml` (C + D): postgres, redis, migrate, mcp, api, scheduler, bot, agent.
 
 Настоящей логики (запись в БД, поиск, напоминания) ещё нет: это S1–S3.
 
@@ -113,7 +113,7 @@ flowchart LR
 | `alembic.ini`, `migrations/` | Миграции Alembic; `env.py` берёт адрес из `DATABASE_URL` | Архитектура D, раздел 7; пароля нет в репо | контейнер `migrate`, тесты |
 | `migrations/versions/0001_initial.py` | Схема БД v0: `users`, `items`, `notifications`, `dialog_log`, `pg_trgm`, индексы | План S1, раздел 3; без `embedding` до `EMBED_DIM` от A | `migrate` |
 | `Dockerfile` | Один образ на блок D: только код D, контракты, примеры и миграции | Решение Никиты (развилка А) | compose |
-| `compose.yaml` | postgres, redis, migrate, mcp, api, scheduler | Шаг 2 S0, шаг 7 S1; общий с C | все |
+| `deploy/docker-compose.yml` (блок зоны D) | migrate, mcp, api, scheduler рядом с ботом и агентом C | Мерж с C, 2026-10-24; корневой `compose.yaml` удалён | все |
 | `pyproject.toml` | Зависимости, сборка, ruff, pytest | Один файл вместо `requirements.txt` + конфигов | D |
 | `.env.example` | Переменные окружения без значений | Правило «секреты только в `.env`» | все |
 | `.gitignore`, `.dockerignore` | Не коммитить `.env`, `.venv`, `.idea`; не тащить тесты и docs в образ | Секреты и мусор не попадают в git и образ | git, Docker |
@@ -412,6 +412,13 @@ Python 3.12 в Docker (план D); локально работает и на 3.
 | 2026-10-22 | Шаг 34 (schemathesis) не делаем | Делать | Ещё одна зависимость; 6 GET-ручек уже покрыты тестами | Никита |
 | 2026-10-22 | README зоны D — `services/README-D.md` | Раздел в корневом README | Корневой README общий для команды и пока пуст | агент |
 | 2026-10-22 | `docs/BACKEND_D_EXPLAINED.md` удалён; uvicorn в `mcp` и `api` с `--no-access-log` | Оставить | Снимок S0 устарел и дублировал README-D; access-лог uvicorn дублировал строку с `trace_id` | Никита |
+| 2026-10-24 | После мержа C, D, E в `main` правки по ревью C делаются во всех зонах | Только зона D | Решение Никиты | Никита |
+| 2026-10-24 | J4 `attempt` в базе — число закончившихся попыток (растёт при записи итога), в J4 уходит `attempt + 1`; истёкшая аренда попыткой не считается | Растить при взятии в аренду | Бот принимает 1…6; после падений Scheduler номер уходил за 6 и бот отвечал 400 | Никита |
+| 2026-10-24 | Образ D ставит зависимости `uv sync --frozen --no-dev --no-install-project` по `uv.lock` | `pip install -e .` | Версии в образе не были зафиксированы; так же собираются образы C | Никита |
+| 2026-10-24 | Тесты D с `test_database_url` / `test_redis_url` автоматически `integration` (хук в `conftest.py`); jobs C `test` и `integration` пропускают `libs/core` и `services/tests`, все тесты D — один раз в `backend-d` | Двойной прогон | Ревью C: тесты D шли дважды, unit-job поднимал Postgres | Никита |
+| 2026-10-24 | J8 PATCH settings: агент разбирает ответ D (`UserSettingsResponse`, настройки без `user_id`); модели C в `libs/contracts/src/contracts` — зеркало D, тесты C разбирают примеры D `contracts/examples/j8`; дубли примеров C удалены; заглушка MCP отвечает статусами и формой D | Черновик C | Баг: смена пояса с настоящим D падала | Никита |
+| 2026-10-24 | Повторное «Выполнено» агент узнаёт по фокусу (запись в нём уже `done`) и отвечает «Уже отмечено» без вызова MCP | Статус `unchanged` от D | J3 заморожен, у D повтор отвечает тем же `completed` | Никита |
+| 2026-10-24 | Один стенд: настоящие migrate, mcp, api, scheduler в `deploy/docker-compose.yml` вместо заглушек; postgres:16 с учёткой из `.env` (`POSTGRES_*`, совпадает с `DATABASE_URL`); api на 127.0.0.1:`API_DEV_PORT` для `npm run dev` (на стенде с HTTPS — `!reset`); корневой `compose.yaml` удалён; `make seed MAX_USER_ID=…`; e2e создают нужные записи сами (`given`); реестр Redis — ключ `api:list` как в коде D | Два стенда | Ревью C: C и D вместе не запускались, порт 8001 занимали оба | Никита |
 
 ---
 

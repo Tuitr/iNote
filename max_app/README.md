@@ -17,7 +17,7 @@ npm run typecheck  # проверка типов
 npm run build      # сборка в dist/
 ```
 
-`npm run dev` ждёт `api` из корневого `compose.yaml` с `API_DEV_AUTH=true`: вне MAX у браузера нет
+`npm run dev` ждёт `api` стенда (`make up`, порт `API_DEV_PORT`, по умолчанию 8000) с `API_DEV_AUTH=true` в `.env`: вне MAX у браузера нет
 подписанного `initData`, и в dev-сборке фронт шлёт фейковую строку без подписи (`src/max/bridge.ts`).
 Экран по `start_param` вне MAX выбирается адресом: `http://localhost:5173/?startapp=today`.
 

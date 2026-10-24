@@ -102,6 +102,8 @@ async def main() -> None:
         await demo.text("/start")
         await demo.voice("Напомни через минуту позвонить Ивану")
         reminderId = itemIdOf(demo.last)
+        # стенд на настоящем D: у нового пользователя записей нет — конфликту нужна своя встреча
+        await demo.text("Встреча со стоматологом завтра в 9:30")
         await demo.voice("Встреча с Петром завтра в 9:30")
         await demo.press("Всё равно создать")
         await demo.text("Что у меня завтра?")

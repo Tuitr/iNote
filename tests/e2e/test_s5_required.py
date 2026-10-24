@@ -7,7 +7,7 @@ test_s1…test_s4; отчёт по всем — в конце прогона (`t
 
 import httpx
 import pytest
-from tests.e2e.stand import Chat, labels, messagesTo, payloadOf, push, voice
+from tests.e2e.stand import Chat, given, labels, messagesTo, payloadOf, push, voice
 
 pytestmark = pytest.mark.e2e
 
@@ -64,7 +64,9 @@ async def test_listPeriod(bot: httpx.AsyncClient, channel: str) -> None:
 # Примечание: ТЗ 4 — поиск по старым записям: «найди звонок Ивану» → «Нашёл:» и запись
 @pytest.mark.parametrize("channel", CHANNELS)
 async def test_search(bot: httpx.AsyncClient, channel: str) -> None:
-    lines = await say(bot, Chat(), channel, "найди звонок Ивану", 1)
+    chat = Chat()
+    await given(bot, chat, "Напомни завтра в 10 позвонить Ивану")
+    lines = await say(bot, chat, channel, "найди звонок Ивану", 2)
     assert lines[0].startswith("Нашёл"), lines
     assert any("Позвонить Ивану" in line for line in lines[1:]), lines
 

@@ -22,7 +22,8 @@ Redis. В конце — таблица «итог → trace_id → сценар
 проигрывает через `/dev/max/*` и печатает как чат: `/start` → напоминание голосом → встреча с конфликтом и «Всё
 равно создать» → «что у меня завтра» → поиск → уведомление J4 → «Отложить на 1 ч» → «перенеси его на завтра в 15»
 голосом → `/settings` → Екатеринбург → «что у меня сегодня». Под каждым ответом — кнопки и `trace_id`. Данные —
-фикстуры MCP-заглушки (`deploy/stub/mcp/fixtures`), пользователь — новый на каждый запуск.
+в настоящем D (PostgreSQL стенда), пользователь — новый на каждый запуск; встречу для конфликта демо создаёт само.
+Демо-данные на свой аккаунт — `make seed MAX_USER_ID=<id>`.
 
 ### Чек-лист ручного прохода на стенде с настоящим MAX
 
@@ -43,10 +44,10 @@ Redis. В конце — таблица «итог → trace_id → сценар
 
 | Файл | Что это |
 |---|---|
-| `docker-compose.yml` | postgres (pgvector:pg16), redis (256 МБ, `volatile-lru`, без персистентности), bot, agent; заглушки asr (A), api, scheduler, migrate (D), max_app (E); mcp — временная MCP-заглушка C (`stub/mcp`, см. её README) |
+| `docker-compose.yml` | postgres:16 (учётка из `.env`), redis (256 МБ, `volatile-lru`, без персистентности), bot, agent; настоящие сервисы D из `Dockerfile` в корне — migrate (одноразово), mcp, api (на 127.0.0.1:`API_DEV_PORT` для `npm run dev`), scheduler; заглушки asr (A) и max_app (E) |
 | `docker/python.Dockerfile` | общий образ Python-сервисов: `uv sync --frozen` без dev, пакеты не editable, пользователь `app`, uvicorn — PID 1 |
 | `stub/` | заглушка чужого сервиса на stdlib: `/health/*` → 200, остальное → 404 в конверте ошибки |
-| `stub/mcp/` | **временная** MCP-заглушка C: инструменты J3 с конфликтами, J8 `users/resolve` и `dialog-turns` — до заглушки D |
+| `stub/mcp/` | MCP-заглушка C для интеграционных тестов агента (`services/agent/tests/integration`): отвечает в форме D (статусы J3, ответ PATCH settings); в стенде её заменил настоящий `mcp` D |
 | `stub/asr/` | **временная** ASR-заглушка C по J1: «OggS» + текст → текст — до `ASR_MODE=fake` у A |
 | `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX (override) |
 | `Caddyfile` | что видно снаружи: webhook MAX, `/api/v1/*`, статика мини-приложения; служебное — 404 |
