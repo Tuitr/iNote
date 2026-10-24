@@ -147,10 +147,15 @@ class TestCreateEvent:
     async def test_all_day_event_reminds_only_when_asked(
         self, item_service: ItemService, user_id: int
     ) -> None:
-        result = await item_service.create_event(_event(user_id, TOMORROW, remind_before_min=60))
+        # Послезавтра, а не завтра: «за час до полуночи завтра» после 23:00 уже прошло бы
+        # и напоминания не было бы — тест зависел бы от времени суток.
+        day_after_tomorrow = TOMORROW + timedelta(days=1)
+        result = await item_service.create_event(
+            _event(user_id, day_after_tomorrow, remind_before_min=60)
+        )
 
         assert result.item is not None
-        assert result.item.remind_at == _at("23:00", TOMORROW - timedelta(days=1))
+        assert result.item.remind_at == _at("23:00", TOMORROW)
 
     async def test_all_day_event_with_end_time_is_invalid(
         self, item_service: ItemService, user_id: int
