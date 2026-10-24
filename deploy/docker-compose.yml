@@ -112,15 +112,22 @@ services:
       redis: { condition: service_healthy }
       mcp: { condition: service_healthy }
 
-  # --- заглушки чужих зон: одна мини-картинка deploy/stub; владелец — в STUB_OWNER ---
   asr:
-    # ВРЕМЕННО (S2, C): ASR-заглушка по J1 из deploy/stub/asr («OggS» + текст → текст).
-    # После мержа заменить на ASR_MODE=fake от A, затем на build: services/asr (владелец A)
+    # ASR по J1 (services/asr, S5; владелец стыка — A). Провайдер — ASR_PROVIDER из Makefile:
+    # mock — fake («OggS» + текст, без ключей и денег), full — yandex (SpeechKit, ключ из .env, платно)
     <<: *python-service
     build:
-      context: stub/asr
-    image: va/stub-asr:local
-    restart: "no"
+      context: ..
+      dockerfile: deploy/docker/python.Dockerfile
+      args: { PACKAGE: va-asr, MODULE: asr }
+    image: va/asr:local
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ASR_PROVIDER: ${ASR_PROVIDER:-fake}
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # --- заглушки чужих зон: одна мини-картинка deploy/stub; владелец — в STUB_OWNER ---
 
   mcp:
     # ВРЕМЕННО (S1, C): MCP-заглушка с инструментами из deploy/stub/mcp/fixtures.
