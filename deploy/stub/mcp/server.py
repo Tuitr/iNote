@@ -714,18 +714,16 @@ class StubUsers:
         self._tz[userId] = tz
         return self._user(userId, created=False)
 
-    # Примечание: пользователь в форме ответа resolve
+    # Примечание: пользователь в форме ответа resolve у D (settings — UserSettings целиком)
     def _user(self, userId: int, *, created: bool) -> Json:
+        tz = self._tz.get(userId, "Europe/Moscow")
         settings: Json = {
-            "default_event_min": DEFAULT_EVENT_MIN,
+            "tz": tz,
             "voice_replies": False,
+            "default_event_min": DEFAULT_EVENT_MIN,
+            "remind_before_min": 15,
         }
-        return {
-            "user_id": userId,
-            "tz": self._tz.get(userId, "Europe/Moscow"),
-            "settings": settings,
-            "created": created,
-        }
+        return {"user_id": userId, "tz": tz, "settings": settings, "created": created}
 
 
 # Примечание: конверт ошибки стандарта с trace_id запроса
@@ -753,7 +751,7 @@ def _authError(request: Request) -> JSONResponse | None:
 
 # Примечание: POST /internal/v1/users/resolve (J8) поверх StubUsers
 def buildResolveRoute(users: StubUsers) -> Route:
-    # Примечание: разбор тела, проверка токена, ответ по contracts/examples/users
+    # Примечание: разбор тела, проверка токена, ответ по contracts/examples/j8
     async def resolveUser(request: Request) -> JSONResponse:
         if (denied := _authError(request)) is not None:
             return denied
@@ -776,8 +774,8 @@ def buildResolveRoute(users: StubUsers) -> Route:
     return Route("/internal/v1/users/resolve", resolveUser, methods=["POST"])
 
 
-# Примечание: PATCH /internal/v1/users/{user_id}/settings (J8, черновик C — у D метода ещё нет):
-# {tz} → пользователь как у resolve; нет пояса или он не IANA — 400, нет id — 404
+# Примечание: PATCH /internal/v1/users/{user_id}/settings (J8, как у D):
+# {tz} → настройки целиком; нет пояса или он не IANA — 400, нет id — 404
 def buildSettingsRoute(users: StubUsers) -> Route:
     # Примечание: разбор тела и проверка пояса (ZoneInfo), токен — как у resolve
     async def patchSettings(request: Request) -> JSONResponse:
@@ -792,15 +790,13 @@ def buildSettingsRoute(users: StubUsers) -> Route:
         tz = body.get("tz")
         if not isinstance(tz, str) or not _knownTz(tz):
             return _errorResponse(request, 400, "validation_error", "нужен tz — пояс IANA")
-        user = users.update(int(request.path_params["user_id"]), tz)
+        userId = int(request.path_params["user_id"])
+        user = users.update(userId, tz)
         if user is None:
             return _errorResponse(request, 404, "not_found", "нет такого пользователя")
-        log(
-            "user_settings_updated",
-            user_id=user["user_id"],
-            trace_id=request.headers.get("X-Trace-Id"),
-        )
-        return JSONResponse(user)
+        log("user_settings_updated", user_id=userId, trace_id=request.headers.get("X-Trace-Id"))
+        # Как у D: ответ — настройки целиком (contracts/examples/j8/users_settings.response.json)
+        return JSONResponse(user["settings"])
 
     return Route("/internal/v1/users/{user_id:int}/settings", patchSettings, methods=["PATCH"])
 

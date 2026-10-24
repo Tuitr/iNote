@@ -101,8 +101,8 @@ J4: `chat_not_found` 404). `ServiceHttpClient` превращает конвер
 | `contracts/focus.py` — `FocusRequest` | бот → агент | C | `contracts/examples/agent/focus_request.json` |
 | `contracts/agent_side.py` — `TurnInput`, `ToolExecutor`, `ToolSpec`, `ToolResult`, `ErrorInfo` | J2 агент ↔ Brain | C (сторона C); `TurnResult`, `Clarify`, `Brain` — B | `contracts/examples/brain` |
 | `contracts/asr.py` | J1 бот → ASR | **A**, черновик потребителя C | `contracts/examples/asr` |
-| `contracts/users.py` (resolve, PATCH settings) | J8 агент → mcp-контейнер | **D**, черновик потребителя C | `contracts/examples/users` |
-| `contracts/dialog_turns.py` | J8 агент → mcp-контейнер | **D**, черновик потребителя C | `contracts/examples/dialog` |
+| `contracts/users.py` (resolve, PATCH settings) | J8 агент → mcp-контейнер | **D**, зеркало C (модели D — `libs/contracts/internal.py`) | `contracts/examples/j8` (примеры D) |
+| `contracts/dialog_turns.py` | J8 агент → mcp-контейнер | **D**, зеркало C (модели D — `libs/contracts/internal.py`) | `contracts/examples/j8` (примеры D) |
 
 У черновиков чужих стыков при мерже верх берёт владелец; агент и бот подстраиваются. Схемы под снапшотами
 (`pytest -m contract`), каждое действие и каждый ответ J4 — с примером, примеры проверяют тесты.

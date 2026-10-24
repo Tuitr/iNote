@@ -1,0 +1,24 @@
+{
+  "properties": {
+    "default_event_min": {
+      "default": 60,
+      "minimum": 1,
+      "title": "Default Event Min",
+      "type": "integer"
+    },
+    "tz": {
+      "title": "Tz",
+      "type": "string"
+    },
+    "voice_replies": {
+      "default": false,
+      "title": "Voice Replies",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "tz"
+  ],
+  "title": "UserSettingsResponse",
+  "type": "object"
+}

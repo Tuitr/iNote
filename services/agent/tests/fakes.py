@@ -293,7 +293,14 @@ class FakeMcpHttp:
             return httpx.Response(503, json={"error": error})
         body = json.loads(request.content)
         self.tz = body["tz"]
-        return httpx.Response(200, json=self._user(created=False))
+        # Ответ D — настройки целиком (contracts/examples/j8/users_settings.response.json)
+        settings = {
+            "tz": self.tz,
+            "voice_replies": False,
+            "default_event_min": 60,
+            "remind_before_min": 15,
+        }
+        return httpx.Response(200, json=settings)
 
 
 # Примечание: история диалога в памяти; failing — record падает (ответ всё равно уходит)

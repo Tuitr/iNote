@@ -4,7 +4,8 @@ from pydantic import ValidationError
 from contracts.dialog_turns import DialogTurnsRequest
 from libs.contracts.tests.examples import loadExample
 
-EXAMPLE = "dialog/dialog_turns_request.json"
+# Пример владельца D: зеркало C должно разбирать его и отдавать то же самое
+EXAMPLE = "j8/dialog_turns.request.json"
 
 
 # Примечание: пример J8 dialog-turns валиден и сериализуется обратно без потерь
