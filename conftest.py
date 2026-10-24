@@ -21,6 +21,8 @@ from libs.core.tests.fakes import FakeRedis
 from services.mcp.tools.context import ToolServices
 
 ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
+# Фикстуры, которые поднимают контейнеры: тесты с ними — integration (нужен Docker).
+_DOCKER_FIXTURES = {"test_database_url", "test_redis_url"}
 POSTGRES_IMAGE = "postgres:16"
 _TRUNCATE_ALL = text("TRUNCATE dialog_log, notifications, items, users RESTART IDENTITY")
 
@@ -116,3 +118,13 @@ def search_service(session_factory: async_sessionmaker[AsyncSession]) -> SearchS
 @pytest.fixture
 def tool_services(item_service: ItemService, search_service: SearchService) -> ToolServices:
     return ToolServices(items=item_service, search=search_service)
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Тесты D с PostgreSQL или Redis в Docker помечаются integration (маркеры — в pyproject).
+
+    Так `make test` (unit) не поднимает контейнеры, а `make test-integration` берёт их.
+    """
+    for item in items:
+        if _DOCKER_FIXTURES & set(getattr(item, "fixturenames", ())):
+            item.add_marker(pytest.mark.integration)
