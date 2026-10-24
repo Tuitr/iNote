@@ -1,5 +1,6 @@
-"""Настройки ↔ .env.example (S4): каждая переменная бота и агента и каждая общая есть в
-.env.example, и наоборот — в .env.example нет переменных BOT_/AGENT_/общих, которых не читает код.
+"""Настройки ↔ .env.example (S4, ASR — S5): каждая переменная бота, агента, ASR и каждая общая есть
+в .env.example, и наоборот — в .env.example нет переменных BOT_/AGENT_/ASR_/общих, которых не
+читает код.
 
 Исключения — только переменные compose (их читает docker compose, а не сервис) с причиной.
 """
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Final
 
 from agent.infrastructure.settings import AgentSettings
+from asr.infrastructure.settings import AsrSettings
 from bot.infrastructure.settings import BotSettings
 from common.config import SHARED_ENV_NAMES
 
@@ -26,23 +28,23 @@ def exampleNames() -> set[str]:
     return {m["name"] for line in lines if (m := _LINE_RE.match(line))}
 
 
-# Примечание: переменные, которые читает код бота и агента (alias полей настроек)
+# Примечание: переменные, которые читает код бота, агента и ASR (alias полей настроек)
 def settingsNames() -> set[str]:
-    return set(BotSettings.envNames() | AgentSettings.envNames())
+    return set(BotSettings.envNames() | AgentSettings.envNames() | AsrSettings.envNames())
 
 
-# Примечание: всё, что читают настройки бота и агента, есть в .env.example
+# Примечание: всё, что читают настройки бота, агента и ASR, есть в .env.example
 def test_everySettingInEnvExample() -> None:
     missing = settingsNames() - exampleNames()
     assert missing == set(), f"нет в .env.example: {sorted(missing)}"
 
 
-# Примечание: в .env.example нет BOT_/AGENT_/общих переменных, которых не читает код
+# Примечание: в .env.example нет BOT_/AGENT_/ASR_/общих переменных, которых не читает код
 def test_noStaleVariablesInEnvExample() -> None:
     ours = {
         name
         for name in exampleNames()
-        if name.startswith(("BOT_", "AGENT_")) or name in SHARED_ENV_NAMES
+        if name.startswith(("BOT_", "AGENT_", "ASR_")) or name in SHARED_ENV_NAMES
     }
     stale = ours - settingsNames() - COMPOSE_ONLY - SHARED_FOR_OTHERS
     assert stale == set(), f"в .env.example, но код не читает: {sorted(stale)}"

@@ -1,7 +1,8 @@
-"""Таблицы переменных окружения в README бота и агента — из классов настроек (S4, шаг 6).
+"""Таблицы переменных окружения в README бота, агента и ASR — из классов настроек (S4, шаг 6).
 
-Источник — `BotSettings`, `AgentSettings` и общие поля `BaseServiceSettings` (description полей):
-таблица не расходится с кодом. Блок в README — между `<!-- env:begin -->` и `<!-- env:end -->`.
+Источник — `BotSettings`, `AgentSettings`, `AsrSettings` и общие поля `BaseServiceSettings`
+(description полей): таблица не расходится с кодом. Блок в README — между `<!-- env:begin -->`
+и `<!-- env:end -->`.
 
     uv run python deploy/env_docs.py          # переписать блоки
     uv run python deploy/env_docs.py --check  # выход 1, если README устарел (так делает тест)
@@ -16,6 +17,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from agent.infrastructure.settings import AgentSettings
+from asr.infrastructure.settings import AsrSettings
 from bot.infrastructure.settings import BotSettings
 from common.config import BaseServiceSettings
 
@@ -25,6 +27,7 @@ END: Final = "<!-- env:end -->"
 TARGETS: Final[dict[Path, type[BaseServiceSettings]]] = {
     ROOT / "services" / "bot" / "README.md": BotSettings,
     ROOT / "services" / "agent" / "README.md": AgentSettings,
+    ROOT / "services" / "asr" / "README.md": AsrSettings,
 }
 SHARED: Final = frozenset(BaseServiceSettings.model_fields)
 

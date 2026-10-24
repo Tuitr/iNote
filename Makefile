@@ -6,7 +6,7 @@ UV ?= uv
 # --- зона C ---
 .PHONY: help install hooks fmt lint typecheck imports test test-unit test-contract \
         test-integration test-lifecycle cov check up down logs ps smoke e2e seed eval deploy \
-        stand-config redis-check demo env-docs
+        stand-config redis-check demo env-docs asr-try
 
 # Стенд: docker compose из deploy/, переменные — из .env (создаётся из .env.example)
 PROFILE ?= mock
@@ -15,6 +15,12 @@ UP_FLAGS ?= --build
 SERVICE ?=
 TRACE ?=
 MAX_USER_ID ?=
+# ASR по профилю: mock — фейк без ключей и денег, full — SpeechKit (ключ ASR_YANDEX_API_KEY из .env).
+# export: значение видит docker compose (подстановка ${ASR_PROVIDER}) и перекрывает строку из .env
+ASR_PROVIDER_mock := fake
+ASR_PROVIDER_full := yandex
+export ASR_PROVIDER := $(ASR_PROVIDER_$(PROFILE))
+FILE ?=
 
 help: ## список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -95,6 +101,9 @@ demo: ## демо на поднятом стенде mock: диалог в фе�
 
 redis-check: ## аудит Redis поднятого стенда: ключи из реестра, TTL, maxmemory и политика
 	$(UV) run python deploy/redis_check.py $(COMPOSE)
+
+asr-try: ## распознать свой OGG/Opus сервисом asr стенда: FILE=voice.ogg (PROFILE=full — SpeechKit, платно)
+	./deploy/asr_try.sh "$(FILE)" $(COMPOSE)
 
 seed: ## демо-данные D на аккаунт MAX: make seed MAX_USER_ID=<id> (нужен make up)
 	@test -n "$(MAX_USER_ID)" || (echo "нужен MAX_USER_ID=<id пользователя в MAX>" >&2 && exit 1)
