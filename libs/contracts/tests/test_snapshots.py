@@ -58,5 +58,6 @@ def test_schema(model: type[BaseModel], jsonSnapshot: SnapshotAssertion) -> None
 
 # Примечание: каталог примеров: какой файл есть — тот и под снапшотом, потеря примера видна
 def test_examplesCatalog(jsonSnapshot: SnapshotAssertion) -> None:
-    files = sorted(str(p.relative_to(EXAMPLES_DIR)) for p in EXAMPLES_DIR.rglob("*.json"))
+    # as_posix: ключи снапшота одинаковые на Linux и Windows (иначе «actions\cancel.json»)
+    files = sorted(p.relative_to(EXAMPLES_DIR).as_posix() for p in EXAMPLES_DIR.rglob("*.json"))
     assert {name: loadExample(name) for name in files} == jsonSnapshot
