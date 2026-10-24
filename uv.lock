@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [manifest]
@@ -8,6 +8,7 @@ members = [
     "va-agent",
     "va-asr",
     "va-bot",
+    "va-brain",
     "va-common",
     "va-contracts",
 ]
@@ -1394,6 +1395,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "redis" },
     { name = "uvicorn" },
+    { name = "va-brain" },
     { name = "va-common" },
     { name = "va-contracts" },
 ]
@@ -1406,6 +1408,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
+    { name = "va-brain", editable = "libs/brain" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },
 ]
@@ -1456,6 +1459,27 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
+    { name = "va-common", editable = "libs/common" },
+    { name = "va-contracts", editable = "libs/contracts" },
+]
+
+[[package]]
+name = "va-brain"
+version = "0.0.0"
+source = { editable = "libs/brain" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "va-common" },
+    { name = "va-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "pydantic-settings", specifier = ">=2.9" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },
 ]
