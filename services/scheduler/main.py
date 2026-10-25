@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 import httpx
+from redis.exceptions import RedisError
 from sqlalchemy.exc import SQLAlchemyError
 
 from libs.core.config import load_scheduler_settings
@@ -58,8 +59,9 @@ async def main() -> None:
                 try:
                     await run_cycle(reminders, notifier)
                     HEARTBEAT.touch()
-                except SQLAlchemyError:
-                    # База недоступна: не роняем контейнер, пробуем на следующем проходе.
+                except (SQLAlchemyError, RedisError):
+                    # База или Redis (версия данных) недоступны: не роняем контейнер,
+                    # пробуем на следующем проходе.
                     logger.exception("Проход Scheduler не выполнен")
                 await asyncio.sleep(settings.interval_seconds)
     finally:

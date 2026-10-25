@@ -9,9 +9,9 @@ from bot.domain.voice import AudioFile, VoiceFailureError, VoiceFailureReason
 from common.logging import getLogger
 from contracts.asr import DEFAULT_MIME
 
-# Стандарт для MAX API: 10 с и до 3 попыток; 2 МБ — лимит синхронного распознавания SaluteSpeech
+# Стандарт для MAX API: 10 с и до 3 попыток; 1 МБ — лимит синхронного распознавания SpeechKit
 DEFAULT_TIMEOUT_S: Final = 10.0
-DEFAULT_MAX_BYTES: Final = 2 * 1024 * 1024
+DEFAULT_MAX_BYTES: Final = 1024 * 1024
 ATTEMPTS: Final = 3
 _RETRYABLE_STATUS: Final = 500
 
