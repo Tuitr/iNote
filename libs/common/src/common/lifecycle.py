@@ -108,11 +108,6 @@ def listenForShutdownSignal() -> asyncio.Future[signal.Signals]:
     return received
 
 
-# Примечание: короткая форма для простых процессов: поставить обработчики и ждать сигнал
-async def waitForShutdownSignal() -> signal.Signals:
-    return await listenForShutdownSignal()
-
-
 # Примечание: возвращает сигналам поведение по умолчанию после первого срабатывания
 def _removeSignalHandlers(loop: asyncio.AbstractEventLoop) -> None:
     for sig in _SHUTDOWN_SIGNALS:

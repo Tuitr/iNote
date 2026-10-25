@@ -11,8 +11,6 @@ from common.logging import getLogger
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
-    from common.http import ServiceHttpClient
-
 type CheckStatus = Literal["ok", "fail", "timeout"]
 type Probe = Callable[[], Awaitable[object]]
 
@@ -72,18 +70,5 @@ def redisHealthCheck(client: "Redis", timeoutS: float = DEFAULT_CHECK_TIMEOUT_S)
     # Примечание: результат PING не важен, важна ошибка
     async def probe() -> object:
         return await client.ping()
-
-    return HealthCheck(probe=probe, timeoutS=timeoutS)
-
-
-# Примечание: пинг соседнего сервиса по его /health/live (не ready — без каскада)
-def httpHealthCheck(
-    client: "ServiceHttpClient",
-    path: str = "/health/live",
-    timeoutS: float = DEFAULT_CHECK_TIMEOUT_S,
-) -> HealthCheck:
-    # Примечание: ServiceHttpClient сам превращает не-2xx в AppError
-    async def probe() -> object:
-        return await client.get(path, retry=False)
 
     return HealthCheck(probe=probe, timeoutS=timeoutS)

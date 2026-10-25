@@ -79,7 +79,7 @@ main.py          composition root: createApp() и lifespan (клиенты, ре
 | `BOT_USERNAME` | — | имя бота в MAX: `web_app` у open_app и адрес deep link |
 | `BOT_ASR_URL` | `http://asr:8000` | адрес ASR (J1) |
 | `BOT_ASR_TIMEOUT_S` | `15.0` | таймаут ASR, с; 2 повтора с ключом от хеша аудио |
-| `BOT_VOICE_MAX_BYTES` | `2097152` | лимит голосового, байт; больше — «слишком длинное» |
+| `BOT_VOICE_MAX_BYTES` | `1048576` | лимит голосового, байт; больше — «слишком длинное» |
 | `BOT_VOICE_DOWNLOAD_TIMEOUT_S` | `10.0` | таймаут скачивания голосового по ссылке MAX, с |
 | `BOT_FAKE_FILES_URL` | `http://127.0.0.1:8000` | откуда бот скачивает голосовые фейкового MAX (`/dev/max/files`) — сам у себя |
 | `BOT_TYPING_INTERVAL_S` | `4.0` | как часто повторять «печатает…», с |

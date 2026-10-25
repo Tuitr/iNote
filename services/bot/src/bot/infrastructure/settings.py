@@ -4,6 +4,7 @@ from typing import ClassVar, Final, Literal, Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 
 from bot.application.reply_mapper import OpenAppMode
+from bot.infrastructure.audio_downloader import DEFAULT_MAX_BYTES
 from bot.infrastructure.real_max import MAX_API_URL
 from common.config import BaseServiceSettings
 
@@ -104,7 +105,7 @@ class BotSettings(BaseServiceSettings):
         description="таймаут ASR, с; 2 повтора с ключом от хеша аудио",
     )
     voiceMaxBytes: int = Field(
-        default=2 * 1024 * 1024,
+        default=DEFAULT_MAX_BYTES,
         gt=0,
         validation_alias="BOT_VOICE_MAX_BYTES",
         description="лимит голосового, байт; больше — «слишком длинное»",
