@@ -14,6 +14,10 @@
 !alembic.ini
 !migrations/
 # --- конец зоны D ---
+# --- зона E: мини-приложение (max_app/Dockerfile), без локальных зависимостей и сборки ---
+!max_app/
+max_app/node_modules
+max_app/dist
 # --- общее: внутри разрешённых папок ---
 **/__pycache__
 **/*.py[cod]

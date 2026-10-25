@@ -88,7 +88,15 @@ def test_botAndApiNarrow() -> None:
 # Примечание: на стенде наружу публикуется только Caddy; бот — webhook и настоящий MAX
 def test_standComposePublishesOnlyCaddy() -> None:
     services = standServices()
-    assert set(services) == {"caddy", "bot", "api"}
+    assert set(services) == {"caddy", "bot", "api", "agent", "asr", "max_app", "backup"}
+    assert "ports:" not in services["agent"]
+    assert (
+        setting(services["agent"], "AGENT_BRAIN"),
+        setting(services["asr"], "ASR_PROVIDER"),
+    ) == (
+        "llm",
+        "yandex",
+    )
     assert "ports:" in services["caddy"]
     # бот и api в стенде разработки опубликованы на 127.0.0.1, на стенде с HTTPS — только Caddy
     assert setting(services["bot"], "ports") == "!reset []"

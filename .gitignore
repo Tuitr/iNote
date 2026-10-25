@@ -29,6 +29,11 @@ CLAUDE.md
 /docs/Команда и протоколы.md
 # --- конец зоны C ---
 
+# сертификаты стенда скачиваются на сервере (deploy/certs/README.md)
+deploy/certs/*
+!deploy/certs/README.md
+# бэкапы PostgreSQL стенда (сервис backup в docker-compose.stand.yml)
+deploy/backups/
 # --- зона B ---
 # отчёты и трассы eval (python -m brain.eval)
 .eval/
