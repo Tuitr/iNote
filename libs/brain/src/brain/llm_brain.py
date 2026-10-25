@@ -59,6 +59,18 @@ _DONE_RE: Final = re.compile(
     r"\b(сделал\w*|сделан\w*|выполнил\w*|выполнен\w*|сходил\w*|закончил\w*|отметь)", re.IGNORECASE
 )
 HIDDEN_ON_DELETE: Final = frozenset({"update_item", "complete_item"})
+# «отмени все планы на неделю», «удали всё на завтра»: модель только находит записи за период
+# (list_items), удаляет код — после «Да» на вопрос «Удалить N записей?»
+_BULK_RE: Final = re.compile(r"\b(вс[её]|все)\b", re.IGNORECASE)
+BULK_DELETE_TOOLS: Final = frozenset({"list_items"})
+DELETE_MANY: Final = "delete_many"
+ASK_DELETE_MANY: Final = "Удалить {count} {noun}: {titles}?"
+DELETE_MANY_OPTION: Final = "Да, удалить"
+DELETE_MANY_CANCELLED: Final = "Хорошо, ничего не удаляю."
+TITLES_IN_QUESTION: Final = 5
+_YES_RE: Final = re.compile(
+    r"^(да|ага|угу|удаляй|удали|удалить|давай|конечно|ок|окей)\b", re.IGNORECASE
+)
 HIDDEN_ON_DONE: Final = frozenset({"update_item", "delete_item"})
 # После списка модели нечего делать: агент рисует его из data, второй вызов модели — лишние секунды
 FINAL_TOOLS: Final = frozenset({"list_items"})
@@ -108,7 +120,12 @@ ASK_USER_SPEC: Final = ToolSpec(
                 "description": "2–4 коротких варианта ответа для кнопок",
             },
             "tool": {"type": "string", "description": "Функция, которую вызвать после ответа"},
-            "args": {"type": "object", "description": "Уже известные аргументы этой функции"},
+            # GigaChat отвергает object без properties (422), когда функций в запросе мало
+            "args": {
+                "type": "object",
+                "properties": {},
+                "description": "Уже известные аргументы этой функции",
+            },
             "field": {"type": "string", "description": "Поле, которое заполняет ответ"},
             "values": {
                 "type": "array",
@@ -167,6 +184,14 @@ class LlmBrain:
     # Примечание: новый ход: цикл модели с инструментами; исключения LLM наружу не выходят
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
         started = time.perf_counter()
+        pending = turn.pending or {}
+        if pending.get("kind") == DELETE_MANY:
+            # ответ текстом на «Удалить N записей?»: «да» — удалить, иначе — ничего не трогать
+            state = _Turn(messages=[], knownIds=set(), model=self._model)
+            confirmed = _YES_RE.match(turn.text.strip()) is not None
+            outcome = await _deleteMany(pending, confirmed, tools, state, started)
+            _logTurn(outcome, state)
+            return outcome
         specs = _visibleTools(turn.text, await tools.listTools())
         state = _Turn(
             messages=buildMessages(turn),
@@ -193,9 +218,14 @@ class LlmBrain:
         if pending.get("kind") == "ask":
             return await self.run(turn, tools)
         state = _Turn(messages=[], knownIds={str(b.id) for b in turn.focus}, model=self._model)
+        index = int(choice) if choice.isdigit() else -1
+        if pending.get("kind") == DELETE_MANY:
+            confirmed = index == 0
+            outcome = await _deleteMany(pending, confirmed, tools, state, started)
+            _logTurn(outcome, state)
+            return outcome
         tool, args = pending.get("tool"), pending.get("args")
         choices = [c for c in _list(pending.get("choices")) if isinstance(c, dict)]
-        index = int(choice) if choice.isdigit() else -1
         if (
             pending.get("kind") != "call"
             or not isinstance(tool, str)
@@ -275,10 +305,69 @@ class LlmBrain:
 def _visibleTools(text: str, specs: Sequence[ToolSpec]) -> list[ToolSpec]:
     isDelete = _DELETE_RE.search(text) is not None
     isDone = _DONE_RE.search(text) is not None
+    if _isBulkDelete(text):
+        return [spec for spec in specs if spec.name in BULK_DELETE_TOOLS]
     if isDelete == isDone:
         return list(specs)
     hidden = HIDDEN_ON_DELETE if isDelete else HIDDEN_ON_DONE
     return [spec for spec in specs if spec.name not in hidden]
+
+
+def _isBulkDelete(text: str) -> bool:
+    return _DELETE_RE.search(text) is not None and _BULK_RE.search(text) is not None
+
+
+# Примечание: список за период по просьбе «удали всё» — вопрос «Удалить N записей?» с кнопкой;
+# id записей — в pending, удаляет resume или ответ «да»; пустой список — обычный ответ «ничего нет»
+def _askDeleteMany(
+    call: FunctionCall, result: ToolResult, turn: TurnInput, state: _Turn, started: float
+) -> TurnResult | None:
+    if call.name != "list_items" or not result.ok or not _isBulkDelete(turn.text):
+        return None
+    items = [i for i in _list((result.data or {}).get("items")) if isinstance(i, dict)]
+    ids = [str(i["id"]) for i in items if i.get("id")]
+    if not ids:
+        return None
+    titles = [str(i.get("title") or "") for i in items[:TITLES_IN_QUESTION]]
+    shown = ", ".join(f"«{t}»" for t in titles)
+    if len(items) > TITLES_IN_QUESTION:
+        shown += f" и ещё {len(items) - TITLES_IN_QUESTION}"
+    say = ASK_DELETE_MANY.format(count=len(ids), noun=_recordsNoun(len(ids)), titles=shown)
+    clarify = Clarify(
+        missing=["confirm"],
+        options=[DELETE_MANY_OPTION],
+        pending={"kind": DELETE_MANY, "ids": list(ids)},
+    )
+    return _result("clarify", state, started, say=say, clarify=clarify)
+
+
+# Примечание: «запись / записи / записей» по числу
+def _recordsNoun(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:  # noqa: PLR2004 — правило русского склонения
+        return "запись"
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:  # noqa: PLR2004
+        return "записи"
+    return "записей"
+
+
+# Примечание: подтверждено — delete_item по каждому id из pending; нет — ничего не удаляем
+async def _deleteMany(
+    pending: Mapping[str, object],
+    confirmed: bool,
+    tools: ToolExecutor,
+    state: _Turn,
+    started: float,
+) -> TurnResult:
+    ids = _strings(pending.get("ids"))
+    if not confirmed or not ids:
+        return _result("answer", state, started, say=DELETE_MANY_CANCELLED)
+    for itemId in ids:
+        args: JsonObject = {"id": itemId}
+        result = await tools.call("delete_item", args)
+        state.actions.append(ExecutedAction(name="delete_item", args=args, result=result))
+    if _hasMutation(state.actions):
+        return _result("done", state, started)
+    return _error(_lastToolCode(state.actions), state, started)
 
 
 # Примечание: итог хода в лог — без текста пользователя и ответа модели
@@ -405,6 +494,8 @@ def _afterCall(
             state.corrections.add("tool_error")
             return None
         return _error(_toolCode(code), state, started)
+    if (ask := _askDeleteMany(call, result, turn, state, started)) is not None:
+        return ask
     state.knownIds.update(str(i) for i in _itemIds(result.data))
     data = result.data or {}
     if data.get("status") == "conflict":

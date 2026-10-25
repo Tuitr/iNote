@@ -391,6 +391,67 @@ async def test_reminderWithoutTimeAsks() -> None:
     assert result.clarify.options == ["10:00", "15:00", "19:00"]
 
 
+LISTED: Final = ok(
+    "2 записи",
+    {
+        "items": [item(), item(OTHER_ID, title="Сдать отчёт", kind="task")],
+        "range": {"from": "2026-10-26", "to": "2026-11-02"},
+        "truncated": False,
+    },
+)
+DELETED: Final = ok("Удалено", {"status": "deleted", "item": item()})
+
+
+# Примечание: «отмени все планы на неделю» — модели только list_items; по списку — вопрос
+# «Удалить 2 записи…?» с кнопкой, id в pending, ничего не удалено
+async def test_bulkDeleteAsks() -> None:
+    subject, llm = brain(call("list_items", **{"from": "2026-10-26", "to": "2026-11-02"}))
+    tools = FakeTools({"list_items": [LISTED]})
+    result = await subject.run(turnInput("Отмени все планы на неделю"), tools)
+    assert {tool.name for tool in llm.calls[0].tools} == {"list_items", ASK_USER}
+    assert result.outcome == "clarify"
+    assert result.say == "Удалить 2 записи: «Созвон с Иваном», «Сдать отчёт»?"
+    assert result.clarify is not None
+    assert result.clarify.options == ["Да, удалить"]
+    assert result.clarify.pending == {"kind": "delete_many", "ids": [str(ITEM_ID), str(OTHER_ID)]}
+    assert [name for name, _ in tools.calls] == ["list_items"]
+
+
+# Примечание: пустой период — обычный ответ со списком, без вопроса
+async def test_bulkDeleteNothing() -> None:
+    empty = ok("Записей нет", {"items": [], "range": {}, "truncated": False})
+    subject, _ = brain(call("list_items", **{"from": "2026-10-26", "to": "2026-10-27"}))
+    result = await subject.run(turnInput("удали всё на завтра"), FakeTools({"list_items": [empty]}))
+    assert (result.outcome, result.clarify) == ("answer", None)
+
+
+PENDING_DELETE: Final = {"kind": "delete_many", "ids": [str(ITEM_ID), str(OTHER_ID)]}
+
+
+# Примечание: кнопка «Да, удалить» — delete_item по каждому id, без модели; итог done
+async def test_bulkDeleteConfirmedByButton() -> None:
+    subject, llm = brain()
+    tools = FakeTools({"delete_item": [DELETED, DELETED]})
+    result = await subject.resume(turnInput("Да, удалить", pending=PENDING_DELETE), "0", tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        ("delete_item", {"id": str(ITEM_ID)}),
+        ("delete_item", {"id": str(OTHER_ID)}),
+    ]
+    assert llm.calls == []
+
+
+# Примечание: ответ текстом: «да» — удалить, другое — ничего не трогать
+@pytest.mark.parametrize(("text", "deletes"), [("да", 2), ("Удаляй", 2), ("нет", 0), ("потом", 0)])
+async def test_bulkDeleteAnsweredByText(text: str, deletes: int) -> None:
+    subject, llm = brain()
+    tools = FakeTools({"delete_item": [DELETED, DELETED]})
+    result = await subject.run(turnInput(text, pending=PENDING_DELETE), tools)
+    assert len(tools.calls) == deletes
+    assert result.outcome == ("done" if deletes else "answer")
+    assert llm.calls == []
+
+
 # Примечание: без просьбы удалить все инструменты на месте
 async def test_otherRequestKeepsUpdate() -> None:
     subject, llm = brain(text("Какую запись перенести?"))
