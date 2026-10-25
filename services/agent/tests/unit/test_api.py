@@ -107,7 +107,7 @@ async def test_userResolvedViaJ8(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp
     assert json.loads(resolve.content)["max_user_id"] == request["max_user_id"]
 
 
-# Примечание: J8 недоступен — пользователь получает ответ с ошибкой и кодом, а не 5xx
+# Примечание: J8 недоступен — пользователь получает ответ с ошибкой без кода цепочки, а не 5xx
 async def test_userResolveDown(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) -> None:
     mcpHttp.down = True
     response = await client.post(
@@ -116,7 +116,7 @@ async def test_userResolveDown(client: httpx.AsyncClient, mcpHttp: FakeMcpHttp) 
     assert response.status_code == 200
     body = response.json()
     assert body["state"] == "error"
-    assert TRACE[:6] in body["text"]
+    assert TRACE[:6] not in body["text"]
 
 
 # Примечание: /v1/actions: «Отменить» из примера бота → delete_item под пользователем J8

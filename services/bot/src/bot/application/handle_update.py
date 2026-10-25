@@ -21,7 +21,6 @@ from bot.domain.updates import IncomingUpdate, MaxChatId, UpdateKind, VoiceRef
 from bot.domain.voice import Transcript, VoiceFailureError
 from common.errors import AppError, ErrorCode
 from common.logging import getLogger
-from common.trace import shortTraceId
 from contracts.reply import (
     REPLY_TEXT_MAX_LENGTH,
     ActionRequest,
@@ -105,11 +104,11 @@ class HandleUpdate:
             return await self._replyTooOften(update, notify=decision.notify)
         return await self._dispatch(update)
 
-    # Примечание: сбой бота — «Что-то пошло не так… Код»; не удалось и это — только лог
+    # Примечание: сбой бота — «Что-то пошло не так…»; не удалось и это — только лог
     async def _failed(self, update: IncomingUpdate) -> HandleOutcome:
         if update.maxChatId is not None:
             try:
-                await self._sendText(update.maxChatId, self._d.texts.botFailed(shortTraceId()))
+                await self._sendText(update.maxChatId, self._d.texts.botFailed())
             except Exception:  # noqa: BLE001
                 _log.exception("bot_failed_reply_failed", update_id=update.updateId)
         return HandleOutcome.FAILED
@@ -156,7 +155,7 @@ class HandleUpdate:
                 transcript = await self._transcribe(update.voice)
             except VoiceFailureError as exc:
                 _log.info("voice_failed", reason=exc.reason.value, error_code=exc.code)
-                text = self._d.texts.voiceFailed(exc.reason, shortTraceId())
+                text = self._d.texts.voiceFailed(exc.reason)
                 await self._sendText(chatId, text)
                 return HandleOutcome.VOICE_FAILED
             request = MessageRequest(
@@ -249,9 +248,9 @@ class HandleUpdate:
         await self._d.gateway.sendMessage(message)
         return HandleOutcome.HANDLED
 
-    # Примечание: «Не получилось связаться с ассистентом» + первые 6 символов trace_id
+    # Примечание: «Не получилось связаться с ассистентом»
     async def _agentFailed(self, chatId: MaxChatId) -> HandleOutcome:
-        await self._sendText(chatId, self._d.texts.agentFailed(shortTraceId()))
+        await self._sendText(chatId, self._d.texts.agentFailed())
         return HandleOutcome.AGENT_FAILED
 
     # Примечание: «Слишком часто» — раз за окно; на кнопку — всегда, иначе MAX крутит индикатор

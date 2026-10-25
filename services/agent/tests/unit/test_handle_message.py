@@ -196,7 +196,7 @@ async def test_pendingSavedOpaque() -> None:
     assert rig.store.contexts[USER_ID].pending == pending
 
 
-# Примечание: answer — текст модели; error Brain — Reply error с кодом цепочки
+# Примечание: answer — текст модели; error Brain — Reply error с текстом ошибки, без кода цепочки
 async def test_answerAndError() -> None:
     reply = await Rig(ScenarioBrain(answer)).run()
     assert reply.state is ReplyState.ANSWER
@@ -208,7 +208,7 @@ async def test_answerAndError() -> None:
 
     reply = await Rig(ScenarioBrain(llmError)).run()
     assert reply.state is ReplyState.ERROR
-    assert "ab12f0" in reply.text
+    assert reply.text == "Не успел понять запрос. Попробуй ещё раз."
 
 
 # Примечание: правило 3 — «готово» без успешного изменяющего вызова превращается в llm_no_action

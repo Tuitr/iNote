@@ -191,7 +191,7 @@ async def test_undoUpstreamFailure() -> None:
     rig = Rig(responses={"delete_item": toolError("upstream_timeout")})
     reply = await rig.press("undo", {"item_id": ITEM_ID})
     assert reply.state is ReplyState.ERROR
-    assert reply.text == f"{TEMPLATES.errors['upstream_timeout']}\nКод: ab12f0"
+    assert reply.text == TEMPLATES.errors["upstream_timeout"]
 
 
 # Примечание: перенос со starts_at → update_item и подтверждение из данных; «Отменить» не даём

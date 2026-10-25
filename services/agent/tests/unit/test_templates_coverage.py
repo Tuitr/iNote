@@ -14,8 +14,8 @@ from common.errors import ErrorCode
 from contracts.agent_side import BrainErrorCode, ToolErrorCode
 
 AGENT_SRC: Final = Path(__file__).resolve().parents[2] / "src" / "agent"
-# служебные ключи [errors]: строка «Код: …» и текст незнакомого кода
-SERVICE_ERROR_KEYS: Final = frozenset({"code", "default"})
+# служебный ключ [errors]: текст незнакомого кода
+SERVICE_ERROR_KEYS: Final = frozenset({"default"})
 POSSIBLE_CODES: Final = frozenset(
     {*ErrorCode, *get_args(BrainErrorCode.__value__), *get_args(ToolErrorCode.__value__)}
 )

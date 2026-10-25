@@ -57,7 +57,7 @@ async def test_typingWhileAgentThinks(
     assert len(gateway.typingActions()) == after
 
 
-# Примечание: агент недоступен — пользователь видит текст бота с кодом цепочки, а не тишину
+# Примечание: агент недоступен — пользователь видит текст бота, а не тишину
 async def test_agentFailure(
     handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent
 ) -> None:
@@ -66,12 +66,12 @@ async def test_agentFailure(
         outcome = await handler(loadIncoming("text"))
     assert outcome is HandleOutcome.AGENT_FAILED
     [sent] = gateway.sentMessages()
-    assert sent.text == templates.AGENT_FAILED.format(code="ab12f0")
+    assert sent.text == templates.AGENT_FAILED
     assert sent.format == "plain"
     assert any(e["event"] == "agent_failed" and e["error_code"] == "upstream_timeout" for e in logs)
 
 
-# Примечание: неожиданное исключение — тот же текст с кодом, исключение в лог
+# Примечание: неожиданное исключение — тот же текст, исключение в лог
 async def test_agentCrash(handler: HandleUpdate, gateway: FakeMaxGateway, agent: FakeAgent) -> None:
     agent.error = RuntimeError("boom")
     assert await handler(loadIncoming("text")) is HandleOutcome.AGENT_FAILED
@@ -222,7 +222,7 @@ async def test_typingDuringAsr(
     assert len(gateway.typingActions()) >= 3
 
 
-# Примечание: каждая причина сбоя голосового — свой текст бота с кодом; агент не вызывается
+# Примечание: каждая причина сбоя голосового — свой текст бота; агент не вызывается
 @pytest.mark.parametrize(
     ("reason", "template"),
     [
@@ -245,7 +245,7 @@ async def test_voiceFailures(
     with traceContext(TRACE):
         assert await handler(loadIncoming("voice")) is HandleOutcome.VOICE_FAILED
     [sent] = gateway.sentMessages()
-    assert sent.text == template.format(code="ab12f0")
+    assert sent.text == template
     assert agent.messages == []
 
 
@@ -333,5 +333,5 @@ async def test_redisDownStillAnswers(
         outcome = await handler(update)
     assert outcome.value == "failed"
     [sent] = gateway.sentMessages()
-    assert sent.text == "Что-то пошло не так. Попробуй ещё раз через минуту.\nКод: ab12f0"
+    assert sent.text == "Что-то пошло не так. Попробуй ещё раз через минуту."
     assert any(e["event"] == "update_failed" for e in logs)

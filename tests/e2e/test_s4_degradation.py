@@ -1,4 +1,4 @@
-"""E2E S4: отказ соседа на стенде — пользователь получает понятный текст с кодом, а не тишину.
+"""E2E S4: отказ соседа на стенде — пользователь получает понятный текст без кода, а не тишину.
 
 Контейнер останавливается на время теста (`stopped`) и поднимается обратно; после возврата
 всё работает без перезапуска бота и агента. Тесты меняют общий стенд — идут по одному
@@ -43,7 +43,7 @@ async def recovered(bot: httpx.AsyncClient, phrase: str, expected: str) -> None:
             await asyncio.sleep(1)
 
 
-# Примечание: агент остановлен → «Не получилось связаться с ассистентом… Код», «печатает…» погас
+# Примечание: агент остановлен → «Не получилось связаться с ассистентом…», «печатает…» погас
 async def test_agentDown(bot: httpx.AsyncClient) -> None:
     chat = Chat()
     with stopped("agent"):
@@ -53,22 +53,22 @@ async def test_agentDown(bot: httpx.AsyncClient) -> None:
         await asyncio.sleep(TYPING_INTERVAL_S + 0.5)
         assert await typingCount(bot, chat) == typingAfterReply
     assert text.startswith("Не получилось связаться с ассистентом"), text
-    assert CODE_RE.search(text), text
+    assert not CODE_RE.search(text), text
     await recovered(bot, "что у меня сегодня", "Сегодня, ")
 
 
-# Примечание: ASR остановлен → голосовое: «Не получилось распознать голосовое… Код»
+# Примечание: ASR остановлен → голосовое: «Не получилось распознать голосовое…»
 async def test_asrDown(bot: httpx.AsyncClient) -> None:
     chat = Chat()
     with stopped("asr"):
         await voice(bot, chat, "что у меня завтра")
         text = await lastText(bot, chat, 1)
     assert text.startswith("Не получилось распознать голосовое"), text
-    assert CODE_RE.search(text), text
+    assert not CODE_RE.search(text), text
 
 
 # Примечание: MCP-контейнер (MCP и J8) остановлен: ход с инструментом — «Сервис записей сейчас
-# недоступен… Код»; пользователь из кеша получает /help без J8; новый (кеш пуст) — ошибку с кодом;
+# недоступен…»; пользователь из кеша получает /help без J8; новый (кеш пуст) — ошибку;
 # после возврата — работает, лок не залип
 async def test_mcpAndJ8Down(bot: httpx.AsyncClient) -> None:
     known = Chat()
@@ -83,14 +83,14 @@ async def test_mcpAndJ8Down(bot: httpx.AsyncClient) -> None:
         await push(bot, stranger.text("/help"))
         noCache = await lastText(bot, stranger, 1)
     assert toolDown.startswith("Сервис записей"), toolDown
-    assert CODE_RE.search(toolDown), toolDown
+    assert not CODE_RE.search(toolDown), toolDown
     assert cachedHelp.startswith("Пиши обычным текстом или голосом"), cachedHelp
     assert noCache.startswith("Сервис записей"), noCache
-    assert CODE_RE.search(noCache), noCache
+    assert not CODE_RE.search(noCache), noCache
     await recovered(bot, "что у меня сегодня", "Сегодня, ")
 
 
-# Примечание: Redis остановлен → бот отвечает «Что-то пошло не так… Код» (не тишина), бот и
+# Примечание: Redis остановлен → бот отвечает «Что-то пошло не так…» (не тишина), бот и
 # агент не падают; Redis вернулся — работает без перезапуска
 async def test_redisDown(bot: httpx.AsyncClient) -> None:
     chat = Chat()
@@ -99,6 +99,6 @@ async def test_redisDown(bot: httpx.AsyncClient) -> None:
         text = await lastText(bot, chat, 1)
         live = (await bot.get("/health/live")).status_code
     assert text.startswith("Что-то пошло не так"), text
-    assert CODE_RE.search(text), text
+    assert not CODE_RE.search(text), text
     assert live == 200
     await recovered(bot, "что у меня сегодня", "Сегодня, ")

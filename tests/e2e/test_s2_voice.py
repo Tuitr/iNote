@@ -128,14 +128,14 @@ async def test_voiceLowConfidence(bot: httpx.AsyncClient) -> None:
     assert str(created["text"]).startswith("Напоминание создано\nКупить хлеб")
 
 
-# Примечание: тишина (no_speech) — текст бота с кодом, агент не нужен
+# Примечание: тишина (no_speech) — текст бота без кода цепочки, агент не нужен
 async def test_voiceNoSpeech(bot: httpx.AsyncClient) -> None:
     chat = Chat()
     await voice(bot, chat, "")
     [reply] = await messagesTo(bot, chat, 1)
     text = str(reply["text"])
     assert text.startswith("Не расслышал")
-    assert "Код: " in text
+    assert "Код: " not in text
 
 
 # Примечание: /week — список недели без LLM (/v1/actions list_period)

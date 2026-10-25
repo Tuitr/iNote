@@ -41,7 +41,6 @@ from agent.presentation.templates import ReplyTemplates
 from common.logging import getLogger
 from common.markdown import cutText, escapeMarkdown
 from common.ru_dates import DateFormatter
-from common.trace import shortTraceId
 from contracts.agent_side import ExecutedAction, TurnResult
 from contracts.reply import (
     BUTTON_TEXT_MAX_LENGTH,
@@ -221,10 +220,9 @@ class TemplateReplyRenderer:
     def busy(self, traceId: str) -> Reply:
         return _plain(self._t.answer.busy, ReplyState.ERROR, traceId)
 
-    # Примечание: текст по коду ошибки + короткий код цепочки (первые 6 символов trace_id)
+    # Примечание: текст по коду ошибки; trace_id пользователю не показываем — он в логах
     def failure(self, errorCode: str, traceId: str) -> Reply:
-        code = self._t.errors["code"].format(code=shortTraceId(traceId))
-        return _plain(f"{self._t.errorText(errorCode)}\n{code}", ReplyState.ERROR, traceId)
+        return _plain(self._t.errorText(errorCode), ReplyState.ERROR, traceId)
 
     # Примечание: пояс и «сегодня» пользователя на момент рендера
     def _scope(self, user: UserContext, traceId: str) -> _Scope:

@@ -225,7 +225,7 @@ def test_errorTexts(code: str) -> None:
     reply = render(turn("error", errorCode=code))
     templates = loadTemplates()
     assert reply["state"] == "error"
-    assert reply["text"] == f"{templates.errors[code]}\nКод: ab12f0"
+    assert reply["text"] == templates.errors[code]
     renderer = TemplateReplyRenderer(templates, FixedClock(NOW))
     assert renderer.failure("something_new", TRACE).text.startswith(templates.errors["default"])
 
@@ -236,7 +236,7 @@ def test_failureTextsForStandardCodes(code: ErrorCode) -> None:
     templates = loadTemplates()
     reply = TemplateReplyRenderer(templates, FixedClock(NOW)).failure(code, TRACE)
     assert reply.state is ReplyState.ERROR
-    assert reply.text == f"{templates.errors[code]}\nКод: ab12f0"
+    assert reply.text == templates.errors[code]
     assert set(REQUIRED_ERROR_KEYS) >= {code}
 
 

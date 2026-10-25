@@ -17,7 +17,6 @@ TEMPLATES_FILE: Final = "ru.toml"
 # инструментов — у каждого свой текст; без него агент не стартует
 REQUIRED_ERROR_KEYS: Final = frozenset(
     {
-        "code",
         "default",
         *ErrorCode,
         *get_args(BrainErrorCode.__value__),
@@ -132,7 +131,7 @@ class SettingsTemplates(_Section):
     current: str
 
 
-# Примечание: все шаблоны; errors — текст по коду ошибки, code — строка с коротким trace_id
+# Примечание: все шаблоны; errors — текст по коду ошибки
 class ReplyTemplates(_Section):
     created: CreatedTemplates
     changed: ChangedTemplates
