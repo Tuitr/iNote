@@ -408,13 +408,26 @@ async def test_bulkDeleteAsks() -> None:
     subject, llm = brain(call("list_items", **{"from": "2026-10-26", "to": "2026-11-02"}))
     tools = FakeTools({"list_items": [LISTED]})
     result = await subject.run(turnInput("Отмени все планы на неделю"), tools)
-    assert {tool.name for tool in llm.calls[0].tools} == {"list_items", ASK_USER}
+    assert {tool.name for tool in llm.calls[0].tools} == {"list_items"}
     assert result.outcome == "clarify"
     assert result.say == "Удалить 2 записи: «Созвон с Иваном», «Сдать отчёт»?"
     assert result.clarify is not None
     assert result.clarify.options == ["Да, удалить"]
     assert result.clarify.pending == {"kind": "delete_many", "ids": [str(ITEM_ID), str(OTHER_ID)]}
     assert [name for name, _ in tools.calls] == ["list_items"]
+
+
+# Примечание: «все напоминания» — удаляются только напоминания, даже если модель не задала вид
+async def test_bulkDeleteFiltersKind() -> None:
+    reminder = item(OTHER_ID, title="Выпить кофе", kind="reminder")
+    listed = ok("2 записи", {"items": [item(), reminder], "range": {}, "truncated": False})
+    subject, _ = brain(call("list_items", **{"from": "2026-10-24", "to": "2027-10-24"}))
+    result = await subject.run(
+        turnInput("Удали все напоминания"), FakeTools({"list_items": [listed]})
+    )
+    assert result.say == "Удалить 1 запись: «Выпить кофе»?"
+    assert result.clarify is not None
+    assert result.clarify.pending == {"kind": "delete_many", "ids": [str(OTHER_ID)]}
 
 
 # Примечание: пустой период — обычный ответ со списком, без вопроса

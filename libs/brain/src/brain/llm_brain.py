@@ -68,6 +68,13 @@ ASK_DELETE_MANY: Final = "Удалить {count} {noun}: {titles}?"
 DELETE_MANY_OPTION: Final = "Да, удалить"
 DELETE_MANY_CANCELLED: Final = "Хорошо, ничего не удаляю."
 TITLES_IN_QUESTION: Final = 5
+# вид записей из фразы удаления; модель фильтр по виду теряла («все напоминания» удалили и
+# встречу), поэтому фильтрует код; «все записи», «планы», «всё» — все виды
+BULK_KINDS: Final = (
+    (re.compile(r"напомина", re.IGNORECASE), "reminder"),
+    (re.compile(r"встреч|созвон", re.IGNORECASE), "event"),
+    (re.compile(r"задач", re.IGNORECASE), "task"),
+)
 _YES_RE: Final = re.compile(
     r"^(да|ага|угу|удаляй|удали|удалить|давай|конечно|ок|окей)\b", re.IGNORECASE
 )
@@ -200,7 +207,9 @@ class LlmBrain:
             deadline=time.monotonic() + self._turnBudgetS,
         )
         try:
-            result = await self._loop(turn, tools, [*specs, ASK_USER_SPEC], state, started)
+            # «удали всё»: уточнять нечего — модель только находит записи за период
+            ask = [] if _isBulkDelete(turn.text) else [ASK_USER_SPEC]
+            result = await self._loop(turn, tools, [*specs, *ask], state, started)
         except LlmError as exc:
             # изменение уже сохранено — это успех хода: подтверждение агент строит из data
             hasMutation = _hasMutation(state.actions)
@@ -324,7 +333,12 @@ def _askDeleteMany(
 ) -> TurnResult | None:
     if call.name != "list_items" or not result.ok or not _isBulkDelete(turn.text):
         return None
-    items = [i for i in _list((result.data or {}).get("items")) if isinstance(i, dict)]
+    kinds = {kind for pattern, kind in BULK_KINDS if pattern.search(turn.text)}
+    items = [
+        i
+        for i in _list((result.data or {}).get("items"))
+        if isinstance(i, dict) and (not kinds or i.get("kind") in kinds)
+    ]
     ids = [str(i["id"]) for i in items if i.get("id")]
     if not ids:
         return None
