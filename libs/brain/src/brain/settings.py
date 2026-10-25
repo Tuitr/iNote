@@ -14,6 +14,11 @@ GIGACHAT_AUTH_URL: Final = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
 GIGACHAT_API_URL: Final = "https://gigachat.devices.sberbank.ru/api/v1"
 # Агент ждёт ход 40 с (AGENT_TURN_TIMEOUT_S): два вызова модели по 20 с с запасом не влезут
 MAX_CALL_TIMEOUT_S: Final = 20.0
+# Повтор и запасная модель должны уместиться в бюджет хода: 12 + 1 + 12 = 25 с
+DEFAULT_CALL_TIMEOUT_S: Final = 12.0
+DEFAULT_TURN_BUDGET_S: Final = 25.0
+# Ход агента 40 с включает ожидание лока (до 10 с) — модели остаётся не больше 30
+MAX_TURN_BUDGET_S: Final = 30.0
 
 type Provider = Literal["fake", "gigachat"]
 type GigaChatScope = Literal["GIGACHAT_API_PERS", "GIGACHAT_API_B2B", "GIGACHAT_API_CORP"]
@@ -40,11 +45,18 @@ class LlmSettings(BaseServiceSettings):
         description="запасная модель, если основная недоступна; пусто — без запасной",
     )
     timeoutS: float = Field(
-        default=MAX_CALL_TIMEOUT_S,
+        default=DEFAULT_CALL_TIMEOUT_S,
         gt=0,
         le=MAX_CALL_TIMEOUT_S,
         validation_alias="LLM_TIMEOUT_S",
         description="таймаут одного вызова модели, с (не больше 20 — бюджет хода агента 40 с)",
+    )
+    turnBudgetS: float = Field(
+        default=DEFAULT_TURN_BUDGET_S,
+        gt=0,
+        le=MAX_TURN_BUDGET_S,
+        validation_alias="LLM_TURN_BUDGET_S",
+        description="сколько всего модель может думать за ход вместе с повторами, с (≤ 30)",
     )
     maxSteps: int = Field(
         default=4,

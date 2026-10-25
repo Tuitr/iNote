@@ -57,6 +57,7 @@ def functionReply(model: str = "GigaChat-2-Max") -> httpx.Response:
             "name": "create_task",
             "arguments": {"title": "Позвонить Ивану", "remind_at": "2026-10-25T10:00:00+03:00"},
         },
+        "functions_state_id": "state-1",
     }
     return httpx.Response(
         200,
@@ -90,6 +91,7 @@ async def test_functionCallParsed(client: GigaChatClient) -> None:
         arguments={"title": "Позвонить Ивану", "remind_at": "2026-10-25T10:00:00+03:00"},
     )
     assert (reply.model, reply.tokensIn, reply.tokensOut) == ("GigaChat-2-Max", 120, 30)
+    assert reply.stateId == "state-1"
     tokenRequest = auth.calls.last.request
     assert tokenRequest.headers["Authorization"] == "Basic base64-key"
     assert "RqUID" in tokenRequest.headers
@@ -128,7 +130,7 @@ async def test_messagesOnWire(client: GigaChatClient) -> None:
     call = FunctionCall(name="list_items", arguments={"from": "2026-10-25"})
     await client.complete(
         [
-            LlmMessage(role="assistant", content="", functionCall=call),
+            LlmMessage(role="assistant", content="", functionCall=call, stateId="state-1"),
             LlmMessage(role="function", content='{"items": []}', name="list_items"),
         ],
         [],
@@ -140,6 +142,7 @@ async def test_messagesOnWire(client: GigaChatClient) -> None:
             "role": "assistant",
             "content": "",
             "function_call": {"name": "list_items", "arguments": {"from": "2026-10-25"}},
+            "functions_state_id": "state-1",
         },
         {"role": "function", "content": '{"items": []}', "name": "list_items"},
     ]

@@ -1,5 +1,6 @@
 """LlmBrain.run на FakeLlmClient и фейковом ToolExecutor: сценарии ТЗ, уточнения и защиты."""
 
+import asyncio
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -114,7 +115,11 @@ async def test_reminderDone() -> None:
     assert result.focus == [ITEM_ID]
     assert (result.usage.llmCalls, result.usage.tokensIn, result.usage.tokensOut) == (2, 150, 15)
     second = llm.calls[1].messages
-    assert (second[-1].role, second[-1].content) == ("function", "Создано напоминание")
+    # GigaChat принимает результат функции только JSON-объектом в строке
+    assert (second[-1].role, second[-1].content) == (
+        "function",
+        '{"result": "Создано напоминание"}',
+    )
 
 
 # Примечание: встреча создаётся тем же циклом
@@ -470,3 +475,78 @@ async def test_askUserUnsafeCallBecomesAsk() -> None:
     result = await subject.run(turnInput("перенеси созвон"), FakeTools())
     assert result.clarify is not None
     assert result.clarify.pending["kind"] == "ask"
+
+
+# Примечание: модель сломалась после сохранения записи — ход всё равно done, а не ошибка
+async def test_llmErrorAfterMutationIsDone() -> None:
+    subject, _ = brain(
+        call("create_task", title="Позвонить Ивану", kind="reminder", remind_at=REMIND_AT),
+        LlmError("llm_bad_output", "422"),
+    )
+    tools = FakeTools({"create_task": [CREATED]})
+    result = await subject.run(turnInput("Напомни завтра в 10 позвонить Ивану"), tools)
+    assert (result.outcome, result.focus) == ("done", [ITEM_ID])
+
+
+@dataclass
+class SlowLlm:
+    """Модель, которая думает дольше бюджета хода."""
+
+    delayS: float
+
+    async def complete(self, messages: object, tools: object, temperature: float = 0.0) -> LlmReply:
+        await asyncio.sleep(self.delayS)
+        return text("поздно")
+
+
+# Примечание: модель не уложилась в бюджет хода — llm_timeout раньше таймаута агента
+async def test_turnBudget() -> None:
+    subject = LlmBrain(SlowLlm(delayS=5.0), model="GigaChat-2-Max", turnBudgetS=1.2)
+    result = await subject.run(turnInput("привет"), FakeTools())
+    assert (result.outcome, result.errorCode) == ("error", "llm_timeout")
+
+
+# Примечание: «Готово» после поиска — не ложное «записал», а ответ с найденным
+async def test_doneWordAfterSearch() -> None:
+    subject, _ = brain(call("search_items", query="договор"), text("Готово, вот что нашёл"))
+    hits = ok("1 запись", {"results": [{"item": item(), "score": 0.9}]})
+    result = await subject.run(turnInput("найди договор"), FakeTools({"search_items": [hits]}))
+    assert (result.outcome, result.focus) == ("answer", [ITEM_ID])
+
+
+# Примечание: exclude_id проверяется так же, как id
+async def test_unknownExcludeId() -> None:
+    starts, ends = "2026-10-25T15:00:00+03:00", "2026-10-25T16:00:00+03:00"
+    unknown = call("check_conflicts", starts_at=starts, ends_at=ends, exclude_id="deadbeef")
+    subject, llm = brain(unknown, text("Свободно"))
+    tools = FakeTools()
+    await subject.run(turnInput("свободно ли завтра в 15"), tools)
+    assert tools.calls == []
+    assert "Сначала найди её" in llm.calls[1].messages[-1].content
+
+
+# Примечание: на вопрос с кнопками ответили текстом — модель видит вызов и известные аргументы
+async def test_waitingCallInPrompt() -> None:
+    subject, llm = brain(text("Уточни"))
+    pending = {
+        "kind": "call",
+        "tool": "create_event",
+        "args": {"title": "Встреча с Иваном"},
+        "choices": [{"starts_at": REMIND_AT}],
+    }
+    await subject.run(turnInput("в 15", pending=pending), FakeTools())
+    system = llm.calls[0].messages[0].content
+    assert 'create_event с аргументами {"title": "Встреча с Иваном"}' in system
+
+
+# Примечание: functions_state_id из ответа модели уходит назад в сообщении assistant
+async def test_stateIdKept() -> None:
+    first = call("search_items", query="договор")
+    withState = LlmReply(
+        text="", functionCall=first.functionCall, model="GigaChat-2-Max", stateId="state-1"
+    )
+    subject, llm = brain(withState, text("Нашёл"))
+    hits = ok("0 записей", {"results": []})
+    await subject.run(turnInput("найди договор"), FakeTools({"search_items": [hits]}))
+    assistant = llm.calls[1].messages[-2]
+    assert (assistant.role, assistant.stateId) == ("assistant", "state-1")

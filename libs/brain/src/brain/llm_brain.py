@@ -9,6 +9,7 @@ id записи — только известный, время без смещ�
 resume — ответ кнопкой на уточнение: вызов из pending достраивается выбранным вариантом без модели.
 """
 
+import asyncio
 import json
 import re
 import time
@@ -37,6 +38,10 @@ from contracts.agent_side import (
 )
 
 DEFAULT_MAX_STEPS: Final = 4
+# Ход агента — 40 с вместе с ожиданием лока (до 10 с) и вызовами MCP: модели — не больше 25 с
+DEFAULT_TURN_BUDGET_S: Final = 25.0
+# Меньше секунды до дедлайна — новый вызов модели не начинаем: не успеет ответить
+MIN_CALL_S: Final = 1.0
 # Изменяющие инструменты J3: только их успешный вызов даёт outcome=done
 MUTATING_TOOLS: Final = frozenset(
     {"create_task", "create_event", "update_item", "complete_item", "delete_item"}
@@ -44,6 +49,7 @@ MUTATING_TOOLS: Final = frozenset(
 # После списка модели нечего делать: агент рисует его из data, второй вызов модели — лишние секунды
 FINAL_TOOLS: Final = frozenset({"list_items"})
 TIME_FIELDS: Final = ("starts_at", "ends_at", "remind_at")
+ID_FIELDS: Final = ("id", "exclude_id")
 MAX_OPTIONS: Final = 4
 SHORT_ID_LENGTH: Final = 8
 ASK_SLOT: Final = "В это время уже есть: {busy}. Выбери свободное время:"
@@ -120,14 +126,22 @@ class _Turn:
     tokensIn: int = 0
     tokensOut: int = 0
     model: str = ""
+    deadline: float = 0.0
 
 
 # Примечание: Brain на LLM; клиент модели (GigaChat или фейк) выбирает агент
 class LlmBrain:
-    def __init__(self, llm: LlmClient, model: str, maxSteps: int = DEFAULT_MAX_STEPS) -> None:
+    def __init__(
+        self,
+        llm: LlmClient,
+        model: str,
+        maxSteps: int = DEFAULT_MAX_STEPS,
+        turnBudgetS: float = DEFAULT_TURN_BUDGET_S,
+    ) -> None:
         self._llm = llm
         self._model = model
         self._maxSteps = maxSteps
+        self._turnBudgetS = turnBudgetS
 
     # Примечание: новый ход: цикл модели с инструментами; исключения LLM наружу не выходят
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
@@ -137,11 +151,16 @@ class LlmBrain:
             messages=buildMessages(turn),
             knownIds={str(b.id) for b in turn.focus},
             model=self._model,
+            deadline=time.monotonic() + self._turnBudgetS,
         )
         try:
             result = await self._loop(turn, tools, [*specs, ASK_USER_SPEC], state, started)
         except LlmError as exc:
-            result = _error(exc.code, state, started)
+            # изменение уже сохранено — это успех хода: подтверждение агент строит из data
+            hasMutation = _hasMutation(state.actions)
+            result = (
+                _result("done", state, started) if hasMutation else _error(exc.code, state, started)
+            )
         _logTurn(result, state)
         return result
 
@@ -193,20 +212,29 @@ class LlmBrain:
                 if reason in state.corrections:
                     return _error("llm_bad_output", state, started)
                 state.corrections.add(reason)
-                _answerModel(state, call, text)
+                _answerModel(state, reply, {"error": text})
                 continue
             if _isDuplicate(call, state.actions):
-                _answerModel(state, call, HINT_DUPLICATE)
+                _answerModel(state, reply, {"error": HINT_DUPLICATE})
                 continue
             result = await tools.call(call.name, call.arguments)
             state.actions.append(ExecutedAction(name=call.name, args=call.arguments, result=result))
             if (stop := _afterCall(call, result, turn, state, started)) is not None:
                 return stop
-            _answerModel(state, call, _forModel(result))
+            _answerModel(state, reply, _forModel(result))
         return _final("", state, started)
 
+    # Примечание: вызов модели в пределах бюджета хода: агент оборвёт ход по своему таймауту,
+    # и тогда пользователь не узнает даже о том, что уже сделано
     async def _complete(self, state: _Turn, specs: Sequence[ToolSpec]) -> LlmReply:
-        reply = await self._llm.complete(state.messages, specs)
+        remaining = state.deadline - time.monotonic()
+        if remaining < MIN_CALL_S:
+            raise LlmError("llm_timeout", "бюджет хода исчерпан")
+        try:
+            async with asyncio.timeout(remaining):
+                reply = await self._llm.complete(state.messages, specs)
+        except TimeoutError as exc:
+            raise LlmError("llm_timeout", "модель не уложилась в бюджет хода") from exc
         state.llmCalls += 1
         state.tokensIn += reply.tokensIn
         state.tokensOut += reply.tokensOut
@@ -236,6 +264,8 @@ def buildMessages(turn: TurnInput) -> list[LlmMessage]:
         system += "\n\nЗаписи в фокусе (о них «она», «эту», «первую»):\n" + "\n".join(lines)
     if turn.asrLowConfidence:
         system += "\n\nФраза распознана из голоса неуверенно: если смысл неясен, спроси ask_user."
+    if (waiting := _waitingCall(turn.pending)) is not None:
+        system += "\n\n" + waiting
     history = [LlmMessage(role=t.role, content=t.text) for t in turn.history]
     return [
         LlmMessage(role="system", content=system),
@@ -260,9 +290,10 @@ def _rejection(
 ) -> tuple[CorrectionReason, str] | None:
     if call.name not in names:
         return "unknown_tool", HINT_UNKNOWN_TOOL.format(value=call.name)
-    itemId = call.arguments.get("id")
-    if itemId is not None and not _isKnownId(itemId, state.knownIds):
-        return "unknown_id", HINT_UNKNOWN_ID.format(value=itemId)
+    for name in ID_FIELDS:
+        itemId = call.arguments.get(name)
+        if itemId is not None and not _isKnownId(itemId, state.knownIds):
+            return "unknown_id", HINT_UNKNOWN_ID.format(value=itemId)
     for name in TIME_FIELDS:
         value = call.arguments.get(name)
         if isinstance(value, str) and _NAIVE_TIME_RE.match(value):
@@ -301,12 +332,13 @@ def _afterCall(
 
 # Примечание: модель закончила текстом: итог по вызовам, а не по словам модели
 def _final(text: str, state: _Turn, started: float) -> TurnResult:
-    if any(a.name in MUTATING_TOOLS and a.result.ok for a in state.actions):
+    if _hasMutation(state.actions):
         return _result("done", state, started)
-    if _SUCCESS_CLAIM_RE.search(text):
-        return _error("llm_no_action", state, started)
+    # после чтения агент рисует данные инструмента, текст модели («Готово, вот что нашёл») не виден
     if state.actions:
         return _result("answer", state, started, say=text.strip() or None)
+    if _SUCCESS_CLAIM_RE.search(text):
+        return _error("llm_no_action", state, started)
     if not text.strip():
         return _error("llm_bad_output", state, started)
     return _result("answer", state, started, say=text.strip())
@@ -372,19 +404,42 @@ def _conflict(
 
 
 # Примечание: вызов модели и ответ на него — в диалог, чтобы следующий шаг видел результат
-def _answerModel(state: _Turn, call: FunctionCall, content: str) -> None:
-    state.messages.append(LlmMessage(role="assistant", content="", functionCall=call))
+# GigaChat принимает результат функции только JSON-объектом в строке (спецификация API)
+def _answerModel(state: _Turn, reply: LlmReply, payload: JsonObject) -> None:
+    call = reply.functionCall
+    if call is None:
+        return
+    state.messages.append(
+        LlmMessage(role="assistant", content="", functionCall=call, stateId=reply.stateId)
+    )
+    content = json.dumps(payload, ensure_ascii=False)
     state.messages.append(LlmMessage(role="function", content=content, name=call.name))
 
 
+def _hasMutation(actions: Sequence[ExecutedAction]) -> bool:
+    return any(a.name in MUTATING_TOOLS and a.result.ok for a in actions)
+
+
+# Примечание: вопрос с кнопками ещё ждёт ответа — модель видит вызов и уже известные аргументы,
+# чтобы ответ текстом («в 15») дополнил их, а не начал запись заново
+def _waitingCall(pending: JsonObject | None) -> str | None:
+    if not pending or pending.get("kind") != "call":
+        return None
+    args = json.dumps(pending.get("args") or {}, ensure_ascii=False)
+    return (
+        f"Пользователю задан уточняющий вопрос для вызова {pending.get('tool')} с аргументами "
+        f"{args}. Если фраза — ответ на него, дополни эти аргументы и вызови функцию."
+    )
+
+
 # Примечание: модели — summary инструмента; при ошибке — код и текст, чтобы она исправилась
-def _forModel(result: ToolResult) -> str:
+def _forModel(result: ToolResult) -> JsonObject:
     if result.error is None:
-        return result.summary
-    payload = {"error": result.error.code, "message": result.error.message}
+        return {"result": result.summary}
+    payload: JsonObject = {"error": result.error.code, "message": result.error.message}
     if result.error.details:
-        payload["details"] = json.dumps(result.error.details, ensure_ascii=False)
-    return json.dumps(payload, ensure_ascii=False)
+        payload["details"] = result.error.details
+    return payload
 
 
 # Примечание: незнакомый код инструмента — internal: агент рисует только коды стандарта

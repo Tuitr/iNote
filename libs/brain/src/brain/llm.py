@@ -29,6 +29,8 @@ class LlmMessage:
     content: str
     functionCall: FunctionCall | None = None
     name: str | None = None
+    # functions_state_id GigaChat: связывает вызов функции с её результатом в истории
+    stateId: str | None = None
 
 
 # Примечание: ответ модели: текст или вызов инструмента, плюс расход для Usage
@@ -40,6 +42,7 @@ class LlmReply:
     tokensIn: int = 0
     tokensOut: int = 0
     latencyMs: int = 0
+    stateId: str | None = None
 
 
 # Примечание: провайдер не ответил по делу; code — из перечня ошибок Brain в J2

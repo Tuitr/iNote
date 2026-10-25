@@ -18,7 +18,8 @@ def cleanEnv(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_defaultsAreFree() -> None:
     settings = LlmSettings()
     assert settings.provider == "fake"
-    assert (settings.model, settings.timeoutS, settings.maxSteps) == ("GigaChat-2-Max", 20.0, 4)
+    assert (settings.model, settings.timeoutS, settings.maxSteps) == ("GigaChat-2-Max", 12.0, 4)
+    assert settings.turnBudgetS == 25.0
     assert settings.gigachatCredentials is None
 
 

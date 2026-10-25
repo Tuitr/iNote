@@ -206,6 +206,8 @@ def _message(message: LlmMessage) -> JsonObject:
         }
     if message.name is not None:
         wire["name"] = message.name
+    if message.stateId is not None:
+        wire["functions_state_id"] = message.stateId
     return wire
 
 
@@ -243,6 +245,7 @@ def _reply(response: httpx.Response, model: str, latencyMs: int) -> LlmReply:
     usage = payload.get("usage")
     tokens = usage if isinstance(usage, dict) else {}
     content = message.get("content")
+    stateId = message.get("functions_state_id")
     return LlmReply(
         text=content if isinstance(content, str) else "",
         functionCall=_functionCall(message.get("function_call")),
@@ -250,6 +253,7 @@ def _reply(response: httpx.Response, model: str, latencyMs: int) -> LlmReply:
         tokensIn=_int(tokens.get("prompt_tokens")),
         tokensOut=_int(tokens.get("completion_tokens")),
         latencyMs=latencyMs,
+        stateId=stateId if isinstance(stateId, str) else None,
     )
 
 

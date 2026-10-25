@@ -22,7 +22,12 @@ FAKE_MODEL: Final = "fake"
 async def openLlmBrain(settings: LlmSettings) -> AsyncIterator[LlmBrain]:
     credentials = settings.gigachatCredentials
     if settings.provider == "fake" or credentials is None:
-        yield LlmBrain(FakeLlmClient(script=[]), model=FAKE_MODEL, maxSteps=settings.maxSteps)
+        yield LlmBrain(
+            FakeLlmClient(script=[]),
+            model=FAKE_MODEL,
+            maxSteps=settings.maxSteps,
+            turnBudgetS=settings.turnBudgetS,
+        )
         return
     config = GigaChatConfig(
         credentials=credentials,
@@ -34,7 +39,10 @@ async def openLlmBrain(settings: LlmSettings) -> AsyncIterator[LlmBrain]:
     )
     async with httpx.AsyncClient(timeout=settings.timeoutS, verify=_verify(settings)) as http:
         yield LlmBrain(
-            GigaChatClient(http, config), model=settings.model, maxSteps=settings.maxSteps
+            GigaChatClient(http, config),
+            model=settings.model,
+            maxSteps=settings.maxSteps,
+            turnBudgetS=settings.turnBudgetS,
         )
 
 
