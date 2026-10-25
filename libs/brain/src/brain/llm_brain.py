@@ -331,8 +331,11 @@ def _final(text: str, state: _Turn, started: float) -> TurnResult:
     if _hasMutation(state.actions):
         return _result("done", state, started)
     # после чтения агент рисует данные инструмента, текст модели («Готово, вот что нашёл») не виден
-    if state.actions:
+    if any(a.result.ok for a in state.actions):
         return _result("answer", state, started, say=text.strip() or None)
+    # все вызовы с ошибкой, а модель молчит: без кода агент показал бы «Готово.» за пустой ход
+    if state.actions and not text.strip():
+        return _error(_lastToolCode(state.actions), state, started)
     if _SUCCESS_CLAIM_RE.search(text):
         return _error("llm_no_action", state, started)
     if not text.strip():
@@ -436,6 +439,12 @@ def _forModel(result: ToolResult) -> JsonObject:
     if result.error.details:
         payload["details"] = result.error.details
     return payload
+
+
+# Примечание: код ошибки последнего вызова — им заканчивается ход, где ни один вызов не удался
+def _lastToolCode(actions: Sequence[ExecutedAction]) -> ToolErrorCode:
+    error = actions[-1].result.error
+    return _toolCode(error.code if error is not None else "internal")
 
 
 # Примечание: незнакомый код инструмента — internal: агент рисует только коды стандарта

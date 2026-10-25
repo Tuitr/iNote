@@ -305,6 +305,23 @@ async def test_successClaimWithoutCall() -> None:
     assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
 
 
+# Примечание: вызов с ошибкой, повтор отсечён как дубль, модель молчит — код ошибки, а не «Готово.»
+async def test_failedCallThenSilence() -> None:
+    noTitle = call("create_event", starts_at="2026-10-25T12:00:00+03:00")
+    subject, _ = brain(noTitle, noTitle, text(""))
+    tools = FakeTools({"create_event": [failed("validation_error")]})
+    result = await subject.run(turnInput("назначь завтра в 12 встречу с Петром"), tools)
+    assert (result.outcome, result.errorCode, result.say) == ("error", "validation_error", None)
+
+
+# Примечание: «Готово» после вызова с ошибкой — тоже ложное «записал»
+async def test_successClaimAfterFailedCall() -> None:
+    subject, _ = brain(call("create_event", starts_at="2026-10-25T12:00:00+03:00"), text("Готово"))
+    tools = FakeTools({"create_event": [failed("validation_error")]})
+    result = await subject.run(turnInput("назначь завтра в 12 встречу с Петром"), tools)
+    assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
+
+
 # Примечание: простой вопрос — ответ текстом без инструментов
 async def test_plainAnswer() -> None:
     subject, _ = brain(text("Привет! Чем помочь?"))
