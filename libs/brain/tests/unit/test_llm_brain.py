@@ -345,6 +345,52 @@ async def test_doneRequestHidesUpdateAndDelete(phrase: str) -> None:
     assert not names & {"update_item", "delete_item"}
 
 
+# Примечание: «в 5» без дня — момент считает код: модель поставила завтра 17:00, код — 17:00
+# сегодня (сейчас 12:00); ends_at сдвигается вместе с началом
+async def test_bareTimeOverridesModel() -> None:
+    subject, _ = brain(
+        call(
+            "create_event",
+            title="Звонок",
+            starts_at="2026-10-25T17:00:00+03:00",
+            ends_at="2026-10-25T18:00:00+03:00",
+        ),
+        text("Готово"),
+    )
+    tools = FakeTools({"create_event": [CREATED]})
+    await subject.run(turnInput("в 5 созвон с Петром"), tools)
+    assert tools.calls == [
+        (
+            "create_event",
+            {
+                "title": "Звонок",
+                "starts_at": "2026-10-24T17:00:00+03:00",
+                "ends_at": "2026-10-24T18:00:00+03:00",
+            },
+        )
+    ]
+
+
+# Примечание: день назван — дату и время оставляем модели
+async def test_namedDayKeepsModelTime() -> None:
+    subject, _ = brain(
+        call("create_task", title="Позвонить", kind="reminder", remind_at=REMIND_AT), text("Ок")
+    )
+    tools = FakeTools({"create_task": [CREATED]})
+    await subject.run(turnInput("напомни завтра в 10 позвонить"), tools)
+    assert tools.calls[0][1]["remind_at"] == REMIND_AT
+
+
+# Примечание: «напомни …» без времени, а модель создаёт задачу без момента — вопрос, без вызова
+async def test_reminderWithoutTimeAsks() -> None:
+    subject, _ = brain(call("create_task", title="Купить хлеб", kind="task"))
+    tools = FakeTools()
+    result = await subject.run(turnInput("напомни купить хлеб"), tools)
+    assert (result.outcome, result.say, tools.calls) == ("clarify", "Во сколько напомнить?", [])
+    assert result.clarify is not None
+    assert result.clarify.options == ["10:00", "15:00", "19:00"]
+
+
 # Примечание: без просьбы удалить все инструменты на месте
 async def test_otherRequestKeepsUpdate() -> None:
     subject, llm = brain(text("Какую запись перенести?"))
