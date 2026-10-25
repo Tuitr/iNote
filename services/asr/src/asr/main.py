@@ -11,9 +11,10 @@ import httpx
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
-from asr.application.ports import AudioProbe, SpeechToText
+from asr.application.ports import AudioConverter, AudioProbe, SpeechToText
 from asr.application.transcribe import TranscribeAudio, TranscribeLimits
 from asr.infrastructure.fake_stt import FakeAudioProbe, FakeSpeechToText, fakeAudio
+from asr.infrastructure.ffmpeg_converter import FfmpegOggConverter
 from asr.infrastructure.ogg_probe import OggOpusProbe
 from asr.infrastructure.redis_cache import RedisTranscriptCache
 from asr.infrastructure.settings import AsrSettings
@@ -51,7 +52,7 @@ def createApp(
         providerHttp = httpx.AsyncClient(transport=providerTransport)
         app.state.redis = redis
         try:
-            stt, probe = _provider(config, providerHttp)
+            stt, probe, converter = _provider(config, providerHttp)
             app.state.transcribe = TranscribeAudio(
                 stt,
                 probe,
@@ -61,6 +62,7 @@ def createApp(
                     maxDurationMs=config.maxDurationS * 1000,
                     lowConfidenceBelow=config.lowConfidenceBelow,
                 ),
+                converter,
             )
             _log.info(
                 "asr_started",
@@ -89,10 +91,12 @@ def createApp(
     return app
 
 
-# Примечание: провайдер и разбор аудио по ASR_PROVIDER; ключ проверен в настройках
-def _provider(config: AsrSettings, http: httpx.AsyncClient) -> tuple[SpeechToText, AudioProbe]:
+# Примечание: провайдер, разбор и перекодирование аудио по ASR_PROVIDER; ключ проверен в настройках
+def _provider(
+    config: AsrSettings, http: httpx.AsyncClient
+) -> tuple[SpeechToText, AudioProbe, AudioConverter | None]:
     if config.provider != "yandex" or config.yandexApiKey is None:
-        return FakeSpeechToText(), FakeAudioProbe()
+        return FakeSpeechToText(), FakeAudioProbe(), None
     stt = YandexSpeechKit(
         http,
         config.yandexApiKey,
@@ -102,7 +106,7 @@ def _provider(config: AsrSettings, http: httpx.AsyncClient) -> tuple[SpeechToTex
         retries=config.providerRetries,
         deadlineS=config.deadlineS,
     )
-    return stt, OggOpusProbe()
+    return stt, OggOpusProbe(), FfmpegOggConverter()
 
 
 # Примечание: PING текущего клиента Redis; до старта lifespan — ошибка, то есть «не готов»

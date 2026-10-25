@@ -1,4 +1,4 @@
-"""TranscribeAudio: лимиты → разбор файла → кеш → провайдер → нормализация → кеш.
+"""TranscribeAudio: лимиты → перекодирование не-OGG → разбор файла → кеш → провайдер → кеш.
 
 Лимиты проверяются до провайдера — за слишком длинное голосовое не платим. Пустой ответ провайдера —
 `no_speech`. Уверенность: провайдер её не сообщает — 1.0 и `low_confidence=false` (SpeechKit v1);
@@ -10,8 +10,15 @@ import hashlib
 from dataclasses import dataclass
 from typing import Final
 
-from asr.application.ports import AudioClip, AudioProbe, SpeechToText, TranscriptCache
+from asr.application.ports import (
+    AudioClip,
+    AudioConverter,
+    AudioProbe,
+    SpeechToText,
+    TranscriptCache,
+)
 from asr.domain.failures import Failure, TranscribeError
+from asr.domain.ogg import isOgg
 from asr.domain.transcript import Transcript, normalizeText
 from common.logging import getLogger
 
@@ -32,18 +39,21 @@ class TranscribeLimits:
 
 # Примечание: сценарий одного запроса /v1/transcribe
 class TranscribeAudio:
-    # Примечание: провайдер, разбор файла и кеш — порты; собираются в main.py
+    # Примечание: провайдер, разбор файла и кеш — порты; собираются в main.py.
+    # converter=None — не-OGG сразу unsupported_format (фейковый провайдер принимает только «OggS»)
     def __init__(
         self,
         stt: SpeechToText,
         probe: AudioProbe,
         cache: TranscriptCache,
         limits: TranscribeLimits,
+        converter: AudioConverter | None = None,
     ) -> None:
         self._stt = stt
         self._probe = probe
         self._cache = cache
         self._limits = limits
+        self._converter = converter
 
     # Примечание: голосовое → Transcript или TranscribeError с кодом J1
     async def __call__(self, content: bytes, lang: str) -> Transcript:
@@ -55,6 +65,8 @@ class TranscribeAudio:
                 "голосовое слишком большое",
                 {"max_bytes": self._limits.maxBytes},
             )
+        if self._converter is not None and not isOgg(content):
+            content = await self._converter.toOggOpus(content)
         info = self._probe.probe(content)
         if info.channels > MAX_CHANNELS:
             raise TranscribeError(

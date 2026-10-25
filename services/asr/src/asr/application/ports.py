@@ -40,6 +40,12 @@ class AudioProbe(Protocol):
     def probe(self, content: bytes) -> AudioInfo: ...
 
 
+# Примечание: не OGG (голосовые MAX приходят в MP3) → OGG/Opus моно; не аудио — TranscribeError
+class AudioConverter(Protocol):
+    # Примечание: байты любого аудио → байты OGG/Opus моно
+    async def toOggOpus(self, content: bytes) -> bytes: ...
+
+
 # Примечание: кеш распознаваний; не источник правды — сбой кеша не мешает распознаванию
 class TranscriptCache(Protocol):
     # Примечание: сохранённый итог по хешу или None

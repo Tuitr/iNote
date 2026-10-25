@@ -43,6 +43,18 @@ class FixedProbe:
         return self.info
 
 
+# Примечание: перекодирование по сценарию: отдаёт output; inputs — что ему прислали
+@dataclass
+class ScriptedConverter:
+    output: bytes = b"OggS-converted"
+    inputs: list[bytes] = field(default_factory=list)
+
+    # Примечание: запомнить вход и отдать output
+    async def toOggOpus(self, content: bytes) -> bytes:
+        self.inputs.append(content)
+        return self.output
+
+
 # Примечание: кеш в памяти: digest → Transcript
 @dataclass
 class MemoryCache:

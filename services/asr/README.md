@@ -17,9 +17,9 @@
 ```
 domain/          ogg.py — формат по байтам (OggS), длительность и каналы OGG/Opus без ffmpeg;
                  transcript.py — Transcript и нормализация; failures.py — коды J1 и их статусы
-application/     порты SpeechToText, AudioProbe, TranscriptCache; сценарий TranscribeAudio
+application/     порты SpeechToText, AudioProbe, AudioConverter, TranscriptCache; TranscribeAudio
 infrastructure/  YandexSpeechKit, FakeSpeechToText + FakeAudioProbe, OggOpusProbe,
-                 RedisTranscriptCache, AsrSettings
+                 FfmpegOggConverter (не OGG → OGG/Opus), RedisTranscriptCache, AsrSettings
 presentation/    POST /v1/transcribe (multipart audio, mime, lang)
 main.py          composition root: createApp() и lifespan
 ```
@@ -131,10 +131,9 @@ uv run pytest services/asr -m "integration or lifecycle"   # Redis в Docker; uv
 
 ## Ограничения
 
-- **Только OGG/Opus, моно, до 30 с и 1 МБ** — так принимает синхронный SpeechKit. Голосовые MAX
-  укладываются (OGG/Opus); длиннее 30 с — `audio_too_long`. Нарезка или асинхронное распознавание —
-  план A на S3.
+- **SpeechKit получает только OGG/Opus, моно, до 30 с и 1 МБ** — так принимает синхронный SpeechKit.
+  Голосовые MAX приходят в MP3 (`audio/mpeg`): при `ASR_PROVIDER=yandex` всё, что не OGG,
+  перекодируется ffmpeg в OGG/Opus моно (`FfmpegOggConverter`, ffmpeg ставится в образ asr);
+  длиннее 30 с — `audio_too_long`. Нарезка или асинхронное распознавание — план A на S3.
 - **Уверенности нет** у SpeechKit v1 — «правильно понял?» по неуверенному распознаванию не сработает.
   Даёт её SpeechKit v3 (gRPC/REST) — следующий шаг, если понадобится.
-- Формат живого голосового из MAX не проверен на настоящем MAX (нет токена) — проверено на файлах
-  libopus; чек-лист — `deploy/README.md`.

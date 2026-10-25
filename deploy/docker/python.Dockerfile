@@ -35,9 +35,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- рантайм: только venv и примеры контрактов, без uv и исходников ---
 FROM ${PYTHON_IMAGE} AS runtime
 ARG MODULE
+# Системные пакеты сервиса: asr перекодирует голосовые MAX (MP3) через ffmpeg
+ARG SYSTEM_PACKAGES=""
 RUN test -n "${MODULE}" || (echo "нужен --build-arg MODULE=<пакет python>" >&2 && exit 1) \
  && groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --no-create-home app
+RUN if [ -n "${SYSTEM_PACKAGES}" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ${SYSTEM_PACKAGES} \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 # Агент в S0 отдаёт ответы из contracts/examples. chmod: в рабочей копии файлы бывают 600,

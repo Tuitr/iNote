@@ -132,7 +132,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/docker/python.Dockerfile
-      args: { PACKAGE: va-asr, MODULE: asr }
+      args: { PACKAGE: va-asr, MODULE: asr, SYSTEM_PACKAGES: ffmpeg }
     image: va/asr:local
     environment:
       REDIS_URL: redis://redis:6379/0

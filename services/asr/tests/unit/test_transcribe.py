@@ -13,7 +13,7 @@ from asr.application.transcribe import (
 )
 from asr.domain.failures import Failure, TranscribeError
 from asr.domain.ogg import AudioInfo
-from services.asr.tests.fakes import FixedProbe, MemoryCache, ScriptedStt
+from services.asr.tests.fakes import FixedProbe, MemoryCache, ScriptedConverter, ScriptedStt
 
 AUDIO: Final = b"OggS-voice-bytes"
 LANG: Final = "ru-RU"
@@ -176,6 +176,30 @@ async def test_repeatComesFromCache() -> None:
 async def test_cacheKeyDependsOnLang() -> None:
     assert audioDigest(AUDIO, "ru-RU") != audioDigest(AUDIO, "en-US")
     assert audioDigest(AUDIO, "ru-RU") == audioDigest(AUDIO, "ru-RU")
+
+
+# Примечание: не OGG (MP3 из MAX) — перекодируется; разбор и провайдер получают уже OGG
+async def test_notOggIsConverted() -> None:
+    converter = ScriptedConverter()
+    stt = ScriptedStt()
+    transcribe = TranscribeAudio(stt, FixedProbe(), MemoryCache(), LIMITS, converter)
+
+    await transcribe(b"ID3-mp3-bytes", LANG)
+
+    assert converter.inputs == [b"ID3-mp3-bytes"]
+    assert [c.content for c in stt.clips] == [converter.output]
+
+
+# Примечание: OGG уходит как есть, без перекодирования
+async def test_oggIsNotConverted() -> None:
+    converter = ScriptedConverter()
+    stt = ScriptedStt()
+    transcribe = TranscribeAudio(stt, FixedProbe(), MemoryCache(), LIMITS, converter)
+
+    await transcribe(AUDIO, LANG)
+
+    assert converter.inputs == []
+    assert [c.content for c in stt.clips] == [AUDIO]
 
 
 # Примечание: ошибка провайдера уходит как есть и не кешируется
