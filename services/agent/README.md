@@ -94,9 +94,9 @@ main.py          composition root: createApp() и lifespan
   `args` не по каталогу — `validation_error` в лог и «Не понял кнопку» без лока и вызовов.
   «Отменить» есть только у созданной записи, у удалённой кнопок нет.
 - **Кнопки напоминаний и конфликта** (`application/reminder_actions.py`, S3): `complete` (`item_id`) →
-  `complete_item`, повтор (`unchanged`) — «Уже отмечено выполненным»; `snooze` (`item_id`, `minutes` 1…1440 или
-  `until=tomorrow`, `kind?`) → `update_item` с новым `remind_at` («на N минут» — от «сейчас», «Завтра» — время
-  напоминания из фокуса или «сейчас», завтра; `application/snooze.py`) → «Напомню: …»; `confirm_conflict`
+  `complete_item`, повтор (`unchanged`) — «Уже отмечено выполненным»; `snooze` (`item_id`, `minutes` 1…1440,
+  `kind?`) → `update_item` с новым `remind_at` («на N минут» — от «сейчас»; `application/snooze.py`)
+  → «Напомню: …»; `confirm_conflict`
   (`title`, `starts_at`, `ends_at?`) → `create_event` с `allow_conflict: true`; (`item_id`, `starts_at`,
   `ends_at?`) → `update_item` с `allow_conflict: true` — только пока жив вопрос (иначе «Вопрос устарел»).
   Кнопки «Всё равно создать» и «Всё равно перенести» рисует рендер рядом со свободными окнами — по аргументам

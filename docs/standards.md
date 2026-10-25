@@ -122,7 +122,7 @@ J4: `chat_not_found` 404). `ServiceHttpClient` превращает конвер
 | `list_period` | `period`: `today` \| `tomorrow` \| `week` | `list_items` за период в поясе пользователя (неделя с понедельника) |
 | `start`, `help` | — | приветствие и справка; кнопки периода, «Мой день», «История» |
 | `complete` | `item_id`, `kind?` | `complete_item`; повтор — «Уже отмечено выполненным» |
-| `snooze` | `item_id`, `kind?`, `minutes` 1…1440 \| `until: "tomorrow"` | `update_item` с новым `remind_at` → «Напомню: …» |
+| `snooze` | `item_id`, `kind?`, `minutes` 1…1440 | `update_item` с новым `remind_at` → «Напомню: …» |
 | `confirm_conflict` | `title`, `starts_at`, `ends_at?` | `create_event` с `allow_conflict: true`; только при живом вопросе о конфликте |
 | `settings` | — | экран «Настройки»: пояс и 12 поясов РФ кнопками |
 | `set_tz` | `tz` — из белого списка 12 поясов РФ | J8 `PATCH settings {tz}` → сброс кеша пользователя → «Пояс: …» |

@@ -140,12 +140,11 @@ class NotificationLedger(Protocol):
     async def release(self, notificationId: str, token: str) -> None: ...
 
 
-# Примечание: подписи кнопок уведомления: выполнено, отложить, завтра, в календаре
+# Примечание: подписи кнопок уведомления: выполнено, отложить, в календаре
 @dataclass(frozen=True)
 class NotificationButtonTexts:
     done: str
     snoozeHour: str
-    tomorrow: str
     openItem: str
 
 

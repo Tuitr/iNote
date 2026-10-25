@@ -27,10 +27,8 @@ STARTS_AT_ARG: Final = "starts_at"
 PERIOD_ARG: Final = "period"
 # вид записи у «Изменить время»: какое поле времени двигать (application/item_time.py)
 KIND_ARG: Final = "kind"
-# snooze: на сколько минут или «tomorrow» — то же время завтра
+# snooze: на сколько минут
 MINUTES_ARG: Final = "minutes"
-UNTIL_ARG: Final = "until"
-UNTIL_TOMORROW: Final = "tomorrow"
 # confirm_conflict: что создать вопреки пересечению — из того вызова, что вернул conflict
 TITLE_ARG: Final = "title"
 # set_tz: пояс IANA из белого списка (domain/timezones.py)

@@ -1,8 +1,8 @@
 """Кнопки напоминаний (J4) и конфликта встреч без LLM: complete, snooze, confirm_conflict.
 
 - complete (item_id) → complete_item; уже выполнено — «Уже отмечено выполненным», не ошибка;
-- snooze (item_id, minutes | until=tomorrow) → update_item с новым моментом напоминания
-  (поле — item_time.snoozeField); «на N минут» — от «сейчас», «завтра» — то же время завтра;
+- snooze (item_id, minutes) → update_item с новым моментом напоминания
+  (поле — item_time.snoozeField); «на N минут» — от «сейчас»;
 - confirm_conflict (title, starts_at, ends_at?) → create_event с allow_conflict=true;
   (item_id, starts_at, ends_at?) → update_item с allow_conflict=true (перенос вопреки пересечению).
   Только пока жив вопрос о конфликте (pending); иначе — «Вопрос устарел».
@@ -27,12 +27,10 @@ from agent.application.actions import (
     MINUTES_ARG,
     STARTS_AT_ARG,
     TITLE_ARG,
-    UNTIL_ARG,
-    UNTIL_TOMORROW,
 )
 from agent.application.item_time import ItemKind, isItemKind, snoozeArgs
 from agent.application.ports import DialogContext, Notice
-from agent.application.snooze import MAX_SNOOZE_MINUTES, snoozeFor, snoozeTomorrow
+from agent.application.snooze import MAX_SNOOZE_MINUTES, snoozeFor
 from agent.application.turn_pipeline import Session, Step, StepOutcome, TurnPipeline, nextFocus
 from contracts.agent_side import TurnResult
 from contracts.reply import ArgValue
@@ -51,19 +49,17 @@ class ReminderActions:
         itemId = itemIdArg(args)
         return None if itemId is None else self._complete(itemId)
 
-    # Примечание: «Отложить»: item_id и ровно одно из minutes (1…1440) или until=tomorrow
+    # Примечание: «Отложить»: item_id и minutes (1…1440)
     def snoozeStep(self, args: Mapping[str, ArgValue]) -> Step | None:
         itemId = itemIdArg(args)
         rawKind = args.get(KIND_ARG)
         if itemId is None or (rawKind is not None and not isItemKind(rawKind)):
             return None
         kind = rawKind if isItemKind(rawKind) else None
-        minutes, until = args.get(MINUTES_ARG), args.get(UNTIL_ARG)
-        if until is None and _validMinutes(minutes):
-            return self._snooze(itemId, kind, minutes=int(str(minutes)))
-        if minutes is None and until == UNTIL_TOMORROW:
-            return self._snooze(itemId, kind, minutes=None)
-        return None
+        minutes = args.get(MINUTES_ARG)
+        if not _validMinutes(minutes):
+            return None
+        return self._snooze(itemId, kind, minutes=int(str(minutes)))
 
     # Примечание: «Всё равно создать»: название и начало обязательны, конец — если был
     def confirmConflictStep(self, args: Mapping[str, ArgValue]) -> Step | None:
@@ -107,18 +103,11 @@ class ReminderActions:
         return step
 
     # Примечание: update_item с новым моментом напоминания; ответ «Напомню …»
-    def _snooze(self, itemId: str, kind: ItemKind | None, *, minutes: int | None) -> Step:
-        # Примечание: шаг: «сейчас» — часы хода в поясе пользователя; время из фокуса — для «завтра»
+    def _snooze(self, itemId: str, kind: ItemKind | None, *, minutes: int) -> Step:
+        # Примечание: шаг: «сейчас» — часы хода в поясе пользователя
         async def step(session: Session) -> StepOutcome:
             started = time.perf_counter()
-            tz = session.user.tz
-            if minutes is not None:
-                moment = snoozeFor(session.now, tz, minutes)
-            else:
-                brief = next(
-                    (b for b in session.context.focus if str(b.id).startswith(itemId)), None
-                )
-                moment = snoozeTomorrow(session.now, tz, brief.remindAt if brief else None)
+            moment = snoozeFor(session.now, session.user.tz, minutes)
             known = kind or focusKind(session, itemId)
             action = await callTool(session, "update_item", snoozeArgs(itemId, known, moment))
             result = toolResult(action, "done", started)

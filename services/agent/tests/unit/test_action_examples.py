@@ -19,10 +19,7 @@ EXAMPLES: Final = Path(__file__).resolve().parents[4] / "contracts" / "examples"
 CATALOG: Final = frozenset(
     value
     for name, value in vars(actions).items()
-    if name.isupper()
-    and isinstance(value, str)
-    and not name.endswith("_ARG")
-    and name != "UNTIL_TOMORROW"
+    if name.isupper() and isinstance(value, str) and not name.endswith("_ARG")
 )
 
 

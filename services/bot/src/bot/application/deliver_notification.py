@@ -41,7 +41,6 @@ from contracts.start_param import StartParam
 # «В работе» держим дольше одной отправки в MAX (10 с × 3 попытки), но меньше паузы Scheduler'а
 DEFAULT_CLAIM_TTL_S: Final = 60
 SNOOZE_MINUTES: Final = 60
-SNOOZE_TOMORROW: Final = "tomorrow"
 
 _FAILURES: Final = {
     DeliveryFailure.CHAT_NOT_FOUND: NotifyOutcome.CHAT_NOT_FOUND,
@@ -140,7 +139,7 @@ class DeliverNotification:
         message = await self._mapper.toMessage(reply, request.user.maxChatId)
         return await self._gateway.sendMessage(message)
 
-    # Примечание: «Выполнено» (не у встречи), «Отложить на 1 ч», «Завтра» и запись в календаре
+    # Примечание: «Выполнено» (не у встречи), «Отложить на 1 ч» и запись в календаре
     def _buttons(self, request: NotifyRequest) -> list[list[ReplyButton]]:
         t = self._texts.notificationButtons()
         item = request.item
@@ -152,9 +151,6 @@ class DeliverNotification:
             ActionButton(
                 text=t.snoozeHour, action="snooze", args={**base, "minutes": SNOOZE_MINUTES}
             )
-        )
-        actions.append(
-            ActionButton(text=t.tomorrow, action="snooze", args={**base, "until": SNOOZE_TOMORROW})
         )
         app = OpenAppButton(text=t.openItem, startParam=str(StartParam.forItem(item.id)))
         return [actions, [app]]

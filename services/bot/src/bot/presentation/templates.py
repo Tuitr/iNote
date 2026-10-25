@@ -31,7 +31,7 @@ NOTIFY_EVENT: Final = "Скоро встреча: {title}\n{when}"
 NOTIFY_TASK: Final = "Срок задачи: {title}\n{when}"
 NOTIFY_NO_TIME: Final = "без срока"
 NOTIFY_BUTTONS: Final = NotificationButtonTexts(
-    done="Выполнено", snoozeHour="Отложить на 1 ч", tomorrow="Завтра", openItem="В календаре"
+    done="Выполнено", snoozeHour="Отложить на 1 ч", openItem="В календаре"
 )
 # Ответ на callback — всплывающее уведомление, длинное MAX обрежет
 CALLBACK_NOTIFICATION_LIMIT: Final = 200

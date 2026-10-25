@@ -70,7 +70,7 @@ async def test_notificationOnceWithButtons(bot: httpx.AsyncClient) -> None:
     assert retry.json()["message_id"] == notice["message_id"]
     assert str(notice["text"]).startswith("⏰ Позвонить Ивану\n")
     rows = buttons(notice)
-    assert [b["text"] for b in rows[0]] == ["Выполнено", "Отложить на 1 ч", "Завтра"]
+    assert [b["text"] for b in rows[0]] == ["Выполнено", "Отложить на 1 ч"]
     assert all(b["type"] == "callback" for b in rows[0])
     assert [(b["type"], b["payload"]) for b in rows[1]] == [("open_app", f"item_{itemId}")]
 

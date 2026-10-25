@@ -50,7 +50,7 @@ main.py          composition root: createApp() и lifespan (клиенты, ре
   агент. `no_speech`, «слишком длинное», сбой ASR — тексты бота (без кода цепочки: он в логах).
 - **Уведомления J4.** `DeliverNotification`: «доставлено» (`va:v1:bot:notif`, 24 ч) → `duplicate`; «в работе»
   (`va:v1:bot:notif_lock`, `SET NX`, 60 с); «доставлено» пишется только после ответа MAX. Кнопки «Выполнено» (не у
-  встречи), «Отложить на 1 ч», «Завтра», «В календаре» (`item_<id>`). После первой доставки — фоном
+  встречи), «Отложить на 1 ч», «В календаре» (`item_<id>`). После первой доставки — фоном
   `POST /v1/focus` агенту: «перенеси его…» относится к этой записи.
 - **`ReplyToMaxMapper`.** `action` → callback-кнопка, `open_app` → кнопка мини-приложения (`web_app = BOT_USERNAME`,
   `payload = start_param`) или ссылка `https://max.ru/<бот>?startapp=…` (`BOT_OPEN_APP_MODE=link`).

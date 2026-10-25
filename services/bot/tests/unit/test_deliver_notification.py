@@ -59,7 +59,7 @@ async def test_delivered() -> None:
     assert sent.text == "⏰ Позвонить Ивану\nСегодня, вс 18 октября, 10:00"
     buttons = sent.attachments[0]["payload"]["buttons"]  # type: ignore[index]
     assert [[b["text"] for b in row] for row in buttons] == [
-        ["Выполнено", "Отложить на 1 ч", "Завтра"],
+        ["Выполнено", "Отложить на 1 ч"],
         ["В календаре"],
     ]
     stored = [rig.callbacks.saved[b["payload"]] for b in buttons[0]]
@@ -68,15 +68,6 @@ async def test_delivered() -> None:
         (
             "snooze",
             {"item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90", "kind": "reminder", "minutes": 60},
-            CHAT,
-        ),
-        (
-            "snooze",
-            {
-                "item_id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
-                "kind": "reminder",
-                "until": "tomorrow",
-            },
             CHAT,
         ),
     ]
@@ -173,7 +164,7 @@ async def test_eventAndTaskButtons() -> None:
     meeting, deadline = rig.gateway.sentMessages()
     assert meeting.text == "Скоро встреча: Созвон\nСегодня, вс 18 октября, 15:00–16:00"
     labels = [b["text"] for b in meeting.attachments[0]["payload"]["buttons"][0]]  # type: ignore[index]
-    assert labels == ["Отложить на 1 ч", "Завтра"]
+    assert labels == ["Отложить на 1 ч"]
     assert deadline.text == "Срок задачи: Сдать отчёт\nЗавтра, пн 19 октября"
 
 

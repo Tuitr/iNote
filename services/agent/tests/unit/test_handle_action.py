@@ -364,7 +364,7 @@ async def test_complete() -> None:
 
 
 # Примечание: «Отложить на 1 ч» — remind_at = «сейчас» + 60 мин в поясе пользователя;
-# «Завтра» — время напоминания из фокуса завтра; ответ «Напомню …»
+# ответ «Напомню …»
 async def test_snooze() -> None:
     later = {**ITEM, "remind_at": "2026-10-21T22:30:00+03:00", "starts_at": None}
     rig = Rig(responses={"update_item": mutation("updated", later)})
@@ -374,17 +374,6 @@ async def test_snooze() -> None:
     ]
     assert reply.text == "Напомню: Сегодня, ср 21 октября, 22:30\nПозвонить Ивану"
     assert reply.state is ReplyState.DONE
-    focused = ItemBrief.fromWire(
-        {**ITEM, "starts_at": None, "remind_at": "2026-10-21T21:00:00+03:00"}
-    )
-    tomorrow = Rig(
-        context=DialogContext(focus=(focused,)),
-        responses={"update_item": mutation("updated", later)},
-    )
-    await tomorrow.press("snooze", {"item_id": ITEM_ID, "until": "tomorrow"})
-    assert tomorrow.tools.calls == [
-        ("update_item", {"id": ITEM_ID, "remind_at": "2026-10-22T21:00:00+03:00"})
-    ]
 
 
 # Примечание: snooze с плохими args — «Не понял кнопку», без вызовов
@@ -395,8 +384,6 @@ async def test_snooze() -> None:
         {"item_id": ITEM_ID, "minutes": 0},
         {"item_id": ITEM_ID, "minutes": 2000},
         {"item_id": ITEM_ID, "minutes": True},
-        {"item_id": ITEM_ID, "until": "monday"},
-        {"item_id": ITEM_ID, "minutes": 60, "until": "tomorrow"},
         {"item_id": ITEM_ID, "minutes": 60, "kind": "memo"},
     ],
 )
