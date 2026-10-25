@@ -268,3 +268,10 @@ def test_simplifySchema() -> None:
         },
     }
     assert toFunction(TOOL)["name"] == "create_task"
+
+
+# Примечание: поле «title» — имя поля, а не ключ схемы: без него модель не передаёт название
+def test_simplifySchemaKeepsTitleField() -> None:
+    parameters = toFunction(TOOL)["parameters"]
+    assert isinstance(parameters, dict)
+    assert parameters["properties"]["title"] == {"type": "string"}

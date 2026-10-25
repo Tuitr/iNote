@@ -176,14 +176,30 @@ def _simplify(node: object, defs: Mapping[str, object]) -> object:
     variants = node.get("anyOf")
     if isinstance(variants, list):
         return _merged(node, [v for v in variants if v != {"type": "null"}], defs)
-    return {k: _simplify(v, defs) for k, v in node.items() if k not in {"title", "$defs"}}
+    return _withoutKeys(node, {"title", "$defs"}, defs)
+
+
+# Примечание: служебные ключи схемы убираем, а имена полей в properties — нет: поле может
+# называться так же, как ключ схемы («title» у create_task и create_event)
+def _withoutKeys(
+    node: Mapping[str, object], dropped: set[str], defs: Mapping[str, object]
+) -> JsonObject:
+    result: JsonObject = {}
+    for key, value in node.items():
+        if key in dropped:
+            continue
+        if key == "properties" and isinstance(value, dict):
+            result[key] = {name: _simplify(field, defs) for name, field in value.items()}
+        else:
+            result[key] = _simplify(value, defs)
+    return result
 
 
 # Примечание: anyOf без null: один вариант — он сам; несколько строковых — строка с форматами
 def _merged(
     node: Mapping[str, object], variants: list[object], defs: Mapping[str, object]
 ) -> object:
-    rest = {k: _simplify(v, defs) for k, v in node.items() if k not in {"anyOf", "title"}}
+    rest = _withoutKeys(node, {"anyOf", "title"}, defs)
     simplified = [_simplify(v, defs) for v in variants]
     if len(simplified) == 1 and isinstance(simplified[0], dict):
         return {**simplified[0], **rest}
