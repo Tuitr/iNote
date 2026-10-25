@@ -90,6 +90,7 @@ class ButtonTemplates(_Section):
     week: str
     cancel: str
     forceCreate: str
+    forceMove: str
 
 
 # Примечание: ответы действий без LLM: имена ключей совпадают с Notice (application/ports)
@@ -99,6 +100,7 @@ class NoticeTemplates(_Section):
     alreadyUndone: str
     alreadyCompleted: str
     unknownAction: str
+    llmDailyLimit: str
 
 
 # Примечание: ответ на «Отложить»: когда напомню снова

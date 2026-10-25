@@ -1,14 +1,15 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Final, override
+from zoneinfo import ZoneInfo
 
 import pytest
 import structlog
 
 from agent.application.handle_message import HandleMessage
-from agent.application.ports import DialogContext
+from agent.application.ports import DialogContext, LlmQuota
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
-from agent.domain.user import UserContext
+from agent.domain.user import UserContext, UserId
 from agent.infrastructure.http_user_resolver import toUserContext
 from agent.presentation.reply_renderer import TemplateReplyRenderer
 from agent.presentation.templates import loadTemplates
@@ -52,6 +53,7 @@ class Rig:
         store: InMemoryContextStore | None = None,
         turnTimeoutS: float = 5.0,
         lockWaitS: float = 0.05,
+        quota: LlmQuota | None = None,
     ) -> None:
         self.brain = brain
         self.resolver = resolver or FakeUserResolver()
@@ -73,7 +75,7 @@ class Rig:
             turnTimeoutS=turnTimeoutS,
             lockWaitS=lockWaitS,
         )
-        self.handler = HandleMessage(self.pipeline)
+        self.handler = HandleMessage(self.pipeline, quota)
 
     # Примечание: ход внутри trace-контекста, как в запросе через middleware
     async def run(self, request: MessageRequest = REQUEST) -> Reply:
@@ -354,3 +356,31 @@ async def test_dialogLogFailureStillReplies() -> None:
         reply = await rig.run()
     assert reply.state is ReplyState.DONE
     assert any(e["event"] == "dialog_log_failed" for e in logs)
+
+
+class CountingQuota:
+    """Лимит ходов с LLM в памяти: сколько раз спросили и до скольких пускать."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.asked: list[tuple[UserId, str]] = []
+
+    async def allow(self, userId: UserId, day: date) -> bool:
+        self.asked.append((userId, day.isoformat()))
+        return len(self.asked) <= self.limit
+
+
+# Примечание: лимит ходов с LLM исчерпан — Brain не вызывается, ответ «лимит исчерпан»;
+# день считается в поясе пользователя
+async def test_llmDailyLimit() -> None:
+    brain = ScenarioBrain(done)
+    quota = CountingQuota(limit=1)
+    rig = Rig(brain, quota=quota)
+    first = await rig.run()
+    second = await rig.run()
+    assert first.state is ReplyState.DONE
+    assert second.text == loadTemplates().notices.llmDailyLimit
+    assert len(brain.turns) == 1
+    assert (
+        quota.asked == [(USER_ID, NOW.astimezone(ZoneInfo("Europe/Moscow")).date().isoformat())] * 2
+    )

@@ -23,6 +23,12 @@ class AgentSettings(BaseServiceSettings):
         validation_alias="AGENT_TURN_TIMEOUT_S",
         description="бюджет хода вместе с ожиданием лока, с (меньше ожидания бота — 45 с)",
     )
+    llmDailyLimit: int = Field(
+        default=200,
+        ge=1,
+        validation_alias="AGENT_LLM_DAILY_LIMIT",
+        description="ходов с LLM на пользователя в сутки (только `llm`), сверх — «лимит исчерпан»",
+    )
     lockWaitS: float = Field(
         default=10.0,
         ge=0,

@@ -128,6 +128,7 @@ class TemplateReplyRenderer:
             Notice.ALREADY_UNDONE: n.alreadyUndone,
             Notice.ALREADY_COMPLETED: n.alreadyCompleted,
             Notice.UNKNOWN_ACTION: n.unknownAction,
+            Notice.LLM_DAILY_LIMIT: n.llmDailyLimit,
         }
         state = ReplyState.ERROR if notice is Notice.UNKNOWN_ACTION else ReplyState.ANSWER
         return _plain(texts[notice], state, traceId)
@@ -255,13 +256,14 @@ class TemplateReplyRenderer:
         text = result.say or self._t.answer.clarify
         return _plain(text, ReplyState.CLARIFY, scope.traceId, buttons=rows)
 
-    # Примечание: кнопка confirm_conflict для последнего create_event со status=conflict
+    # Примечание: кнопка confirm_conflict для последнего create_event или update_item
+    # со status=conflict: создать встречу или перенести запись вопреки пересечению
     def _forceButton(self, actions: Sequence[ExecutedAction]) -> ActionButton | None:
         conflicted = next(
             (
                 a
                 for a in reversed(actions)
-                if a.name == "create_event"
+                if a.name in {"create_event", "update_item"}
                 and a.result.ok
                 and (a.result.data or {}).get("status") == "conflict"
             ),
@@ -269,12 +271,22 @@ class TemplateReplyRenderer:
         )
         if conflicted is None:
             return None
-        title, startsAt = conflicted.args.get("title"), conflicted.args.get("starts_at")
-        if not isinstance(title, str) or not isinstance(startsAt, str):
+        startsAt = conflicted.args.get("starts_at")
+        if not isinstance(startsAt, str):
             return None
-        args: dict[str, str | int | bool] = {TITLE_ARG: title[:200], STARTS_AT_ARG: startsAt}
+        args: dict[str, str | int | bool] = {STARTS_AT_ARG: startsAt}
         if isinstance(endsAt := conflicted.args.get("ends_at"), str):
             args[ENDS_AT_ARG] = endsAt
+        if conflicted.name == "update_item":
+            itemId = conflicted.args.get("id")
+            if not isinstance(itemId, str):
+                return None
+            args[ITEM_ID_ARG] = itemId
+            return ActionButton(text=self._t.buttons.forceMove, action=CONFIRM_CONFLICT, args=args)
+        title = conflicted.args.get("title")
+        if not isinstance(title, str):
+            return None
+        args[TITLE_ARG] = title[:200]
         return ActionButton(text=self._t.buttons.forceCreate, action=CONFIRM_CONFLICT, args=args)
 
     # Примечание: подтверждение по каждому успешному изменению; кнопки — если запись одна

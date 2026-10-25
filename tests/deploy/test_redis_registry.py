@@ -20,6 +20,7 @@ from pydantic import SecretStr
 from agent.application.ports import DialogContext
 from agent.infrastructure.http_user_resolver import HttpUserResolver
 from agent.infrastructure.redis_context import RedisDialogContextStore
+from agent.infrastructure.redis_llm_quota import RedisLlmQuota
 from agent.infrastructure.redis_lock import RedisUserLock
 from bot.application.deliver_notification import DEFAULT_CLAIM_TTL_S
 from bot.application.ports import StoredAction
@@ -102,6 +103,7 @@ async def test_adaptersUseRegistryTtl() -> None:
     turn = Turn(role="user", text="привет", at=datetime(2026, 10, 21, 10, tzinfo=UTC))
     context = DialogContext(history=(turn,), pending={"kind": "time"}, options=("9:00",))
     await RedisDialogContextStore(store).save(17, context)
+    assert await RedisLlmQuota(store, limit=1).allow(17, datetime(2026, 10, 21, tzinfo=UTC).date())
     async with ServiceHttpClient(
         baseUrl="http://mcp:8000",
         timeoutS=5,

@@ -32,6 +32,7 @@ from agent.infrastructure.http_user_settings import HttpSettingsWriter
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutorFactory
 from agent.infrastructure.redis_context import RedisDialogContextStore
+from agent.infrastructure.redis_llm_quota import RedisLlmQuota
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
 from agent.infrastructure.system_clock import SystemClock
@@ -130,7 +131,8 @@ def createApp(
             pipeline = TurnPipeline(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
-            app.state.handleMessage = HandleMessage(pipeline)
+            quota = RedisLlmQuota(store, config.llmDailyLimit) if config.brain == "llm" else None
+            app.state.handleMessage = HandleMessage(pipeline, quota)
             app.state.handleAction = HandleAction(
                 pipeline, custom.settingsWriter or HttpSettingsWriter(mcpHttp, store)
             )
