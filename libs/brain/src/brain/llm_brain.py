@@ -21,7 +21,7 @@ from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
-from brain.prompt import ASK_USER, PROMPT_VERSION, buildSystemPrompt
+from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
 from common.logging import getLogger
 from contracts.agent_side import (
     BrainErrorCode,
@@ -258,14 +258,10 @@ def _logTurn(result: TurnResult, state: _Turn) -> None:
 
 # Примечание: системный промпт с блоком времени и фокусом, история (≤10) и фраза пользователя
 def buildMessages(turn: TurnInput) -> list[LlmMessage]:
-    system = buildSystemPrompt(turn.now, turn.tz)
-    if turn.focus:
-        lines = [_focusLine(brief, turn.tz) for brief in turn.focus]
-        system += "\n\nЗаписи в фокусе (о них «она», «эту», «первую»):\n" + "\n".join(lines)
+    focus = "\n" + "\n".join(_focusLine(b, turn.tz) for b in turn.focus) if turn.focus else NOTHING
+    system = buildSystemPrompt(turn.now, turn.tz, focus, _pendingText(turn.pending))
     if turn.asrLowConfidence:
-        system += "\n\nФраза распознана из голоса неуверенно: если смысл неясен, спроси ask_user."
-    if (waiting := _waitingCall(turn.pending)) is not None:
-        system += "\n\n" + waiting
+        system += "\n\nФраза распознана из голоса неуверенно: если смысл неясен, переспроси."
     history = [LlmMessage(role=t.role, content=t.text) for t in turn.history]
     return [
         LlmMessage(role="system", content=system),
@@ -420,16 +416,16 @@ def _hasMutation(actions: Sequence[ExecutedAction]) -> bool:
     return any(a.name in MUTATING_TOOLS and a.result.ok for a in actions)
 
 
-# Примечание: вопрос с кнопками ещё ждёт ответа — модель видит вызов и уже известные аргументы,
-# чтобы ответ текстом («в 15») дополнил их, а не начал запись заново
-def _waitingCall(pending: JsonObject | None) -> str | None:
-    if not pending or pending.get("kind") != "call":
-        return None
-    args = json.dumps(pending.get("args") or {}, ensure_ascii=False)
-    return (
-        f"Пользователю задан уточняющий вопрос для вызова {pending.get('tool')} с аргументами "
-        f"{args}. Если фраза — ответ на него, дополни эти аргументы и вызови функцию."
-    )
+# Примечание: незавершённое действие для промпта: вызов и уже известные аргументы, чтобы ответ
+# текстом («в 15») дополнил их, а не начал запись заново; свободный вопрос — его текст
+def _pendingText(pending: JsonObject | None) -> str:
+    if not pending:
+        return NOTHING
+    if pending.get("kind") == "call":
+        args = json.dumps(pending.get("args") or {}, ensure_ascii=False)
+        return f"вызов {pending.get('tool')} с аргументами {args}, не хватает ответа пользователя"
+    question = pending.get("question")
+    return f"задан вопрос «{question}»" if isinstance(question, str) and question else NOTHING
 
 
 # Примечание: модели — summary инструмента; при ошибке — код и текст, чтобы она исправилась

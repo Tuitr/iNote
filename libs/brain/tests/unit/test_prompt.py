@@ -1,5 +1,6 @@
 """Промпт под снапшотом и блок времени на замороженном «сейчас» (граница суток, недели, месяца)."""
 
+import re
 from datetime import UTC, datetime
 
 from syrupy.assertion import SnapshotAssertion
@@ -51,10 +52,15 @@ def test_userTimezoneDecidesToday() -> None:
     assert ekb.splitlines()[0].startswith("Сейчас: 2026-10-25T00:30+05:00 (воскресенье)")
 
 
-# Примечание: системный промпт хода — правила и блок времени вместе
-def test_systemPromptHasTimeBlock() -> None:
+# Примечание: плейсхолдеры заполнены: блок времени, фокус и pending; без контекста — «нет»
+def test_systemPromptPlaceholders() -> None:
     moment = datetime(2026, 10, 24, 9, 0, tzinfo=UTC)
-    prompt = buildSystemPrompt(moment, "Europe/Moscow")
-    assert prompt.startswith(SYSTEM_PROMPT)
-    assert prompt.endswith(buildTimeBlock(moment, "Europe/Moscow"))
-    assert "ask_user" in SYSTEM_PROMPT
+    empty = buildSystemPrompt(moment, "Europe/Moscow")
+    assert buildTimeBlock(moment, "Europe/Moscow") in empty
+    assert "Записи в фокусе (о них шла речь недавно): нет" in empty
+    assert "Незавершённое действие (ждёт ответа пользователя): нет" in empty
+    assert not re.search(r"\{(time_block|focus|pending)\}", empty)
+    filled = buildSystemPrompt(moment, "Europe/Moscow", focus="X {pending}", pending="Y")
+    # подстановка за один проход: «{pending}» в названии записи остаётся текстом
+    assert "недавно): X {pending}" in filled
+    assert "пользователя): Y" in filled
