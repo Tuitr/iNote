@@ -46,12 +46,19 @@ MIN_CALL_S: Final = 1.0
 MUTATING_TOOLS: Final = frozenset(
     {"create_task", "create_event", "update_item", "complete_item", "delete_item"}
 )
-# GigaChat на «удали» выбирает update_item, даже когда delete_item рядом, а промпт и описания
-# не помогают (проверено на GigaChat-2-Max): в таком ходе update_item модели не показываем
+# GigaChat путает update_item, complete_item и delete_item: на «отмени» отмечает выполненной,
+# на «я сходил» удаляет; промпт и описания не помогают (проверено на GigaChat-2-Max). Поэтому при
+# явной просьбе удалить или отметить сделанное лишние из этих трёх инструментов модели не даём
 _DELETE_RE: Final = re.compile(
-    r"\b(удали|удалить|удалите|отмени|отменить|отмените|убери|убрать|уберите)\b", re.IGNORECASE
+    r"\b(удали|удалить|удалите|удаляй|отмени|отменить|отмените|отменяй|убери|убрать|уберите|"
+    r"сотри|стереть)\b",
+    re.IGNORECASE,
 )
-UPDATE_TOOL: Final = "update_item"
+_DONE_RE: Final = re.compile(
+    r"\b(сделал\w*|сделан\w*|выполнил\w*|выполнен\w*|сходил\w*|закончил\w*|отметь)", re.IGNORECASE
+)
+HIDDEN_ON_DELETE: Final = frozenset({"update_item", "complete_item"})
+HIDDEN_ON_DONE: Final = frozenset({"update_item", "delete_item"})
 # После списка модели нечего делать: агент рисует его из data, второй вызов модели — лишние секунды
 FINAL_TOOLS: Final = frozenset({"list_items"})
 TIME_FIELDS: Final = ("starts_at", "ends_at", "remind_at")
@@ -152,9 +159,7 @@ class LlmBrain:
     # Примечание: новый ход: цикл модели с инструментами; исключения LLM наружу не выходят
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
         started = time.perf_counter()
-        specs = await tools.listTools()
-        if _DELETE_RE.search(turn.text):
-            specs = [spec for spec in specs if spec.name != UPDATE_TOOL]
+        specs = _visibleTools(turn.text, await tools.listTools())
         state = _Turn(
             messages=buildMessages(turn),
             knownIds={str(b.id) for b in turn.focus},
@@ -248,6 +253,16 @@ class LlmBrain:
         state.tokensOut += reply.tokensOut
         state.model = reply.model or state.model
         return reply
+
+
+# Примечание: инструменты хода; «удали» и «сделал» в одной фразе — неясно, оставляем все
+def _visibleTools(text: str, specs: Sequence[ToolSpec]) -> list[ToolSpec]:
+    isDelete = _DELETE_RE.search(text) is not None
+    isDone = _DONE_RE.search(text) is not None
+    if isDelete == isDone:
+        return list(specs)
+    hidden = HIDDEN_ON_DELETE if isDelete else HIDDEN_ON_DONE
+    return [spec for spec in specs if spec.name not in hidden]
 
 
 # Примечание: итог хода в лог — без текста пользователя и ответа модели

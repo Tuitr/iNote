@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import Final
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from brain.llm import FakeLlmClient, FunctionCall, LlmError, LlmReply
 from brain.llm_brain import LlmBrain
 from brain.prompt import ASK_USER
@@ -322,13 +324,25 @@ async def test_successClaimAfterFailedCall() -> None:
     assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
 
 
-# Примечание: «удали» — update_item модели не показываем: GigaChat выбирал его вместо delete_item
-async def test_deleteRequestHidesUpdate() -> None:
+# Примечание: «удали», «отмени» — update_item и complete_item модели не показываем:
+# GigaChat выбирал их вместо delete_item
+@pytest.mark.parametrize("phrase", ["Удали встречу с Петром", "Отмени встречу с Петром"])
+async def test_deleteRequestHidesUpdateAndComplete(phrase: str) -> None:
     subject, llm = brain(text("Какую запись удалить?"))
-    await subject.run(turnInput("Удали встречу с Петром"), FakeTools())
+    await subject.run(turnInput(phrase), FakeTools())
     names = {tool.name for tool in llm.calls[0].tools}
     assert "delete_item" in names
-    assert "update_item" not in names
+    assert not names & {"update_item", "complete_item"}
+
+
+# Примечание: «сделал» — только complete_item: GigaChat удалял запись вместо отметки
+@pytest.mark.parametrize("phrase", ["Я сходил на встречу с Петром", "Отметь выполненной"])
+async def test_doneRequestHidesUpdateAndDelete(phrase: str) -> None:
+    subject, llm = brain(text("Какую запись отметить?"))
+    await subject.run(turnInput(phrase), FakeTools())
+    names = {tool.name for tool in llm.calls[0].tools}
+    assert "complete_item" in names
+    assert not names & {"update_item", "delete_item"}
 
 
 # Примечание: без просьбы удалить все инструменты на месте
