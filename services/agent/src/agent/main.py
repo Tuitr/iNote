@@ -4,7 +4,7 @@
 """
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Final
 
@@ -24,7 +24,7 @@ from agent.application.ports import (
     UserResolver,
 )
 from agent.application.turn_pipeline import TurnDeps, TurnPipeline
-from agent.infrastructure.brains import buildBrain
+from agent.infrastructure.brains import openBrain
 from agent.infrastructure.http_dialog_log import TASK_PREFIX as DIALOG_TASK_PREFIX
 from agent.infrastructure.http_dialog_log import HttpDialogLogWriter
 from agent.infrastructure.http_user_resolver import HttpUserResolver
@@ -32,6 +32,7 @@ from agent.infrastructure.http_user_settings import HttpSettingsWriter
 from agent.infrastructure.mcp_connection import McpConnection, httpSessionFactory
 from agent.infrastructure.mcp_executor import McpToolExecutorFactory
 from agent.infrastructure.redis_context import RedisDialogContextStore
+from agent.infrastructure.redis_llm_quota import RedisLlmQuota
 from agent.infrastructure.redis_lock import RedisUserLock
 from agent.infrastructure.settings import AgentSettings
 from agent.infrastructure.system_clock import SystemClock
@@ -82,11 +83,13 @@ def createApp(
     # Примечание: Redis, MCP-сессия, ход и действия; всё закрывается при остановке
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        brain = custom.brain or buildBrain(config.brain)
         # Шаблоны проверяются здесь: опечатка в ru.toml — агент не стартует
         templates = loadTemplates()
         clock = custom.clock or SystemClock()
-        async with managedTasks() as tasks:
+        brainContext: AbstractAsyncContextManager[Brain] = (
+            nullcontext(custom.brain) if custom.brain is not None else openBrain(config.brain)
+        )
+        async with brainContext as brain, managedTasks() as tasks:
             redis = (custom.redisFactory or createRedis)(config.redisUrl)
             store = KeyedRedis(redis)
             # J8 идемпотентен по max_user_id: таймаут и 1 повтор — как у MCP
@@ -128,7 +131,8 @@ def createApp(
             pipeline = TurnPipeline(
                 deps, turnTimeoutS=config.turnTimeoutS, lockWaitS=config.lockWaitS
             )
-            app.state.handleMessage = HandleMessage(pipeline)
+            quota = RedisLlmQuota(store, config.llmDailyLimit) if config.brain == "llm" else None
+            app.state.handleMessage = HandleMessage(pipeline, quota)
             app.state.handleAction = HandleAction(
                 pipeline, custom.settingsWriter or HttpSettingsWriter(mcpHttp, store)
             )

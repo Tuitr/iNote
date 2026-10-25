@@ -24,9 +24,10 @@ from bot.infrastructure.http_focus import HttpFocusNotifier
 from bot.infrastructure.max_mapper import mapRawUpdate
 from bot.infrastructure.max_throttle import ThrottledMaxGateway
 from bot.infrastructure.memory_marker import InMemoryMarkerStore
-from bot.infrastructure.real_max import createRealMaxGateway
+from bot.infrastructure.real_max import RealMaxGateway, createMaxHttp
 from bot.infrastructure.redis_adapters import (
     RedisCallbackStore,
+    RedisMarkerStore,
     RedisNotificationLedger,
     RedisRateLimiter,
     RedisUpdateDeduplicator,
@@ -62,6 +63,7 @@ def createApp(
     asrTransport: httpx.AsyncBaseTransport | None = None,
     filesTransport: httpx.AsyncBaseTransport | None = None,
     webhookTransport: httpx.AsyncBaseTransport | None = None,
+    maxTransport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     config = settings or BotSettings()
     configureLogging(SERVICE_NAME, config.logLevel, config.logFormat)
@@ -69,16 +71,15 @@ def createApp(
     # Примечание: клиенты и фоновые задачи живут ровно столько, сколько приложение (правило 9)
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        if config.maxMode == "real":
-            createRealMaxGateway()
         redis = redisFactory(config.redisUrl)
         fake = FakeMaxGateway(
             FakeMaxOptions(
                 sendDelayS=config.fakeSendDelayMs / 1000, filesBaseUrl=config.fakeFilesUrl
             )
         )
+        maxHttp = _maxHttp(config, maxTransport)
         # все запросы к MAX — через клиентский лимит 30 в секунду (и у реального адаптера)
-        gateway = ThrottledMaxGateway(fake)
+        gateway = ThrottledMaxGateway(RealMaxGateway(maxHttp) if maxHttp is not None else fake)
         store = KeyedRedis(redis)
         # Бот → агент: 45 с без повторов (стандарт); POST без ключа и так не повторяется
         agentHttp = ServiceHttpClient(
@@ -153,11 +154,14 @@ def createApp(
                     )
                 else:
                     # Фейковый MAX теряет очередь при рестарте — его marker в Redis хранить
-                    # нельзя; для real здесь будет RedisMarkerStore(store)
+                    # нельзя; настоящему — нужно, иначе после рестарта апдейты придут повторно
+                    markerStore = (
+                        RedisMarkerStore(store) if maxHttp is not None else InMemoryMarkerStore()
+                    )
                     loop = PollingLoop(
                         gateway=gateway,
                         dispatcher=dispatcher,
-                        markerStore=InMemoryMarkerStore(),
+                        markerStore=markerStore,
                         pollTimeoutS=config.pollTimeoutS,
                     )
                     _ = tasks.spawn(loop.run(tasks.stopping), name=POLLING_TASK)
@@ -170,6 +174,8 @@ def createApp(
             await filesHttp.aclose()
             if webhookClient is not None:
                 await webhookClient.aclose()
+            if maxHttp is not None:
+                await maxHttp.aclose()
             await redis.aclose()
             _log.info("bot_stopped")
 
@@ -178,6 +184,21 @@ def createApp(
     installMiddleware(app, serviceToken=config.serviceToken)
     _includeRouters(app, config)
     return app
+
+
+# Примечание: HTTP-клиент настоящего MAX; в режиме fake — None
+def _maxHttp(
+    config: BotSettings, transport: httpx.AsyncBaseTransport | None
+) -> httpx.AsyncClient | None:
+    if config.maxMode != "real" or config.maxToken is None:
+        return None
+    return createMaxHttp(
+        config.maxToken.get_secret_value(),
+        apiUrl=config.maxApiUrl,
+        timeoutS=config.maxTimeoutS,
+        verify=config.maxCaBundle or True,
+        transport=transport,
+    )
 
 
 # Примечание: роуты: health и J4 — всегда, webhook — в режиме webhook, /dev/max/* — с фейком

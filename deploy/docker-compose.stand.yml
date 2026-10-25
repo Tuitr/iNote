@@ -2,7 +2,8 @@
 #   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.stand.yml \
 #     --env-file .env --profile full up -d
 # Наружу — только Caddy на 80/443 (Let's Encrypt), бот получает апдейты MAX по webhook.
-# Нужны STAND_DOMAIN, ACME_EMAIL, BOT_WEBHOOK_SECRET и токен MAX в .env. `make deploy` — по просьбе.
+# Нужны STAND_DOMAIN, ACME_EMAIL, BOT_WEBHOOK_SECRET и BOT_MAX_TOKEN в .env, сертификат Минцифры
+# в deploy/certs (API MAX и GigaChat подписаны им). `make deploy` — по просьбе.
 
 services:
   caddy:
@@ -33,12 +34,76 @@ services:
       BOT_UPDATES_MODE: webhook
       BOT_WEBHOOK_URL: https://${STAND_DOMAIN:?нужен STAND_DOMAIN}/webhook/max
       BOT_WEBHOOK_SECRET: ${BOT_WEBHOOK_SECRET:?нужен BOT_WEBHOOK_SECRET (5–256 символов a-zA-Z0-9_-)}
+      BOT_MAX_TOKEN: ${BOT_MAX_TOKEN:?нужен BOT_MAX_TOKEN (токен бота MAX)}
+      BOT_MAX_CA_BUNDLE: /certs/russian_trusted_root_ca.pem
+    volumes:
+      - ./certs:/certs:ro
     # на стенде /dev/max/* не публикуем: бот доступен только через Caddy
     ports: !reset []
 
   api:
+    environment:
+      # initData подписывает тот же бот: один токен на бота и api, разойтись им негде
+      API_MAX_BOT_TOKEN: ${BOT_MAX_TOKEN:?нужен BOT_MAX_TOKEN (токен бота MAX)}
+      API_DEV_AUTH: "false"
     # на стенде api доступен только через Caddy (/api/v1/*)
     ports: !reset []
+
+  agent:
+    environment:
+      # стенд — настоящие провайдеры независимо от PROFILE в Makefile (его значения — для make up)
+      AGENT_BRAIN: llm
+      LLM_PROVIDER: gigachat
+      # GigaChat подписан НУЦ Минцифры (как и API MAX)
+      LLM_GIGACHAT_CA_BUNDLE: /certs/russian_trusted_root_ca.pem
+    volumes:
+      - ./certs:/certs:ro
+
+  asr:
+    environment:
+      ASR_PROVIDER: yandex
+
+  # мини-приложение (E) вместо заглушки: статика Vite за внешним Caddy
+  max_app:
+    build:
+      context: ..
+      dockerfile: max_app/Dockerfile
+    image: va/max-app:local
+    restart: unless-stopped
+    # статике секреты не нужны: ни .env, ни переменных сервисов
+    env_file: !reset []
+    environment: !reset {}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ежедневный pg_dump в deploy/backups (хранится 14 дней); копию с сервера забирать отдельно —
+  # бэкап на том же диске не спасёт от потери сервера (deploy/README.md, «Бэкапы»)
+  backup:
+    image: postgres:16
+    profiles: [mock, full]
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-inote}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?нужен POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-inote}
+    volumes:
+      - ./backups:/backups
+    networks: [internal]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          file=/backups/inote-$$(date +%Y%m%d-%H%M).sql.gz
+          pg_dump --no-owner | gzip > "$$file.tmp" && mv "$$file.tmp" "$$file" && echo "backup_done $$file"
+          find /backups -name 'inote-*.sql.gz' -mtime +14 -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres: { condition: service_healthy }
 
 volumes:
   caddy_data:

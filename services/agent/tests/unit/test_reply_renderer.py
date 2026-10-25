@@ -425,6 +425,21 @@ def test_clarifyConflictForceButton() -> None:
     assert "Всё равно создать" not in str(plain["buttons"])
 
 
+# Примечание: перенос поверх другой встречи — «Всё равно перенести» с id записи
+def test_clarifyMoveConflictForceButton() -> None:
+    moveArgs: Json = {"id": "1f2e3d4c", "starts_at": "2026-10-22T09:30:00+03:00"}
+    conflicted = action(
+        "update_item",
+        {"status": "conflict", "item": None, "conflicts": [EVENT], "free_slots": []},
+        moveArgs,
+    )
+    clarify = Clarify(missing=["starts_at"], options=[], pending={"kind": "call"})
+    rows = render(turn("clarify", conflicted, say="Занято", clarify=clarify))["buttons"]
+    assert isinstance(rows, list)
+    assert rows[0][0]["text"] == "Всё равно перенести"
+    assert rows[0][0]["args"] == {"item_id": "1f2e3d4c", "starts_at": "2026-10-22T09:30:00+03:00"}
+
+
 # Примечание: J6 — кнопка всегда week_<понедельник> в поясе пользователя: воскресенье 23:30 в
 # Москве и Екатеринбурге; понедельник 00:10 в Екатеринбурге, когда в UTC ещё воскресенье
 @pytest.mark.parametrize(

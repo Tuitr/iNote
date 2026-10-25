@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.12.*"
 
 [manifest]
@@ -8,6 +8,7 @@ members = [
     "va-agent",
     "va-asr",
     "va-bot",
+    "va-brain",
     "va-common",
     "va-contracts",
 ]
@@ -559,6 +560,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
     { name = "respx" },
     { name = "ruff" },
     { name = "syrupy" },
@@ -599,6 +601,7 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "respx", specifier = ">=0.22" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "ruff", specifier = ">=0.17,<1" },
@@ -1394,6 +1397,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "redis" },
     { name = "uvicorn" },
+    { name = "va-brain" },
     { name = "va-common" },
     { name = "va-contracts" },
 ]
@@ -1406,6 +1410,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
+    { name = "va-brain", editable = "libs/brain" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },
 ]
@@ -1456,6 +1461,27 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
     { name = "redis", specifier = ">=5.2" },
     { name = "uvicorn", specifier = ">=0.32" },
+    { name = "va-common", editable = "libs/common" },
+    { name = "va-contracts", editable = "libs/contracts" },
+]
+
+[[package]]
+name = "va-brain"
+version = "0.0.0"
+source = { editable = "libs/brain" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "va-common" },
+    { name = "va-contracts" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pydantic", specifier = ">=2.11" },
+    { name = "pydantic-settings", specifier = ">=2.9" },
     { name = "va-common", editable = "libs/common" },
     { name = "va-contracts", editable = "libs/contracts" },
 ]

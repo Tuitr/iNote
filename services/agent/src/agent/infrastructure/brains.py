@@ -1,25 +1,21 @@
-from typing import Final, Literal
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Literal
 
 from agent.infrastructure.scripted_brain import ScriptedBrain
+from brain.factory import openLlmBrain
+from brain.settings import LlmSettings
 from contracts.agent_side import Brain
 
 type BrainMode = Literal["scripted", "llm"]
 
-LLM_NOT_CONNECTED: Final = (
-    "AGENT_BRAIN=llm: Brain участника B ещё не подключён (libs/brain появится после мержа); "
-    "запустите с AGENT_BRAIN=scripted"
-)
 
-
-# Примечание: AGENT_BRAIN=llm до мержа с B — понятная ошибка на старте, а не тихий фолбэк
-class BrainNotConnectedError(RuntimeError):
-    # Примечание: текст фиксирован — его видно в логах compose
-    def __init__(self) -> None:
-        super().__init__(LLM_NOT_CONNECTED)
-
-
-# Примечание: выбор Brain по AGENT_BRAIN; после мержа ветка llm создаёт Brain из libs/brain
-def buildBrain(mode: BrainMode) -> Brain:
-    if mode == "llm":
-        raise BrainNotConnectedError
-    return ScriptedBrain()
+# Примечание: Brain по AGENT_BRAIN на время жизни агента: scripted — правила без сети,
+# llm — Brain B (libs/brain) с клиентом модели по LLM_PROVIDER; его HTTP-клиент закроется на выходе
+@asynccontextmanager
+async def openBrain(mode: BrainMode) -> AsyncIterator[Brain]:
+    if mode == "scripted":
+        yield ScriptedBrain()
+        return
+    async with openLlmBrain(LlmSettings()) as brain:
+        yield brain

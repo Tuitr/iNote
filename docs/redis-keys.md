@@ -28,6 +28,7 @@
 | `va:v1:agent:ctx:{user_id}` | агент | агент | 2 ч | история диалога для `TurnInput.history` (до 10 реплик) | **в коде** |
 | `va:v1:agent:focus:{user_id}` | агент | агент | 2 ч | записи последнего ответа, после уведомления — его запись (`POST /v1/focus`); «перенеси её» | **в коде** |
 | `va:v1:agent:pending:{user_id}` | агент | агент → Brain | 10 мин | `{brain: <pending B как есть>, options: [подписи кнопок]}` | **в коде** (S2: `resume` по `pick_option`) |
+| `va:v1:agent:llm_day:{user_id}.{yyyymmdd}` | агент | агент | 48 ч | дневной лимит ходов с LLM (`AGENT_LLM_DAILY_LIMIT`, INCR + EXPIRE NX); день — в поясе пользователя | **в коде**, только `AGENT_BRAIN=llm` |
 | `va:v1:agent:user:{max_user_id}` | агент | агент | 1 ч | кеш ответа J8 resolve: внутренний `user_id`, пояс, настройки (без `created`; чат — из запроса); удаляется после PATCH настроек (`/settings`, S3) | **в коде** |
 | `va:v1:asr:cache:{sha256}` | ASR | ASR | 7 дней | кеш распознавания: `sha256(lang + аудио)` → ответ J1 (`TranscribeResponse` в JSON, аудио не хранится); повтор голосового не идёт к провайдеру | **в коде** (S5, `services/asr`); в плане было `va:v1:asr:{sha256}` без сущности — подтвердить A |
 | `va:v1:mcp:ver:{user_id}` | mcp (инструменты, J8 settings) и scheduler (сдвиг серий) после коммита | API | **без TTL** | версия данных пользователя для ETag; единственный ключ без TTL | в коде D (`libs/core/services/versioning.py`) |

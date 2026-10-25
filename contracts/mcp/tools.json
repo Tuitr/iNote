@@ -1,6 +1,7 @@
 [
   {
     "name": "create_task",
+    "description": "Создать задачу или напоминание. kind=reminder — напомнить в момент remind_at (время обязательно); kind=task — задача со сроком starts_at или без срока. Встречи с людьми — create_event.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -46,6 +47,7 @@
           "$ref": "#/$defs/Caller"
         },
         "title": {
+          "description": "Короткое название по-русски, без «напомни», дат и времени",
           "maxLength": 200,
           "minLength": 1,
           "title": "Title",
@@ -53,6 +55,7 @@
         },
         "kind": {
           "default": "task",
+          "description": "task — задача; reminder — напоминание в момент remind_at",
           "enum": [
             "task",
             "reminder"
@@ -75,6 +78,7 @@
             }
           ],
           "default": null,
+          "description": "Срок задачи: дата YYYY-MM-DD (весь день) или время ISO 8601 со смещением пояса пользователя",
           "title": "Starts At"
         },
         "remind_at": {
@@ -88,6 +92,7 @@
             }
           ],
           "default": null,
+          "description": "Когда напомнить, ISO 8601 со смещением пояса пользователя; обязательно для reminder",
           "title": "Remind At"
         },
         "notes": {
@@ -100,6 +105,7 @@
             }
           ],
           "default": null,
+          "description": "Подробности, если пользователь их назвал",
           "title": "Notes"
         },
         "rrule": {
@@ -112,6 +118,7 @@
             }
           ],
           "default": null,
+          "description": "Повторение RFC 5545 без «RRULE:», например FREQ=WEEKLY;BYDAY=MO; только если просят повторять",
           "title": "Rrule"
         },
         "source_text": {
@@ -124,6 +131,7 @@
             }
           ],
           "default": null,
+          "description": "Исходная фраза пользователя",
           "title": "Source Text"
         },
         "search_hints": {
@@ -137,6 +145,7 @@
             }
           ],
           "default": null,
+          "description": "Синонимы и близкие слова через пробел, по ним запись найдут потом: звонок позвонить созвон",
           "title": "Search Hints"
         }
       },
@@ -413,6 +422,7 @@
   },
   {
     "name": "create_event",
+    "description": "Создать встречу, starts_at обязателен. ends_at передавай, только если названа длительность. Если время занято, ответ status=conflict со свободными окнами free_slots: встреча не создана, предложи пользователю окно.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -458,6 +468,7 @@
           "$ref": "#/$defs/Caller"
         },
         "title": {
+          "description": "Короткое название по-русски, без «напомни», дат и времени",
           "maxLength": 200,
           "minLength": 1,
           "title": "Title",
@@ -474,6 +485,7 @@
               "type": "string"
             }
           ],
+          "description": "Начало, ISO 8601 со смещением пояса пользователя; дата YYYY-MM-DD — встреча на весь день",
           "title": "Starts At"
         },
         "ends_at": {
@@ -487,9 +499,11 @@
             }
           ],
           "default": null,
+          "description": "Конец, только если названа длительность или время окончания",
           "title": "Ends At"
         },
         "participants": {
+          "description": "Имена участников из фразы",
           "items": {
             "type": "string"
           },
@@ -507,6 +521,7 @@
             }
           ],
           "default": null,
+          "description": "За сколько минут напомнить, если пользователь попросил",
           "title": "Remind Before Min"
         },
         "notes": {
@@ -519,6 +534,7 @@
             }
           ],
           "default": null,
+          "description": "Подробности, если пользователь их назвал",
           "title": "Notes"
         },
         "rrule": {
@@ -531,6 +547,7 @@
             }
           ],
           "default": null,
+          "description": "Повторение RFC 5545 без «RRULE:», например FREQ=WEEKLY;BYDAY=MO; только если просят повторять",
           "title": "Rrule"
         },
         "source_text": {
@@ -543,6 +560,7 @@
             }
           ],
           "default": null,
+          "description": "Исходная фраза пользователя",
           "title": "Source Text"
         },
         "search_hints": {
@@ -556,10 +574,12 @@
             }
           ],
           "default": null,
+          "description": "Синонимы и близкие слова через пробел, по ним запись найдут потом: звонок позвонить созвон",
           "title": "Search Hints"
         },
         "allow_conflict": {
           "default": false,
+          "description": "true — создать несмотря на пересечение; только по явной просьбе",
           "title": "Allow Conflict",
           "type": "boolean"
         }
@@ -838,6 +858,7 @@
   },
   {
     "name": "list_items",
+    "description": "Показать записи за период: «что у меня сегодня, завтра, на неделе». from и to — даты в поясе пользователя, to не включается: на завтра from=завтра, to=послезавтра.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -892,11 +913,13 @@
           "$ref": "#/$defs/Caller"
         },
         "from": {
+          "description": "Первый день периода, YYYY-MM-DD",
           "format": "date",
           "title": "From",
           "type": "string"
         },
         "to": {
+          "description": "День после последнего (не включается), YYYY-MM-DD",
           "format": "date",
           "title": "To",
           "type": "string"
@@ -914,10 +937,12 @@
             }
           ],
           "default": null,
+          "description": "Только эти виды записей; не передавай, если пользователь не уточнил",
           "title": "Kind"
         },
         "status": {
           "default": "open",
+          "description": "open — невыполненные, done — выполненные, all — все",
           "enum": [
             "open",
             "done",
@@ -1133,6 +1158,7 @@
   },
   {
     "name": "search_items",
+    "description": "Найти записи по смыслу: «звонок Ивану», «договор». Вызывай перед изменением, удалением или отметкой, если записи нет в фокусе: в ответе id для следующего вызова.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -1187,6 +1213,7 @@
           "$ref": "#/$defs/Caller"
         },
         "query": {
+          "description": "Что искать, словами пользователя",
           "minLength": 1,
           "title": "Query",
           "type": "string"
@@ -1204,6 +1231,7 @@
             }
           ],
           "default": null,
+          "description": "Только эти виды записей; не передавай, если пользователь не уточнил",
           "title": "Kind"
         },
         "from": {
@@ -1217,6 +1245,7 @@
             }
           ],
           "default": null,
+          "description": "Искать с этого дня, YYYY-MM-DD",
           "title": "From"
         },
         "to": {
@@ -1230,15 +1259,18 @@
             }
           ],
           "default": null,
+          "description": "Искать до этого дня (не включается), YYYY-MM-DD",
           "title": "To"
         },
         "include_done": {
           "default": true,
+          "description": "Искать и среди выполненных",
           "title": "Include Done",
           "type": "boolean"
         },
         "limit": {
           "default": 5,
+          "description": "Сколько записей вернуть",
           "maximum": 10,
           "minimum": 1,
           "title": "Limit",
@@ -1442,6 +1474,7 @@
   },
   {
     "name": "update_item",
+    "description": "Изменить запись по id: переданные поля заменяются, null очищает поле, остальные не меняются. Перенос встречи или срока задачи — starts_at, напоминания — remind_at. Конфликт времени — как у create_event.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -1488,6 +1521,7 @@
           "$ref": "#/$defs/Caller"
         },
         "id": {
+          "description": "id записи: полный или первые 8 символов из фокуса или результата инструмента",
           "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
           "title": "Id",
           "type": "string"
@@ -1504,6 +1538,7 @@
             }
           ],
           "default": null,
+          "description": "Новое название",
           "title": "Title"
         },
         "kind": {
@@ -1520,6 +1555,7 @@
             }
           ],
           "default": null,
+          "description": "Сделать задачей (task) или напоминанием (reminder)",
           "title": "Kind"
         },
         "starts_at": {
@@ -1537,6 +1573,7 @@
             }
           ],
           "default": null,
+          "description": "Новое начало встречи или срок задачи, ISO 8601 со смещением пояса пользователя или YYYY-MM-DD",
           "title": "Starts At"
         },
         "ends_at": {
@@ -1550,6 +1587,7 @@
             }
           ],
           "default": null,
+          "description": "Новый конец встречи, ISO 8601 со смещением пояса пользователя",
           "title": "Ends At"
         },
         "remind_at": {
@@ -1563,6 +1601,7 @@
             }
           ],
           "default": null,
+          "description": "Новое время напоминания, ISO 8601 со смещением пояса пользователя",
           "title": "Remind At"
         },
         "participants": {
@@ -1578,6 +1617,7 @@
             }
           ],
           "default": null,
+          "description": "Новый список участников",
           "title": "Participants"
         },
         "remind_before_min": {
@@ -1591,6 +1631,7 @@
             }
           ],
           "default": null,
+          "description": "За сколько минут до встречи напомнить",
           "title": "Remind Before Min"
         },
         "notes": {
@@ -1603,6 +1644,7 @@
             }
           ],
           "default": null,
+          "description": "Подробности, если пользователь их назвал",
           "title": "Notes"
         },
         "rrule": {
@@ -1615,6 +1657,7 @@
             }
           ],
           "default": null,
+          "description": "Повторение RFC 5545 без «RRULE:», например FREQ=WEEKLY;BYDAY=MO; только если просят повторять",
           "title": "Rrule"
         },
         "source_text": {
@@ -1627,6 +1670,7 @@
             }
           ],
           "default": null,
+          "description": "Исходная фраза пользователя",
           "title": "Source Text"
         },
         "search_hints": {
@@ -1640,10 +1684,12 @@
             }
           ],
           "default": null,
+          "description": "Синонимы и близкие слова через пробел, по ним запись найдут потом: звонок позвонить созвон",
           "title": "Search Hints"
         },
         "allow_conflict": {
           "default": false,
+          "description": "true — перенести несмотря на пересечение; только по явной просьбе",
           "title": "Allow Conflict",
           "type": "boolean"
         }
@@ -1921,6 +1967,7 @@
   },
   {
     "name": "complete_item",
+    "description": "Отметить запись выполненной по id; done=false снимает отметку.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -1966,12 +2013,14 @@
           "$ref": "#/$defs/Caller"
         },
         "id": {
+          "description": "id записи: полный или первые 8 символов из фокуса или результата инструмента",
           "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
           "title": "Id",
           "type": "string"
         },
         "done": {
           "default": true,
+          "description": "false — снять отметку о выполнении",
           "title": "Done",
           "type": "boolean"
         }
@@ -2249,6 +2298,7 @@
   },
   {
     "name": "delete_item",
+    "description": "Удалить запись по id; restore=true восстанавливает удалённую.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -2294,12 +2344,14 @@
           "$ref": "#/$defs/Caller"
         },
         "id": {
+          "description": "id записи: полный или первые 8 символов из фокуса или результата инструмента",
           "pattern": "^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$",
           "title": "Id",
           "type": "string"
         },
         "restore": {
           "default": false,
+          "description": "true — восстановить удалённую запись",
           "title": "Restore",
           "type": "boolean"
         }
@@ -2577,6 +2629,7 @@
   },
   {
     "name": "check_conflicts",
+    "description": "Проверить, свободно ли время для встречи, ничего не создавая: вернёт пересечения и свободные окна. exclude_id — запись, которую переносим.",
     "inputSchema": {
       "$defs": {
         "Caller": {
@@ -2622,11 +2675,13 @@
           "$ref": "#/$defs/Caller"
         },
         "starts_at": {
+          "description": "Начало проверяемого времени, ISO 8601 со смещением пояса пользователя",
           "format": "date-time",
           "title": "Starts At",
           "type": "string"
         },
         "ends_at": {
+          "description": "Конец проверяемого времени, ISO 8601 со смещением пояса пользователя",
           "format": "date-time",
           "title": "Ends At",
           "type": "string"
@@ -2642,6 +2697,7 @@
             }
           ],
           "default": null,
+          "description": "Не считать пересечением эту запись (при переносе)",
           "title": "Exclude Id"
         }
       },

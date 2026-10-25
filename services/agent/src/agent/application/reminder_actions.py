@@ -3,15 +3,15 @@
 - complete (item_id) → complete_item; уже выполнено — «Уже отмечено выполненным», не ошибка;
 - snooze (item_id, minutes | until=tomorrow) → update_item с новым моментом напоминания
   (поле — item_time.snoozeField); «на N минут» — от «сейчас», «завтра» — то же время завтра;
-- confirm_conflict (title, starts_at, ends_at?) → create_event с allow_conflict=true, только пока
-  жив вопрос о конфликте (pending); иначе — «Вопрос устарел».
+- confirm_conflict (title, starts_at, ends_at?) → create_event с allow_conflict=true;
+  (item_id, starts_at, ends_at?) → update_item с allow_conflict=true (перенос вопреки пересечению).
+  Только пока жив вопрос о конфликте (pending); иначе — «Вопрос устарел».
 Ответ — новым сообщением; старое сообщение напоминания не правим (MAX даёт править 24 ч).
 """
 
 import dataclasses
 import time
 from collections.abc import Mapping
-from datetime import datetime
 from typing import Final
 
 from agent.application.action_tools import (
@@ -68,14 +68,20 @@ class ReminderActions:
     # Примечание: «Всё равно создать»: название и начало обязательны, конец — если был
     def confirmConflictStep(self, args: Mapping[str, ArgValue]) -> Step | None:
         title = args.get(TITLE_ARG)
+        itemId = itemIdArg(args)
         startsAt = momentArg(args.get(STARTS_AT_ARG))
         rawEnds = args.get(ENDS_AT_ARG)
         endsAt = momentArg(rawEnds) if rawEnds is not None else None
-        if not isinstance(title, str) or not 0 < len(title) <= TITLE_MAX_LENGTH:
-            return None
         if startsAt is None or (rawEnds is not None and endsAt is None):
             return None
-        return self._confirmConflict(title, startsAt, endsAt)
+        moment: dict[str, object] = {"starts_at": startsAt.isoformat(), "allow_conflict": True}
+        if endsAt is not None:
+            moment["ends_at"] = endsAt.isoformat()
+        if itemId is not None:
+            return self._confirmConflict("update_item", {"id": itemId, **moment})
+        if not isinstance(title, str) or not 0 < len(title) <= TITLE_MAX_LENGTH:
+            return None
+        return self._confirmConflict("create_event", {"title": title, **moment})
 
     # Примечание: complete_item; повтор — «Уже отмечено выполненным»; удалённая — not_found
     def _complete(self, itemId: str) -> Step:
@@ -125,22 +131,15 @@ class ReminderActions:
 
         return step
 
-    # Примечание: create_event вопреки пересечению — только пока вопрос о конфликте жив
-    def _confirmConflict(self, title: str, startsAt: datetime, endsAt: datetime | None) -> Step:
-        # Примечание: шаг: pending нет — «Вопрос устарел»; иначе создать и снять вопрос
+    # Примечание: create_event или update_item вопреки пересечению — пока вопрос о конфликте жив
+    def _confirmConflict(self, tool: str, args: dict[str, object]) -> Step:
+        # Примечание: шаг: pending нет — «Вопрос устарел»; иначе вызов и снять вопрос
         async def step(session: Session) -> StepOutcome:
             renderer = self._pipeline.deps.renderer
             if session.context.pending is None:
                 return StepOutcome(renderer.notice(Notice.PENDING_EXPIRED, session.traceId))
             started = time.perf_counter()
-            args: dict[str, object] = {
-                "title": title,
-                "starts_at": startsAt.isoformat(),
-                "allow_conflict": True,
-            }
-            if endsAt is not None:
-                args["ends_at"] = endsAt.isoformat()
-            result = toolResult(await callTool(session, "create_event", args), "done", started)
+            result = toolResult(await callTool(session, tool, args), "done", started)
             context = dataclasses.replace(self._focused(session, result), pending=None, options=())
             return StepOutcome(self._pipeline.render(session, result), context)
 

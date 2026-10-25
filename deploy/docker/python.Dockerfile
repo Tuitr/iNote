@@ -21,6 +21,7 @@ RUN test -n "${PACKAGE}" || (echo "нужен --build-arg PACKAGE=va-<серви
 COPY pyproject.toml uv.lock ./
 COPY libs/common/pyproject.toml libs/common/
 COPY libs/contracts/pyproject.toml libs/contracts/
+COPY libs/brain/pyproject.toml libs/brain/
 COPY services/bot/pyproject.toml services/bot/
 COPY services/agent/pyproject.toml services/agent/
 COPY services/asr/pyproject.toml services/asr/

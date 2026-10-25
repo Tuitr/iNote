@@ -430,6 +430,24 @@ async def test_confirmConflict() -> None:
     assert bad.text == TEMPLATES.notices.unknownAction
 
 
+# Примечание: «Всё равно перенести» — update_item той же записи с allow_conflict, вопрос снят
+async def test_confirmConflictMove() -> None:
+    event = {**ITEM, "kind": "event", "title": "Встреча с Петром", "remind_at": None}
+    args: dict[str, str | int | bool] = {
+        "item_id": ITEM_ID,
+        "starts_at": "2026-10-22T09:30:00+03:00",
+    }
+    rig = Rig(context=asked(), responses={"update_item": mutation("updated", event)})
+    await rig.press("confirm_conflict", args)
+    assert rig.tools.calls == [
+        (
+            "update_item",
+            {"id": ITEM_ID, "starts_at": "2026-10-22T09:30:00+03:00", "allow_conflict": True},
+        )
+    ]
+    assert rig.store.contexts[USER_ID].pending is None
+
+
 # Примечание: /settings — пояс текстом; 12 поясов по 4 в ряд (≤ 7), текущий отмечен; голосовых
 # ответов нет; инструменты не нужны
 async def test_settingsScreen() -> None:

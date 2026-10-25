@@ -8,11 +8,10 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from redis.asyncio import Redis
 
 from bot.infrastructure.max_throttle import MAX_REQUESTS_PER_SECOND, ThrottledMaxGateway
-from bot.infrastructure.real_max import ADAPTER_NOT_CHOSEN, MaxAdapterNotChosenError
 from bot.infrastructure.settings import BotSettings
 from bot.main import createApp
 from bot.presentation.dev_routes import SentLog, SentMessageDto
@@ -265,13 +264,36 @@ async def test_readyDegradedWithoutRedis(botEnv: pytest.MonkeyPatch) -> None:
     assert ready.json()["status"] == "degraded"
 
 
-# Примечание: real без выбранного адаптера — понятная ошибка на старте, dev-роутов нет
-async def test_realModeFailsFast(botEnv: pytest.MonkeyPatch) -> None:
+# Примечание: real без токена — ошибка настроек на старте
+def test_realModeNeedsToken(botEnv: pytest.MonkeyPatch) -> None:
     botEnv.setenv("BOT_MAX_MODE", "real")
-    real = createApp(BotSettings(), redisFactory=fakeRedisFactory)
+    with pytest.raises(ValidationError, match="BOT_MAX_TOKEN"):
+        BotSettings()
+
+
+# Примечание: real + webhook: на старте подписка в настоящем MAX с токеном в Authorization,
+# dev-роутов нет
+async def test_realModeSubscribes(botEnv: pytest.MonkeyPatch) -> None:
+    botEnv.setenv("BOT_MAX_MODE", "real")
+    botEnv.setenv("BOT_MAX_TOKEN", "max-token")
+    botEnv.setenv("BOT_UPDATES_MODE", "webhook")
+    botEnv.setenv("BOT_WEBHOOK_URL", "https://bot.example/webhook/max")
+    botEnv.setenv("BOT_WEBHOOK_SECRET", "secret_12345")
+    requests: list[httpx.Request] = []
+
+    def maxApi(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"success": True})
+
+    real = createApp(
+        BotSettings(), redisFactory=fakeRedisFactory, maxTransport=httpx.MockTransport(maxApi)
+    )
     paths = {getattr(route, "path", "") for route in real.routes}
     assert not any(p.startswith("/dev/") for p in paths)
-    with pytest.raises(MaxAdapterNotChosenError, match="maxapi"):
-        async with real.router.lifespan_context(real):
-            pass
-    assert "открытое решение" in ADAPTER_NOT_CHOSEN
+    async with real.router.lifespan_context(real):
+        pass
+    [subscribe] = requests
+    assert (subscribe.method, subscribe.url.path) == ("POST", "/subscriptions")
+    assert subscribe.headers["Authorization"] == "max-token"
+    body = json.loads(subscribe.content)
+    assert (body["url"], body["secret"]) == ("https://bot.example/webhook/max", "secret_12345")

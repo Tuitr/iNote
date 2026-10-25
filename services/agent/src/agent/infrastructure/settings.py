@@ -9,11 +9,11 @@ from common.config import BaseServiceSettings
 class AgentSettings(BaseServiceSettings):
     envPrefix: ClassVar[str] = "AGENT_"
 
-    # scripted — правила вместо LLM (моки, e2e); llm — Brain участника B после мержа
+    # scripted — правила вместо LLM (моки, e2e); llm — Brain участника B (libs/brain)
     brain: Literal["scripted", "llm"] = Field(
         default="scripted",
         validation_alias="AGENT_BRAIN",
-        description="`scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (после мержа)",
+        description="`scripted` — правила вместо LLM (mock, e2e); `llm` — Brain B (`LLM_*`)",
     )
     # Бюджет хода вместе с ожиданием лока: бот ждёт агента 45 с (docs/standards.md)
     turnTimeoutS: float = Field(
@@ -22,6 +22,12 @@ class AgentSettings(BaseServiceSettings):
         le=44,
         validation_alias="AGENT_TURN_TIMEOUT_S",
         description="бюджет хода вместе с ожиданием лока, с (меньше ожидания бота — 45 с)",
+    )
+    llmDailyLimit: int = Field(
+        default=200,
+        ge=1,
+        validation_alias="AGENT_LLM_DAILY_LIMIT",
+        description="ходов с LLM на пользователя в сутки (только `llm`), сверх — «лимит исчерпан»",
     )
     lockWaitS: float = Field(
         default=10.0,

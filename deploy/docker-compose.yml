@@ -116,8 +116,9 @@ services:
     image: va/agent:local
     environment:
       REDIS_URL: redis://redis:6379/0
-      # mock — ScriptedBrain; llm (Brain B) после мержа с libs/brain
+      # Brain по профилю (AGENT_BRAIN из Makefile): mock — ScriptedBrain, full — Brain B на LLM
       AGENT_BRAIN: ${AGENT_BRAIN:-scripted}
+      LLM_PROVIDER: ${LLM_PROVIDER:-fake}
       AGENT_MCP_URL: http://mcp:8000/mcp
       AGENT_MCP_INTERNAL_URL: http://mcp:8000
     depends_on:

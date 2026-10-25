@@ -30,7 +30,7 @@ Redis. В конце — таблица «итог → trace_id → сценар
 Нужны токен бота, домен и `make deploy` (только по прямой просьбе). Каждый пункт — в чате с ботом, код ошибки
 (6 символов) — в `make logs TRACE=…`.
 
-1. Подписка: в логах бота `max_subscribed` (так пишет фейк; реальный адаптер должен писать то же событие); `POST /webhook/max` без секрета — 401.
+1. Подписка: в логах бота `max_subscribed`; `POST /webhook/max` без секрета — 401.
 2. `/start` — приветствие, кнопки «Сегодня / Завтра / Неделя», «Мой день» и «История» открывают мини-приложение
    на нужном экране (проверить с E, что `payload` кнопки доходит как `start_param`; иначе `BOT_OPEN_APP_MODE=link`).
 3. Голосом: «Напомни завтра в 10 позвонить Ивану» — «Распознал: …», подтверждение, «Отменить» → «Отменено».
@@ -50,7 +50,8 @@ Redis. В конце — таблица «итог → trace_id → сценар
 | `stub/mcp/` | MCP-заглушка C для интеграционных тестов агента (`services/agent/tests/integration`): отвечает в форме D (статусы J3, ответ PATCH settings); в стенде её заменил настоящий `mcp` D |
 | `stub/asr/` | прежняя ASR-заглушка C (S2); на стенде её заменил `services/asr` с `ASR_PROVIDER=fake` (то же поведение); осталась для integration-теста бота `test_asr_stub.py` |
 | `asr_try.sh` | `make asr-try FILE=voice.ogg` — распознать свой OGG/Opus сервисом asr стенда (с `PROFILE=full` — SpeechKit, платно) |
-| `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX (override) |
+| `docker-compose.stand.yml` | стенд с HTTPS: Caddy на 80/443, бот — webhook и настоящий MAX, агент — GigaChat, asr — SpeechKit, настоящее мини-приложение (`max_app/Dockerfile`), ежедневный бэкап PostgreSQL (override) |
+| `certs/` | сертификат НУЦ Минцифры для API MAX и GigaChat — скачивается на сервере (`certs/README.md`), в git не лежит |
 | `Caddyfile` | что видно снаружи: webhook MAX, `/api/v1/*`, статика мини-приложения; служебное — 404 |
 | `smoke.sh` | смоук: четыре сценария ТЗ голосом и один текстом через `/dev/max/*` |
 | `demo.sh`, `demo.py` | демо на 3–5 минут: диалог как чат (`make demo`) |
@@ -66,10 +67,11 @@ Redis. В конце — таблица «итог → trace_id → сценар
   для `STAND_DOMAIN`) на 80/443 — единственный опубликованный сервис; бот в `BOT_MAX_MODE=real` и
   `BOT_UPDATES_MODE=webhook`. `Caddyfile` пропускает наружу только `POST /webhook/max` → бот, `/api/v1/*` → api
   (префикс `/api` срезается) и остальное → max_app; `/internal`, `/dev`, `/health`, `/v1`, `/mcp`, `/metrics` — 404
-  (проверяет `tests/deploy`). Нужны `STAND_DOMAIN`, `ACME_EMAIL`, `BOT_WEBHOOK_SECRET` и токен MAX в `.env`;
-  `make stand-config` — проверить `.env` (`deploy/stand-check.sh`: токен не заглушка, секрет, домен) и конфиг,
-  `make deploy` — поднять (только по прямой просьбе; пока бот в `real`
-  не стартует — адаптер MAX не выбран).
+  (проверяет `tests/deploy`). Агент на стенде — `AGENT_BRAIN=llm` и GigaChat, asr — SpeechKit, вместо заглушки
+  max_app — статика мини-приложения из `max_app/Dockerfile`; api берёт токен бота из `BOT_MAX_TOKEN` и всегда
+  проверяет подпись initData. `make stand-config` — проверить `.env` (`deploy/stand-check.sh`: секреты не
+  заглушки, ключи MAX, SpeechKit и GigaChat, сертификат Минцифры) и конфиг, `make deploy` — поднять (только по
+  прямой просьбе).
 
 Webhook локально, без HTTPS: `BOT_UPDATES_MODE=webhook BOT_WEBHOOK_URL=http://127.0.0.1:8000/webhook/max
 BOT_WEBHOOK_SECRET=$(openssl rand -hex 16)` в `.env` и `make up` — фейковый MAX подпишет бота и будет слать
@@ -80,11 +82,25 @@ BOT_WEBHOOK_SECRET=$(openssl rand -hex 16)` в `.env` и `make up` — фейк�
 
 **Поднять с HTTPS** (только по прямой просьбе — это настоящий MAX и сертификат):
 
-1. `.env`: `SERVICE_TOKEN` (≥ 32 символов, не заглушка), `BOT_WEBHOOK_SECRET` (`openssl rand -hex 24`),
-   `STAND_DOMAIN`, `ACME_EMAIL`, токен MAX; `BOT_USERNAME` — имя бота после модерации.
-2. `make stand-config` — `deploy/stand-check.sh` проверяет `.env`, затем `docker compose config` обоих файлов.
-3. `make deploy` — Caddy на 80/443 получает сертификат Let's Encrypt для `STAND_DOMAIN`, бот стартует в
-   `BOT_MAX_MODE=real`, `BOT_UPDATES_MODE=webhook` (пока адаптер MAX не выбран, бот в `real` не стартует).
+1. Сервер: Linux с Docker и Compose v2, DNS-запись `STAND_DOMAIN` на него, открытые 80 и 443.
+2. `.env`: `SERVICE_TOKEN` и `API_JWT_SECRET` (`openssl rand -hex 32`), `POSTGRES_PASSWORD` (`openssl rand -hex 16`,
+   тот же — в `DATABASE_URL`), `BOT_WEBHOOK_SECRET` (`openssl rand -hex 24`), `STAND_DOMAIN`, `ACME_EMAIL`,
+   `BOT_MAX_TOKEN` и `BOT_USERNAME` (business.max.ru), `ASR_YANDEX_API_KEY` и `ASR_YANDEX_FOLDER_ID`,
+   `LLM_GIGACHAT_CREDENTIALS`; `API_DEV_AUTH=false`.
+3. Сертификат Минцифры — в `deploy/certs/russian_trusted_root_ca.pem` (`deploy/certs/README.md`).
+4. Мини-приложение: в настройках бота на business.max.ru указать адрес `https://$STAND_DOMAIN/`.
+5. `make stand-config` — `deploy/stand-check.sh` проверяет `.env` и сертификат, затем `docker compose config` обоих файлов.
+6. `make deploy` — Caddy на 80/443 получает сертификат Let's Encrypt для `STAND_DOMAIN`, бот стартует в
+   `BOT_MAX_MODE=real`, `BOT_UPDATES_MODE=webhook` и подписывается на webhook.
+7. Пройти чек-лист выше на живом MAX и `make eval` (платно) — точность Brain на GigaChat.
+
+**Бэкапы.** Сервис `backup` раз в сутки пишет `pg_dump` в `deploy/backups/inote-<дата>.sql.gz` и удаляет файлы
+старше 14 дней (`make logs SERVICE=backup` — строки `backup_done`). Бэкап на том же диске не спасёт от потери
+сервера: забирайте файлы на другую машину (`rsync`/`scp` по cron). Восстановление в пустую базу:
+`gunzip -c deploy/backups/inote-….sql.gz | docker compose … exec -T postgres psql -U inote inote`.
+
+**Наблюдаемость.** Алертов в проекте нет: подключите внешний мониторинг доступности на `https://$STAND_DOMAIN/`
+(статика мини-приложения) и следите за долей `turn_timeout`, `llm_*` и `llm_daily_limit` в логах агента.
 
 **Проверить подписку webhook.** При каждом старте бот вызывает `ensureSubscription` — в логах бота `max_subscribed`
 (`make logs SERVICE=bot`). Снаружи: `curl -i -X POST https://$STAND_DOMAIN/webhook/max` без секрета — 401

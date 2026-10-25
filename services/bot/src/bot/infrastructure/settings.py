@@ -1,9 +1,10 @@
 import re
 from typing import ClassVar, Final, Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from bot.application.reply_mapper import OpenAppMode
+from bot.infrastructure.real_max import MAX_API_URL
 from common.config import BaseServiceSettings
 
 # MAX: секрет подписки — 5…256 символов [a-zA-Z0-9_-] (dev.max.ru, POST /subscriptions)
@@ -17,7 +18,29 @@ class BotSettings(BaseServiceSettings):
     maxMode: Literal["fake", "real"] = Field(
         default="fake",
         validation_alias="BOT_MAX_MODE",
-        description="`fake` — MAX в памяти и `/dev/max/*`; `real` — пока ошибка на старте",
+        description="`fake` — MAX в памяти и `/dev/max/*`; `real` — MAX Bot API (BOT_MAX_TOKEN)",
+    )
+    maxToken: SecretStr | None = Field(
+        default=None,
+        validation_alias="BOT_MAX_TOKEN",
+        description="токен бота MAX (business.max.ru), обязателен для `real`",
+    )
+    maxApiUrl: str = Field(
+        default=MAX_API_URL,
+        validation_alias="BOT_MAX_API_URL",
+        description="адрес MAX Bot API",
+    )
+    maxCaBundle: str | None = Field(
+        default=None,
+        validation_alias="BOT_MAX_CA_BUNDLE",
+        description="путь к сертификату НУЦ Минцифры (им подписан API MAX); пусто — системные",
+    )
+    maxTimeoutS: float = Field(
+        default=10.0,
+        gt=0,
+        le=30,
+        validation_alias="BOT_MAX_TIMEOUT_S",
+        description="таймаут запроса к MAX API, с (кроме long polling)",
     )
     pollTimeoutS: int = Field(
         default=30,
@@ -129,6 +152,20 @@ class BotSettings(BaseServiceSettings):
         validation_alias="BOT_MAX_CONCURRENT_UPDATES",
         description="апдейтов одновременно (у одного пользователя — по очереди)",
     )
+
+    # Примечание: пустая строка из .env («BOT_MAX_TOKEN=») — «не задано», а не пустой токен
+    @field_validator("maxToken", "maxCaBundle", mode="before")
+    @classmethod
+    def _emptyIsUnset(cls, value: object) -> object:
+        return None if value == "" else value
+
+    # Примечание: real без токена — ошибка на старте, а не 401 на каждом запросе к MAX
+    @model_validator(mode="after")
+    def _tokenForRealMax(self) -> Self:
+        if self.maxMode == "real" and self.maxToken is None:
+            msg = "BOT_MAX_MODE=real требует BOT_MAX_TOKEN"
+            raise ValueError(msg)
+        return self
 
     # Примечание: webhook без адреса или секрета не запускаем; настоящему MAX — только https
     @model_validator(mode="after")

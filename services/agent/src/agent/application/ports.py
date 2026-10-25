@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -36,6 +36,11 @@ class UserLock(Protocol):
 
     # Примечание: снимает лок, только если он всё ещё наш (по токену)
     async def release(self, userId: UserId, token: str) -> bool: ...
+
+
+# Примечание: дневной лимит ходов с LLM; True — ход можно делать
+class LlmQuota(Protocol):
+    async def allow(self, userId: UserId, day: date) -> bool: ...
 
 
 # Примечание: хранилище контекста диалога (Redis, TTL по реестру)
@@ -90,6 +95,7 @@ class Notice(StrEnum):
     ALREADY_UNDONE = "already_undone"
     ALREADY_COMPLETED = "already_completed"
     UNKNOWN_ACTION = "unknown_action"
+    LLM_DAILY_LIMIT = "llm_daily_limit"
 
 
 # Примечание: приветствие («Начать», /start) или справка (/help)
