@@ -40,7 +40,8 @@ cases:
     expect:
       calls:
         - name: create_task
-          args: { kind: reminder, remind_at: "2026-10-25T10:00:00+03:00", title: { contains: [интернет] } }
+          # без дня и уточнения — ближайшее будущее: 10:00 прошло, 22:00 сегодня впереди
+          args: { kind: reminder, remind_at: "2026-10-24T22:00:00+03:00", title: { contains: [интернет] } }
 
   - id: reminder_friday_morning
     group: reminder
@@ -316,6 +317,88 @@ cases:
       calls:
         - name: create_task
           args: { kind: reminder, remind_at: "2026-10-26T08:00:00+03:00", title: { contains: [посылк] } }
+
+  # --- даты и время по ТЗ 25.10: послезавтра, через неделю, около полуночи ---
+  - id: midnight_without_ten_twelve
+    group: midnight
+    now: "2026-10-25T23:42:00+03:00"
+    text: напомни без 10 12 лечь спать
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-25T23:50:00+03:00", title: { contains: [спать] } }
+
+  - id: midnight_nine_is_tomorrow_morning
+    group: midnight
+    now: "2026-10-25T23:42:00+03:00"
+    text: напомни в 9 позвонить врачу
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-26T09:00:00+03:00" }
+
+  - id: midnight_twelve_is_midnight
+    group: midnight
+    now: "2026-10-25T23:42:00+03:00"
+    text: напомни в 12 выключить свет
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-26T00:00:00+03:00" }
+
+  - id: midnight_in_twenty_minutes
+    group: midnight
+    now: "2026-10-25T23:50:00+03:00"
+    text: напомни через 20 минут проверить духовку
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-26T00:10:00+03:00" }
+
+  - id: night_tomorrow_is_coming_day
+    group: midnight
+    now: "2026-10-26T01:20:00+03:00"
+    text: напомни завтра в 9 отправить письмо
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-26T09:00:00+03:00" }
+
+  - id: day_after_tomorrow_reminder
+    group: relative_day
+    now: "2026-10-25T12:00:00+03:00"
+    text: послезавтра в 9 позвонить в банк
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-27T09:00:00+03:00", title: { contains: [банк] } }
+
+  - id: in_a_week_event
+    group: relative_day
+    now: "2026-10-25T12:00:00+03:00"
+    text: встреча с Олегом через неделю в 3
+    expect:
+      calls:
+        - name: create_event
+          args: { starts_at: "2026-11-01T15:00:00+03:00", title: { contains: [олег] } }
+
+  - id: in_two_weeks_task
+    group: relative_day
+    now: "2026-10-25T12:00:00+03:00"
+    text: через две недели продлить страховку
+    expect:
+      calls:
+        - name: create_task
+          args: { starts_at: "2026-11-08", title: { contains: [страховк] } }
+
+  - id: in_three_days_reminder
+    group: relative_day
+    now: "2026-10-25T12:00:00+03:00"
+    text: напомни через 3 дня в 10 утра забрать заказ
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-28T10:00:00+03:00", title: { contains: [заказ] } }
 
   # --- граница суток, недели, пояс ---
   - id: late_night_tomorrow

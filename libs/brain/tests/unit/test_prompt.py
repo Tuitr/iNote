@@ -22,7 +22,7 @@ def test_lateEveningMoscow() -> None:
     assert lines[0] == "Сейчас: 2026-10-24T23:30+03:00 (суббота), пояс пользователя Europe/Moscow."
     assert lines[3] == "- 2026-10-24 суббота — сегодня"
     assert lines[4] == "- 2026-10-25 воскресенье — завтра"
-    assert len(lines) == 3 + 14
+    assert len(lines) == 3 + 15
 
 
 # Примечание: 00:30 воскресенья — неделя ещё текущая (пн 19 — вс 25), следующая — с 26-го
@@ -40,7 +40,8 @@ def test_endOfMonth() -> None:
     block = buildTimeBlock(datetime(2026, 10, 31, 9, 0, tzinfo=UTC), "Europe/Moscow")
     assert "- 2026-10-31 суббота — сегодня" in block
     assert "- 2026-11-02 понедельник — послезавтра" in block
-    assert block.splitlines()[-1] == "- 2026-11-13 пятница"
+    assert "- 2026-11-07 суббота — через неделю" in block
+    assert block.splitlines()[-1] == "- 2026-11-14 суббота — через 2 недели"
 
 
 # Примечание: в Екатеринбурге (UTC+5) в 19:30 UTC уже следующий день, чем в Москве
@@ -64,3 +65,14 @@ def test_systemPromptPlaceholders() -> None:
     # подстановка за один проход: «{pending}» в названии записи остаётся текстом
     assert "недавно): X {pending}" in filled
     assert "пользователя): Y" in filled
+
+
+# Примечание: каждая строка таблицы подписана расстоянием от сегодня — модель берёт дату
+# по подписи («послезавтра», «через неделю»), а не складывает дни сама
+def test_distanceLabels() -> None:
+    block = buildTimeBlock(datetime(2026, 10, 25, 20, 42, tzinfo=UTC), "Europe/Moscow")
+    assert "- 2026-10-27 вторник — послезавтра" in block
+    assert "- 2026-10-28 среда — через 3 дня" in block
+    assert "- 2026-10-30 пятница — через 5 дней" in block
+    assert "- 2026-11-01 воскресенье — через неделю" in block
+    assert "- 2026-11-08 воскресенье — через 2 недели" in block
