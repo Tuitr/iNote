@@ -458,7 +458,16 @@ async def test_resumeAskGoesToModel() -> None:
     picked = turnInput("Купить хлеб", pending=pending, focus=focus)
     result = await subject.resume(picked, "0", tools)
     assert result.outcome == "done"
-    assert llm.calls[0].messages[-1].content == "Купить хлеб"
+    assert llm.calls[0].messages[-1].content.endswith("\nКупить хлеб")
+
+
+# Примечание: «сейчас» и «завтра» — рядом с фразой: по датам из истории модель сдвигала «завтра»
+async def test_todayNextToUserText() -> None:
+    subject, llm = brain(text("Привет!"))
+    await subject.run(turnInput("завтра в 11 встреча с Павлом"), FakeTools())
+    assert llm.calls[0].messages[-1].content == (
+        "(сейчас 2026-10-24 12:00, завтра 2026-10-25)\nзавтра в 11 встреча с Павлом"
+    )
 
 
 # Примечание: номер вне вариантов или pending не наш — просьба повторить, без вызовов

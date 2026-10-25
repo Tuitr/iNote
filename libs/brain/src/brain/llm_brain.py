@@ -16,7 +16,7 @@ import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
@@ -266,8 +266,16 @@ def buildMessages(turn: TurnInput) -> list[LlmMessage]:
     return [
         LlmMessage(role="system", content=system),
         *history,
-        LlmMessage(role="user", content=turn.text),
+        LlmMessage(role="user", content=_withToday(turn.text, turn.now, turn.tz)),
     ]
+
+
+# Примечание: дата рядом с фразой: блок времени далеко, и после ответов с датами в истории
+# («Завтра, пн 26 октября») GigaChat считал «завтра» от них — на день позже
+def _withToday(text: str, now: datetime, tz: str) -> str:
+    local = now.astimezone(ZoneInfo(tz))
+    tomorrow = (local + timedelta(days=1)).date()
+    return f"(сейчас {local:%Y-%m-%d %H:%M}, завтра {tomorrow.isoformat()})\n{text}"
 
 
 # Примечание: «- 1f2e3d4c встреча «Созвон с Иваном» 2026-10-25T15:00+03:00»
