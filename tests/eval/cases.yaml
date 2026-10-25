@@ -11,7 +11,7 @@ cases:
   # --- напоминания и задачи ---
   - id: reminder_tomorrow_10
     group: reminder
-    text: Напомни завтра в 10 позвонить Ивану
+    text: Напомни завтра в 10 утра позвонить Ивану
     expect:
       calls:
         - name: create_task
@@ -36,11 +36,11 @@ cases:
   - id: reminder_hour_already_passed
     group: reminder
     now: "2026-10-24T15:00:00+03:00"
-    text: напомни в 10 оплатить интернет
+    text: напомни в 10 вечера оплатить интернет
     expect:
       calls:
         - name: create_task
-          # без дня и уточнения — ближайшее будущее: 10:00 прошло, 22:00 сегодня впереди
+          # без дня: сегодня, если время впереди
           args: { kind: reminder, remind_at: "2026-10-24T22:00:00+03:00", title: { contains: [интернет] } }
 
   - id: reminder_friday_morning
@@ -87,7 +87,7 @@ cases:
 
   - id: event_with_duration
     group: event
-    text: Созвон с командой в понедельник в 11 на полчаса
+    text: Созвон с командой в понедельник в 11 утра на полчаса
     expect:
       calls:
         - name: create_event
@@ -219,6 +219,59 @@ cases:
         - name: search_items
           args: { query: { contains: [шин] } }
 
+  # --- утро или вечер, день у встречи, даты (документ с ошибками 26.10.2026) ---
+  - id: half_day_ambiguous_asks
+    group: clarify
+    text: Напомни завтра в 10 позвонить Ивану
+    expect:
+      outcome: clarify
+
+  - id: half_day_before_ten_asks
+    group: clarify
+    now: "2026-10-26T01:41:00+03:00"
+    text: напомни послезавтра без десяти 3 съездить на тренировку
+    expect:
+      outcome: clarify
+
+  - id: event_without_day_asks
+    group: clarify
+    now: "2026-10-26T01:40:00+03:00"
+    text: Запланируй встречу с зубмастером на 15:00
+    expect:
+      outcome: clarify
+
+  - id: impossible_date_asks
+    group: clarify
+    now: "2026-10-26T01:48:00+03:00"
+    text: Мне нужно 01.13 съездить домой, напомни в обед
+    expect:
+      outcome: clarify
+
+  - id: month_conflict_asks
+    group: clarify
+    now: "2026-10-26T01:56:00+03:00"
+    text: Запланируй поездку на шашлыки в мае 03.06.2027 в 10:00
+    expect:
+      outcome: clarify
+
+  - id: next_day_is_tomorrow_at_night
+    group: reminder
+    now: "2026-10-26T01:46:00+03:00"
+    text: поставь ближе к 12 ночи следующего дня напоминание почистить зубы
+    expect:
+      calls:
+        - name: create_task
+          args: { kind: reminder, remind_at: "2026-10-27T23:50:00+03:00", title: { contains: [зуб] } }
+
+  - id: word_date_next_year
+    group: reminder
+    now: "2026-10-26T01:54:00+03:00"
+    text: Запланируй 1 мая поездку на шашлыки
+    expect:
+      calls:
+        - name: create_task
+          args: { starts_at: "2027-05-01", title: { contains: [шашлык] } }
+
   # --- уточнения ---
   - id: event_without_time
     group: clarify
@@ -304,7 +357,7 @@ cases:
   # --- ошибки распознавания ---
   - id: asr_number_words
     group: asr
-    text: напомни завтра в десять позвонить ивану
+    text: напомни завтра в десять утра позвонить ивану
     expect:
       calls:
         - name: create_task
@@ -322,7 +375,7 @@ cases:
   - id: midnight_without_ten_twelve
     group: midnight
     now: "2026-10-25T23:42:00+03:00"
-    text: напомни без 10 12 лечь спать
+    text: напомни без 10 12 ночи лечь спать
     expect:
       calls:
         - name: create_task
@@ -331,7 +384,7 @@ cases:
   - id: midnight_nine_is_tomorrow_morning
     group: midnight
     now: "2026-10-25T23:42:00+03:00"
-    text: напомни в 9 позвонить врачу
+    text: напомни в 9 утра позвонить врачу
     expect:
       calls:
         - name: create_task
@@ -340,7 +393,7 @@ cases:
   - id: midnight_twelve_is_midnight
     group: midnight
     now: "2026-10-25T23:42:00+03:00"
-    text: напомни в 12 выключить свет
+    text: напомни в 12 ночи выключить свет
     expect:
       calls:
         - name: create_task
@@ -358,7 +411,7 @@ cases:
   - id: night_tomorrow_is_coming_day
     group: midnight
     now: "2026-10-26T01:20:00+03:00"
-    text: напомни завтра в 9 отправить письмо
+    text: напомни завтра в 9 утра отправить письмо
     expect:
       calls:
         - name: create_task
@@ -367,7 +420,7 @@ cases:
   - id: day_after_tomorrow_reminder
     group: relative_day
     now: "2026-10-25T12:00:00+03:00"
-    text: послезавтра в 9 позвонить в банк
+    text: послезавтра в 9 утра позвонить в банк
     expect:
       calls:
         - name: create_task
@@ -376,7 +429,7 @@ cases:
   - id: in_a_week_event
     group: relative_day
     now: "2026-10-25T12:00:00+03:00"
-    text: встреча с Олегом через неделю в 3
+    text: встреча с Олегом через неделю в 3 дня
     expect:
       calls:
         - name: create_event
@@ -404,7 +457,7 @@ cases:
   - id: late_night_tomorrow
     group: boundary
     now: "2026-10-24T23:30:00+03:00"
-    text: напомни завтра в 9 сдать отчёт
+    text: напомни завтра в 9 утра сдать отчёт
     expect:
       calls:
         - name: create_task
@@ -413,7 +466,7 @@ cases:
   - id: after_midnight_today
     group: boundary
     now: "2026-10-25T00:30:00+03:00"
-    text: напомни сегодня в 8 позвонить врачу
+    text: напомни сегодня в 8 утра позвонить врачу
     expect:
       calls:
         - name: create_task
@@ -433,7 +486,7 @@ cases:
     group: boundary
     now: "2026-10-24T12:00:00+05:00"
     tz: Asia/Yekaterinburg
-    text: напомни завтра в 10 полить цветы
+    text: напомни завтра в 10 утра полить цветы
     expect:
       calls:
         - name: create_task

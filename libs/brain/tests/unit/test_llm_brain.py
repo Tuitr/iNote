@@ -109,7 +109,7 @@ async def test_reminderDone() -> None:
         text("Готово"),
     )
     tools = FakeTools({"create_task": [CREATED]})
-    result = await subject.run(turnInput("Напомни завтра в 10 позвонить Ивану"), tools)
+    result = await subject.run(turnInput("Напомни завтра в 10 утра позвонить Ивану"), tools)
     assert result.outcome == "done"
     assert tools.calls == [
         ("create_task", {"title": "Позвонить Ивану", "kind": "reminder", "remind_at": REMIND_AT})
@@ -275,7 +275,7 @@ async def test_toolErrorRetriedOnce() -> None:
         text("Готово"),
     )
     tools = FakeTools({"create_task": [failed("past_time"), CREATED]})
-    result = await subject.run(turnInput("напомни в 10 позвонить"), tools)
+    result = await subject.run(turnInput("напомни утром позвонить"), tools)
     assert result.outcome == "done"
     assert '"error": "past_time"' in llm.calls[1].messages[-1].content
 
@@ -287,7 +287,7 @@ async def test_toolErrorTwice() -> None:
         call("create_task", title="A", kind="reminder", remind_at="2026-10-24T11:00:00+03:00"),
     )
     tools = FakeTools({"create_task": [failed("past_time"), failed("past_time")]})
-    result = await subject.run(turnInput("напомни сегодня в 10"), tools)
+    result = await subject.run(turnInput("напомни сегодня утром позвонить"), tools)
     assert (result.outcome, result.errorCode, len(result.actions)) == ("error", "past_time", 2)
 
 
@@ -312,7 +312,7 @@ async def test_failedCallThenSilence() -> None:
     noTitle = call("create_event", starts_at="2026-10-25T12:00:00+03:00")
     subject, _ = brain(noTitle, noTitle, text(""))
     tools = FakeTools({"create_event": [failed("validation_error")]})
-    result = await subject.run(turnInput("назначь завтра в 12 встречу с Петром"), tools)
+    result = await subject.run(turnInput("назначь завтра в 13:00 встречу с Петром"), tools)
     assert (result.outcome, result.errorCode, result.say) == ("error", "validation_error", None)
 
 
@@ -320,7 +320,7 @@ async def test_failedCallThenSilence() -> None:
 async def test_successClaimAfterFailedCall() -> None:
     subject, _ = brain(call("create_event", starts_at="2026-10-25T12:00:00+03:00"), text("Готово"))
     tools = FakeTools({"create_event": [failed("validation_error")]})
-    result = await subject.run(turnInput("назначь завтра в 12 встречу с Петром"), tools)
+    result = await subject.run(turnInput("назначь завтра в 13:00 встречу с Петром"), tools)
     assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
 
 
@@ -345,25 +345,47 @@ async def test_doneRequestHidesUpdateAndDelete(phrase: str) -> None:
     assert not names & {"update_item", "delete_item"}
 
 
-# Примечание: «в 5» без дня — момент считает код: модель поставила завтра 17:00, код — 17:00
-# сегодня (сейчас 12:00); ends_at сдвигается вместе с началом
-async def test_bareTimeOverridesModel() -> None:
+# Примечание: «в 5» без «утра/вечера» — вопрос с двумя кнопками, вызова нет; кнопка сразу
+# выполнит вызов с выбранным моментом (pending call)
+async def test_ambiguousHourAsks() -> None:
+    subject, _ = brain(
+        call(
+            "create_task", title="Позвонить", kind="reminder", remind_at="2026-10-24T17:00:00+03:00"
+        )
+    )
+    tools = FakeTools()
+    result = await subject.run(turnInput("напомни в 5 позвонить"), tools)
+    assert (result.outcome, result.say, tools.calls) == (
+        "clarify",
+        "Утра или вечера: 05:00 или 17:00?",
+        [],
+    )
+    assert result.clarify is not None
+    assert result.clarify.options == ["05:00", "17:00"]
+    assert result.clarify.pending["choices"] == [
+        {"remind_at": "2026-10-25T05:00:00+03:00"},
+        {"remind_at": "2026-10-24T17:00:00+03:00"},
+    ]
+
+
+# Примечание: время названо ясно — момент считает код: модель ошиблась днём, код — сегодня 17:00
+async def test_clearTimeOverridesModel() -> None:
     subject, _ = brain(
         call(
             "create_event",
-            title="Звонок",
+            title="Созвон",
             starts_at="2026-10-25T17:00:00+03:00",
             ends_at="2026-10-25T18:00:00+03:00",
         ),
         text("Готово"),
     )
     tools = FakeTools({"create_event": [CREATED]})
-    await subject.run(turnInput("в 5 созвон с Петром"), tools)
+    await subject.run(turnInput("сегодня в 17:00 созвон с Петром"), tools)
     assert tools.calls == [
         (
             "create_event",
             {
-                "title": "Звонок",
+                "title": "Созвон",
                 "starts_at": "2026-10-24T17:00:00+03:00",
                 "ends_at": "2026-10-24T18:00:00+03:00",
             },
@@ -371,14 +393,97 @@ async def test_bareTimeOverridesModel() -> None:
     ]
 
 
-# Примечание: день назван — дату и время оставляем модели
+# Примечание: день назван ясно — дату и время оставляем как есть
 async def test_namedDayKeepsModelTime() -> None:
     subject, _ = brain(
         call("create_task", title="Позвонить", kind="reminder", remind_at=REMIND_AT), text("Ок")
     )
     tools = FakeTools({"create_task": [CREATED]})
-    await subject.run(turnInput("напомни завтра в 10 позвонить"), tools)
+    await subject.run(turnInput("напомни завтра в 10 утра позвонить"), tools)
     assert tools.calls[0][1]["remind_at"] == REMIND_AT
+
+
+# Примечание: встреча без дня — «На какой день?», сказанное время сохраняется в pending
+async def test_eventWithoutDayAsksDay() -> None:
+    subject, _ = brain(
+        call("create_event", title="Зубмастер", starts_at="2026-10-25T10:15:00+03:00")
+    )
+    tools = FakeTools()
+    result = await subject.run(turnInput("на десять пятнадцать"), tools)
+    assert (result.outcome, result.say, tools.calls) == (
+        "clarify",
+        "На какой день поставить встречу?",
+        [],
+    )
+    assert result.clarify is not None
+    assert result.clarify.pending["said_time"] == {"hour": 10, "minute": 15, "is_clear": False}
+
+
+# Примечание: несуществующая дата — вопрос, а не время 13:00
+async def test_impossibleDateAsks() -> None:
+    subject, _ = brain(
+        call(
+            "create_task",
+            title="Съездить домой",
+            kind="reminder",
+            remind_at="2026-10-25T13:00:00+03:00",
+        )
+    )
+    tools = FakeTools()
+    result = await subject.run(turnInput("Мне нужно 01.13 съездить домой, напомни в обед"), tools)
+    assert result.outcome == "clarify"
+    assert result.say == "Такой даты нет: «01.13». Какую дату ты имел в виду?"
+    assert tools.calls == []
+
+
+# Примечание: перенос «без десяти три дня» — время кладётся в remind_at напоминания, даже если
+# модель передала starts_at; принятый перенос с другим временем — не «Изменено»
+async def test_rescheduleUsesReminderField() -> None:
+    focus = [
+        ItemBrief(
+            id=ITEM_ID,
+            kind="reminder",
+            title="Тренировка",
+            remindAt=datetime(2026, 10, 26, 2, 50, tzinfo=ZoneInfo(TZ)),
+        )
+    ]
+    subject, _ = brain(
+        call("update_item", id=str(ITEM_ID), starts_at="2026-10-26T14:50:00+03:00"), text("Ок")
+    )
+    moved = ok(
+        "Изменено",
+        {"status": "updated", "item": item(kind="reminder", remind_at="2026-10-26T14:50:00+03:00")},
+    )
+    tools = FakeTools({"update_item": [moved]})
+    result = await subject.run(turnInput("без десяти три дня, исправь", focus=focus), tools)
+    assert tools.calls == [
+        ("update_item", {"id": str(ITEM_ID), "remind_at": "2026-10-26T14:50:00+03:00"})
+    ]
+    assert result.outcome == "done"
+
+
+# Примечание: MCP принял перенос, а время у записи прежнее — не «Изменено»
+async def test_timeNotAppliedIsNotDone() -> None:
+    focus = [ItemBrief(id=ITEM_ID, kind="reminder", title="Тренировка")]
+    subject, _ = brain(call("update_item", id=str(ITEM_ID), remind_at="2026-10-26T14:50:00+03:00"))
+    same = ok(
+        "Изменено",
+        {"status": "updated", "item": item(kind="reminder", remind_at="2026-10-26T02:50:00+03:00")},
+    )
+    tools = FakeTools({"update_item": [same]})
+    result = await subject.run(turnInput("перенеси на 14:50", focus=focus), tools)
+    assert result.outcome == "answer"
+    assert result.say is not None
+    assert "Не получилось" in result.say
+
+
+# Примечание: «когда у меня маникюр» — поиск, а не список за период
+async def test_whenQuestionHidesList() -> None:
+    subject, llm = brain(text("Ищу"))
+    await subject.run(turnInput("когда у меня маникюо"), FakeTools())
+    names = {tool.name for tool in llm.calls[0].tools}
+    assert "search_items" in names
+    assert "list_items" not in names
 
 
 # Примечание: «напомни …» без времени, а модель создаёт задачу без момента — вопрос, без вызова
@@ -660,7 +765,7 @@ async def test_llmErrorAfterMutationIsDone() -> None:
         LlmError("llm_bad_output", "422"),
     )
     tools = FakeTools({"create_task": [CREATED]})
-    result = await subject.run(turnInput("Напомни завтра в 10 позвонить Ивану"), tools)
+    result = await subject.run(turnInput("Напомни завтра в 10 утра позвонить Ивану"), tools)
     assert (result.outcome, result.focus) == ("done", [ITEM_ID])
 
 

@@ -22,7 +22,14 @@ from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
-from brain.spoken_time import spokenMoment
+from brain.time_guard import (
+    ASK_REMIND_TIME,
+    TIME_OPTIONS,
+    Ask,
+    guardTime,
+    savedDay,
+    timeNotApplied,
+)
 from common.logging import getLogger
 from contracts.agent_side import (
     BrainErrorCode,
@@ -98,11 +105,12 @@ HINT_UNKNOWN_TOOL: Final = "Функции {value} нет. Используй т
 HINT_DUPLICATE: Final = "Этот вызов уже выполнен, его результат выше. Не повторяй его."
 # «Напомни …» без времени: модель создавала задачу без срока — напоминанию нужно время
 _REMIND_RE: Final = re.compile(r"\bнапомн", re.IGNORECASE)
-ASK_REMIND_TIME: Final = "Во сколько напомнить?"
-REMIND_TIME_OPTIONS: Final = ("10:00", "15:00", "19:00")
-CREATE_TOOLS: Final = frozenset({"create_task", "create_event"})
-# поля момента, которые подменяет время без дня; ends_at сдвигается вместе с началом
 MOMENT_FIELDS: Final = ("starts_at", "remind_at")
+# перенос принят, а время записи другое — «Изменено» показывать нельзя
+TIME_NOT_APPLIED: Final = "Не получилось поменять время. Скажи ещё раз, на какое время перенести."
+# «когда у меня маникюр» — это поиск записи, а не список за две недели
+_WHEN_RE: Final = re.compile(r"^\s*(?:а\s+)?когда\b", re.IGNORECASE)
+_PERIOD_RE: Final = re.compile(r"сегодня|завтра|недел|месяц|выходн", re.IGNORECASE)
 BAD_CHOICE: Final = "Не понял выбор — повтори просьбу."
 
 ASK_USER_SPEC: Final = ToolSpec(
@@ -274,20 +282,13 @@ class LlmBrain:
                 state.corrections.add(reason)
                 _answerModel(state, reply, {"error": text})
                 continue
-            if _isDuplicate(call, state.actions):
+            if _isDuplicate(call, state.actions) or _isDuplicate(
+                _guarded(call, turn), state.actions
+            ):
                 _answerModel(state, reply, {"error": HINT_DUPLICATE})
                 continue
-            if _isReminderWithoutTime(call, turn):
-                raw: JsonObject = {
-                    "question": ASK_REMIND_TIME,
-                    "missing": ["remind_at"],
-                    "options": list(REMIND_TIME_OPTIONS),
-                }
-                return _askUser(raw, names, turn, state, started)
-            call = _withNearestTime(call, turn)
-            result = await tools.call(call.name, call.arguments)
-            state.actions.append(ExecutedAction(name=call.name, args=call.arguments, result=result))
-            if (stop := _afterCall(call, result, turn, state, started)) is not None:
+            stop, result = await _act(call, turn, tools, state, started)
+            if stop is not None:
                 return stop
             _answerModel(state, reply, _forModel(result))
         return _final("", state, started)
@@ -316,6 +317,8 @@ def _visibleTools(text: str, specs: Sequence[ToolSpec]) -> list[ToolSpec]:
     isDone = _DONE_RE.search(text) is not None
     if _isBulkDelete(text):
         return [spec for spec in specs if spec.name in BULK_DELETE_TOOLS]
+    if _WHEN_RE.search(text) and not _PERIOD_RE.search(text):
+        specs = [spec for spec in specs if spec.name != "list_items"]
     if isDelete == isDone:
         return list(specs)
     hidden = HIDDEN_ON_DELETE if isDelete else HIDDEN_ON_DONE
@@ -454,27 +457,38 @@ def _isReminderWithoutTime(call: FunctionCall, turn: TurnInput) -> bool:
     return not any(_moment(call.arguments.get(name)) for name in MOMENT_FIELDS)
 
 
-# Примечание: момент из простой фразы («в 5», «через неделю в 9») считает код (spoken_time.py), а
-# не модель. Без дня во фразе при незавершённом вопросе дата бывает только в нём («во сколько
-# встреча завтра?») — тогда вызов как есть, кроме нашего «Во сколько напомнить?», где даты нет
-def _withNearestTime(call: FunctionCall, turn: TurnInput) -> FunctionCall:
-    spoken = spokenMoment(turn.text, turn.now, turn.tz)
-    pending = turn.pending or {}
-    datedPending = bool(pending) and pending.get("question") != ASK_REMIND_TIME
-    if call.name not in CREATE_TOOLS or spoken is None or (datedPending and not spoken.dayNamed):
-        return call
-    moment = spoken.moment
-    arguments = dict(call.arguments)
-    shift: timedelta | None = None
-    for name in MOMENT_FIELDS:
-        old = _moment(arguments.get(name))
-        if old is not None:
-            shift = shift if shift is not None else moment - old
-            arguments[name] = moment.isoformat()
-    end = _moment(arguments.get("ends_at"))
-    if end is not None and shift is not None:
-        arguments["ends_at"] = (end + shift).isoformat()
-    return FunctionCall(call.name, arguments)
+# Примечание: вызов инструмента под защитами времени: напоминание без времени и неясный момент —
+# вопрос без вызова; принятый перенос с другим временем — не «Изменено»; итог хода или None
+async def _act(
+    call: FunctionCall, turn: TurnInput, tools: ToolExecutor, state: _Turn, started: float
+) -> tuple[TurnResult | None, ToolResult]:
+    skipped = ToolResult(ok=True, summary="")
+    if _isReminderWithoutTime(call, turn):
+        pending: JsonObject = {"kind": "ask", "question": ASK_REMIND_TIME, **savedDay(turn)}
+        ask = Ask(ASK_REMIND_TIME, list(TIME_OPTIONS), ["remind_at"], pending)
+        return _askGuard(ask, turn, state, started), skipped
+    guarded = guardTime(call, turn)
+    if isinstance(guarded, Ask):
+        return _askGuard(guarded, turn, state, started), skipped
+    result = await tools.call(guarded.name, guarded.arguments)
+    state.actions.append(ExecutedAction(name=guarded.name, args=guarded.arguments, result=result))
+    if timeNotApplied(guarded, result):
+        return _result("answer", state, started, say=TIME_NOT_APPLIED), result
+    return _afterCall(guarded, result, turn, state, started), result
+
+
+# Примечание: вызов в том виде, в каком он уйдёт в MCP: в state.actions лежат такие — повтор
+# модели сравниваем и с ними
+def _guarded(call: FunctionCall, turn: TurnInput) -> FunctionCall:
+    guarded = guardTime(call, turn)
+    return call if isinstance(guarded, Ask) else guarded
+
+
+# Примечание: вопрос из time_guard вместо вызова: варианты-кнопки и pending для ответа
+def _askGuard(ask: Ask, turn: TurnInput, state: _Turn, started: float) -> TurnResult:
+    clarify = Clarify(missing=ask.missing, options=ask.options, pending=ask.pending)
+    focus = [b.id for b in turn.focus]
+    return _result("clarify", state, started, say=ask.question, clarify=clarify, focus=focus)
 
 
 # Примечание: момент ISO 8601 со смещением из аргумента модели; дата без времени и прочее — None
