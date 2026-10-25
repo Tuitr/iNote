@@ -46,6 +46,12 @@ MIN_CALL_S: Final = 1.0
 MUTATING_TOOLS: Final = frozenset(
     {"create_task", "create_event", "update_item", "complete_item", "delete_item"}
 )
+# GigaChat на «удали» выбирает update_item, даже когда delete_item рядом, а промпт и описания
+# не помогают (проверено на GigaChat-2-Max): в таком ходе update_item модели не показываем
+_DELETE_RE: Final = re.compile(
+    r"\b(удали|удалить|удалите|отмени|отменить|отмените|убери|убрать|уберите)\b", re.IGNORECASE
+)
+UPDATE_TOOL: Final = "update_item"
 # После списка модели нечего делать: агент рисует его из data, второй вызов модели — лишние секунды
 FINAL_TOOLS: Final = frozenset({"list_items"})
 TIME_FIELDS: Final = ("starts_at", "ends_at", "remind_at")
@@ -147,6 +153,8 @@ class LlmBrain:
     async def run(self, turn: TurnInput, tools: ToolExecutor) -> TurnResult:
         started = time.perf_counter()
         specs = await tools.listTools()
+        if _DELETE_RE.search(turn.text):
+            specs = [spec for spec in specs if spec.name != UPDATE_TOOL]
         state = _Turn(
             messages=buildMessages(turn),
             knownIds={str(b.id) for b in turn.focus},

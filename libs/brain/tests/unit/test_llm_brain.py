@@ -322,6 +322,22 @@ async def test_successClaimAfterFailedCall() -> None:
     assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
 
 
+# Примечание: «удали» — update_item модели не показываем: GigaChat выбирал его вместо delete_item
+async def test_deleteRequestHidesUpdate() -> None:
+    subject, llm = brain(text("Какую запись удалить?"))
+    await subject.run(turnInput("Удали встречу с Петром"), FakeTools())
+    names = {tool.name for tool in llm.calls[0].tools}
+    assert "delete_item" in names
+    assert "update_item" not in names
+
+
+# Примечание: без просьбы удалить все инструменты на месте
+async def test_otherRequestKeepsUpdate() -> None:
+    subject, llm = brain(text("Какую запись перенести?"))
+    await subject.run(turnInput("Перенеси встречу с Петром на завтра"), FakeTools())
+    assert "update_item" in {tool.name for tool in llm.calls[0].tools}
+
+
 # Примечание: простой вопрос — ответ текстом без инструментов
 async def test_plainAnswer() -> None:
     subject, _ = brain(text("Привет! Чем помочь?"))
