@@ -4,8 +4,10 @@
 дубли и частые сообщения, голос отдаёт в ASR, текст и кнопки — агенту, переводит абстрактный `Reply` агента в
 сообщение и клавиатуру MAX и доставляет напоминания Scheduler'а (J4). Не зовёт LLM и не ходит в PostgreSQL.
 
-Сейчас MAX — **фейковый** (`BOT_MAX_MODE=fake`, `/dev/max/*`): токена пока нет, реальный адаптер (`maxapi` или
-своя обёртка над `platform-api2.max.ru`) — открытое решение. Голосового ответа ассистента нет (решение команды).
+MAX — **фейковый** (`BOT_MAX_MODE=fake`, `/dev/max/*`) для разработки и e2e или **настоящий** (`BOT_MAX_MODE=real`,
+`infrastructure/real_max.py`): своя обёртка на httpx над MAX Bot API `platform-api2.max.ru` по схеме
+`max-messenger/api-schema`, без SDK; токен — `BOT_MAX_TOKEN`, сертификат НУЦ Минцифры — `BOT_MAX_CA_BUNDLE`.
+Голосового ответа ассистента нет (решение команды).
 
 ## Слои и порты
 
@@ -62,7 +64,11 @@ main.py          composition root: createApp() и lifespan (клиенты, ре
 <!-- env:begin -->
 | Переменная | По умолчанию | Зачем |
 |---|---|---|
-| `BOT_MAX_MODE` | `fake` | `fake` — MAX в памяти и `/dev/max/*`; `real` — пока ошибка на старте |
+| `BOT_MAX_MODE` | `fake` | `fake` — MAX в памяти и `/dev/max/*`; `real` — MAX Bot API (BOT_MAX_TOKEN) |
+| `BOT_MAX_TOKEN` | — | токен бота MAX (business.max.ru), обязателен для `real` |
+| `BOT_MAX_API_URL` | `https://platform-api2.max.ru` | адрес MAX Bot API |
+| `BOT_MAX_CA_BUNDLE` | — | путь к сертификату НУЦ Минцифры (им подписан API MAX); пусто — системные |
+| `BOT_MAX_TIMEOUT_S` | `10.0` | таймаут запроса к MAX API, с (кроме long polling) |
 | `BOT_POLL_TIMEOUT_S` | `30` | таймаут long polling, с (0–90) |
 | `BOT_RATE_LIMIT_PER_MIN` | `20` | сообщений пользователя в минуту, сверх — «Слишком часто» |
 | `BOT_SHUTDOWN_TIMEOUT_S` | `10.0` | сколько ждать фоновые задачи на SIGTERM, с |
