@@ -81,6 +81,18 @@ def test_callbackWithoutMessage() -> None:
     assert update.maxChatId is None
 
 
+# Примечание: живой MAX кладёт в нажатие сообщение бота с клавиатурой — у неё payload без url
+def test_callbackWithKeyboardMessage() -> None:
+    raw = loadMaxUpdate("callback")
+    message = raw["message"]
+    assert isinstance(message, dict)
+    keyboard = {"type": "inline_keyboard", "payload": {"buttons": [[{"type": "callback"}]]}}
+    message["body"] = {**message["body"], "attachments": [keyboard]}
+    update = mapRawUpdate(raw)
+    assert update is not None
+    assert update.callbackPayload == "undo:7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"
+
+
 # Примечание: «Начать» — payload из deep link
 def test_botStartedPayload() -> None:
     update = mapRawUpdate(loadMaxUpdate("bot_started"))

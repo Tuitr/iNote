@@ -30,9 +30,10 @@ class MaxRecipient(WireModel):
     userId: int | None = None
 
 
-# Примечание: payload медиа-вложения (MediaAttachmentPayload): url + token
+# Примечание: payload медиа-вложения (MediaAttachmentPayload): url + token. У клавиатуры
+# (inline_keyboard) в том же поле кнопки и нет url — она приходит в каждом нажатии кнопки
 class MaxMediaPayload(WireModel):
-    url: str
+    url: str | None = None
     token: str = ""
 
 
@@ -170,8 +171,9 @@ def _findVoice(attachments: list[MaxAttachment]) -> VoiceRef | None:
     # TODO(C): подтвердить на живом апдейте, что голосовое приходит как type=audio (долг S4: отчёт
     # claude/s4-zone-c-report.md, «Живой MAX»)
     for attachment in attachments:
-        if attachment.type == "audio" and attachment.payload is not None:
-            return VoiceRef(url=attachment.payload.url, token=attachment.payload.token)
+        payload = attachment.payload
+        if attachment.type == "audio" and payload is not None and payload.url is not None:
+            return VoiceRef(url=payload.url, token=payload.token)
     return None
 
 
