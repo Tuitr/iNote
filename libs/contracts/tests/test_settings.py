@@ -11,7 +11,7 @@ def test_defaults_from_draft_d() -> None:
         "tz": "Europe/Moscow",
         "voice_replies": False,
         "default_event_min": 60,
-        "remind_before_min": 15,
+        "remind_before_min": 60,
     }
 
 

@@ -15,6 +15,8 @@ from libs.core.errors import InvalidArgumentsError
 
 _COUNT = re.compile(r"COUNT=(\d+)", re.IGNORECASE)
 _UTC_UNTIL = re.compile(r"UNTIL=(\d{8}T\d{6})Z", re.IGNORECASE)
+# Больше дат одной серии в списке не нужно: «каждый день» за год — 365
+MAX_OCCURRENCES = 400
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,33 @@ def next_occurrence(rule: str, current: datetime, tz: str, now: datetime) -> Nex
         starts_at=following.replace(tzinfo=zone).astimezone(UTC),
         rrule=_COUNT.sub(lambda match: f"COUNT={int(match.group(1)) - passed}", rule),
     )
+
+
+def occurrences_between(
+    rule: str, current: datetime, tz: str, start: datetime, end: datetime
+) -> list[tuple[int, datetime]]:
+    """Следующие вхождения серии после текущего в [start, end): номер от текущего и момент UTC.
+
+    Для календаря: серия хранится одной записью, а показать нужно все её даты за период.
+    Правило в базе уже проверено при записи; если всё же неверное — серия не разворачивается.
+    """
+    zone = ZoneInfo(tz)
+    try:
+        series = _parse(rule, current, tz)
+    except InvalidArgumentsError:
+        return []
+    local_current, lower, upper = (_local(m, zone) for m in (current, start, end))
+    found: list[tuple[int, datetime]] = []
+    index = 0
+    for moment in series:
+        if moment >= upper or index >= MAX_OCCURRENCES:
+            break
+        if moment <= local_current:
+            continue
+        index += 1
+        if moment >= lower:
+            found.append((index, moment.replace(tzinfo=zone).astimezone(UTC)))
+    return found
 
 
 def _parse(rule: str, series_start: datetime, tz: str) -> rrule:

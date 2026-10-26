@@ -43,3 +43,6 @@ class Item(ItemBrief):
     source_text: str | None
     created_at: AwareDatetime
     updated_at: AwareDatetime
+    # Списки за период разворачивают серию в даты: 0 — сама запись (текущее вхождение),
+    # 1, 2, … — следующие даты повтора с тем же id; действия с ними относятся ко всей серии.
+    occurrence_index: int = Field(default=0, ge=0)

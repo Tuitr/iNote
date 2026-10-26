@@ -18,6 +18,7 @@ PLAN_ITEM_EXAMPLE = {
     "source_text": "Поставь встречу с Иваном завтра в три",
     "created_at": "2026-10-17T15:42:07+03:00",
     "updated_at": "2026-10-17T15:42:07+03:00",
+    "occurrence_index": 0,
 }
 
 

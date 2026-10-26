@@ -185,6 +185,27 @@ class ItemRepo:
             statement = statement.where(ItemRow.status.in_(statuses))
         return list(await self._session.scalars(statement))
 
+    async def list_open_series(
+        self, user_id: int, end: datetime, kinds: Sequence[str] | None, limit: int
+    ) -> list[ItemRow]:
+        """Открытые серии (с rrule), чьё текущее вхождение раньше end: их даты дойдут до периода."""
+        moment = func.coalesce(ItemRow.starts_at, ItemRow.remind_at)
+        statement = (
+            select(ItemRow)
+            .where(
+                ItemRow.user_id == user_id,
+                ItemRow.deleted_at.is_(None),
+                ItemRow.status == "open",
+                ItemRow.rrule.is_not(None),
+                moment < end,
+            )
+            .order_by(moment, ItemRow.id)
+            .limit(limit)
+        )
+        if kinds is not None:
+            statement = statement.where(ItemRow.kind.in_(kinds))
+        return list(await self._session.scalars(statement))
+
     async def search_fulltext(
         self, user_id: int, query: str, search: SearchFilter, limit: int
     ) -> list[ItemRow]:

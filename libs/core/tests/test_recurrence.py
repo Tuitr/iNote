@@ -271,8 +271,10 @@ async def test_deleted_series_does_not_remind(
     ]
 
 
-async def test_list_shows_only_the_current_occurrence(service: ItemService, user_id: int) -> None:
-    await _standup(service, user_id)
+async def test_list_shows_every_date_of_the_series(service: ItemService, user_id: int) -> None:
+    # Серия — одна запись, но в календаре за период видны все её даты: «каждый понедельник»
+    # за месяц — четыре понедельника с тем же id и номером вхождения.
+    item_id = await _standup(service, user_id)
 
     result = await service.list_items(
         ListItemsArgs.model_validate(
@@ -280,6 +282,27 @@ async def test_list_shows_only_the_current_occurrence(service: ItemService, user
         )
     )
 
-    assert [(item.title, item.starts_at) for item in result.items] == [
-        ("Планёрка", _monday(10, 26))
+    assert [(item.starts_at, item.occurrence_index) for item in result.items] == [
+        (_monday(10, 26), 0),
+        (_monday(11, 2), 1),
+        (_monday(11, 9), 2),
+        (_monday(11, 16), 3),
+    ]
+    assert {str(item.id) for item in result.items} == {item_id}
+    assert result.items[1].ends_at == _monday(11, 2, 10)
+    assert result.items[1].remind_at == _reminder_of(_monday(11, 2))
+
+
+async def test_series_dates_stop_at_count(service: ItemService, user_id: int) -> None:
+    await _standup(service, user_id, rrule="FREQ=WEEKLY;BYDAY=MO;COUNT=2")
+
+    result = await service.list_items(
+        ListItemsArgs.model_validate(
+            {"caller": _caller(user_id), "from": "2026-11-01", "to": "2026-11-21"}
+        )
+    )
+
+    # Первое вхождение (26.10) вне периода, второе — последнее по COUNT.
+    assert [(item.starts_at, item.occurrence_index) for item in result.items] == [
+        (_monday(11, 2), 1)
     ]
