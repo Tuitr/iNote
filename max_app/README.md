@@ -26,16 +26,13 @@ npm run build      # сборка в dist/
 Из корня репозитория:
 
 ```bash
-cp .env.example .env   # пароль postgres, API_JWT_SECRET (≥ 32 символов), API_DEV_AUTH=true
-docker compose up -d --build api
-docker compose exec -T api python - < max_app/scripts/seed_dev.py   # тестовые записи
+make up                            # в .env: API_DEV_AUTH=true
+make seed MAX_USER_ID=123456789    # демо-записи на того же user.id, что шлёт фронт вне MAX
 cd max_app && npm run dev
 ```
 
-`scripts/seed_dev.py` создаёт dev-пользователя (тот же `user.id`, что шлёт фронт вне MAX) и
-раскладывает записи вокруг сегодняшнего дня через `ItemService` бэкенда. Старые записи этого
-пользователя он удаляет, так что запускать можно повторно. Прокси Vite ходит на `127.0.0.1:8000`:
-с `localhost` Node может выбрать `::1`, а порт Docker на Windows слушает IPv4.
+Прокси Vite ходит на `127.0.0.1:8000`: с `localhost` Node может выбрать `::1`, а порт Docker
+на Windows слушает IPv4.
 Экран по `start_param` вне MAX выбирается адресом: `http://localhost:5173/?startapp=today`.
 
 `.npmrc` включает `legacy-peer-deps`: без него npm 10 падает на дереве зависимостей Vitest
