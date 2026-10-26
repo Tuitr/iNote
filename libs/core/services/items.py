@@ -32,7 +32,7 @@ from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.repositories.items import ItemRepo, NewItem
 from libs.core.repositories.notifications import NotificationRepo
 from libs.core.repositories.users import UserRepo
-from libs.core.services.recurrence import check_rrule, next_occurrence, occurrences_between
+from libs.core.services.recurrence import check_rrule, next_occurrence
 from libs.core.services.time import (
     days_range_utc,
     local_midnight_utc,
@@ -265,19 +265,10 @@ class ItemService:
         statuses = None if status == "all" else [status]
         async with self._session_factory() as session, session.begin():
             await require_user(session, user_id)
-            repo = ItemRepo(session)
-            rows = await repo.list_in_range(user_id, start_utc, end_utc, kinds, statuses, limit)
-            # Следующие даты повтора — открытые; в списке выполненных их нет.
-            series = (
-                []
-                if statuses == ["done"]
-                else await repo.list_open_series(user_id, end_utc, kinds, limit)
+            rows = await ItemRepo(session).list_in_range(
+                user_id, start_utc, end_utc, kinds, statuses, limit
             )
-        items = [to_item(row, tz) for row in rows]
-        for row in series:
-            items.extend(_occurrences(row, tz, start_utc, end_utc))
-        items.sort(key=_list_order)
-        return items[:limit]
+        return [to_item(row, tz) for row in rows]
 
     async def get_item(self, user_id: int, tz: str, item_id: UUID) -> Item:
         """Карточка записи. Удалённая, чужая и несуществующая — одинаково not_found (КиП)."""
@@ -618,30 +609,6 @@ def to_brief(row: ItemRow, tz: str) -> ItemBrief:
         all_day=row.all_day,
         status=row.status,
     )
-
-
-def _occurrences(row: ItemRow, tz: str, start: datetime, end: datetime) -> list[Item]:
-    """Следующие даты серии в периоде — копии записи со сдвинутыми временами и номером вхождения."""
-    current = row.starts_at or row.remind_at
-    if row.rrule is None or current is None:
-        return []
-    base = to_item(row, tz)
-    copies: list[Item] = []
-    for index, moment in occurrences_between(row.rrule, current, tz, start, end):
-        shift = moment - current
-        moved = {
-            field: _local(value + shift, tz)
-            for field in ("starts_at", "ends_at", "remind_at")
-            if (value := getattr(row, field)) is not None
-        }
-        copies.append(base.model_copy(update={**moved, "occurrence_index": index}))
-    return copies
-
-
-def _list_order(item: Item) -> tuple[datetime, bool, datetime, str]:
-    """Порядок списка как в ItemRepo.list_in_range: по моменту, «весь день» первым в своём дне."""
-    moment = item.starts_at or item.remind_at or item.created_at
-    return moment, not item.all_day, item.created_at, str(item.id)
 
 
 def to_item(row: ItemRow, tz: str) -> Item:

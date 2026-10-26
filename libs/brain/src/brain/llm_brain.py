@@ -406,13 +406,11 @@ def _askDeleteMany(
     if call.name != "list_items" or not result.ok or not _isBulkDelete(turn.text):
         return None
     kinds = {kind for pattern, kind in BULK_KINDS if pattern.search(turn.text)}
-    # повторяющаяся запись в списке — несколько дат с одним id: удаляется один раз (вся серия)
-    unique = {
-        str(i.get("id")): i
+    items = [
+        i
         for i in _list((result.data or {}).get("items"))
         if isinstance(i, dict) and (not kinds or i.get("kind") in kinds)
-    }
-    items = list(unique.values())
+    ]
     ids = [str(i["id"]) for i in items if i.get("id")]
     if not ids:
         return None

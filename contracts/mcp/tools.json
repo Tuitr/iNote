@@ -266,12 +266,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -708,12 +702,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -1102,12 +1090,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -1412,12 +1394,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -1835,12 +1811,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -2172,12 +2142,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
@@ -2509,12 +2473,6 @@
               "format": "date-time",
               "title": "Updated At",
               "type": "string"
-            },
-            "occurrence_index": {
-              "default": 0,
-              "minimum": 0,
-              "title": "Occurrence Index",
-              "type": "integer"
             }
           },
           "required": [
