@@ -1,8 +1,4 @@
-"""Тела запросов и ответов REST API для мини-приложения (J5), v0.
-
-Источник: КиП, раздел «J5 · MAX app → API». Поля, которых в КиП нет, отмечены
-в docs/PROJECT_LOG.md как предложения D.
-"""
+"""Тела запросов и ответов REST API для мини-приложения (J5), v0."""
 
 from datetime import date
 from typing import Literal
@@ -14,7 +10,7 @@ from libs.contracts.settings import IanaTimezone, UserSettings
 
 
 class AuthMaxRequest(BaseModel):
-    # Строка WebApp.initData как есть: пересборка ломает подпись (КиП, «Подпись initData»).
+    # Строка WebApp.initData как есть: пересборка ломает подпись.
     init_data: str = Field(min_length=1)
 
 
@@ -60,7 +56,7 @@ class ItemsResponse(BaseModel):
 
 
 class DialogTurnView(BaseModel):
-    """Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3 (КиП)."""
+    """Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3."""
 
     id: str
     role: Literal["user", "assistant"]

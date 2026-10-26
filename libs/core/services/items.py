@@ -271,7 +271,7 @@ class ItemService:
         return [to_item(row, tz) for row in rows]
 
     async def get_item(self, user_id: int, tz: str, item_id: UUID) -> Item:
-        """Карточка записи. Удалённая, чужая и несуществующая — одинаково not_found (КиП)."""
+        """Карточка записи. Удалённая, чужая и несуществующая — одинаково not_found."""
         async with self._session_factory() as session:
             rows = await ItemRepo(session).find_by_ref(
                 user_id, str(item_id), deleted=False, limit=1, for_update=False
@@ -509,7 +509,7 @@ async def require_user(session: AsyncSession, user_id: int) -> UserRow:
 
 
 async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | None) -> ItemRow:
-    """Запись по полному или короткому id. Чужая и несуществующая — одинаково not_found (КиП)."""
+    """Запись по полному или короткому id. Чужая и несуществующая — одинаково not_found."""
     rows = await items.find_by_ref(caller.user_id, ref, deleted, MAX_ID_CANDIDATES, for_update=True)
     if not rows:
         raise NotFoundError("Запись не найдена", {"id": ref})

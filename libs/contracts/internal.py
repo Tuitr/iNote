@@ -1,7 +1,4 @@
-"""Служебный REST на MCP-контейнере (J8): запросы агента C к данным D.
-
-Источник: КиП (раздел «J8»). До G1 не утверждено командой; по решению Никиты это v0.
-"""
+"""Служебный REST на MCP-контейнере (J8): запросы агента C к данным D."""
 
 from typing import Literal
 from uuid import UUID
@@ -19,7 +16,7 @@ class ResolveUserRequest(BaseModel):
 
 class ResolveUserResponse(BaseModel):
     user_id: int
-    # tz дублирует settings.tz: в КиП он сверху, а UserSettings по черновику D содержит его внутри.
+    # tz дублирует settings.tz: по J8 он на верхнем уровне, а UserSettings содержит его внутри.
     tz: IanaTimezone
     settings: UserSettings
     created: bool
@@ -28,7 +25,7 @@ class ResolveUserResponse(BaseModel):
 class UserSettingsPatch(BaseModel):
     """Тело PATCH /internal/v1/users/{user_id}/settings: любое подмножество полей UserSettings.
 
-    Непереданные поля и null не меняются. Ответ — UserSettings целиком (КиП, J8).
+    Непереданные поля и null не меняются. Ответ — UserSettings целиком (J8).
     Мини-приложение только читает, поэтому настройки меняются через бота.
     """
 

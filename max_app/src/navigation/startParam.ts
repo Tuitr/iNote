@@ -1,4 +1,4 @@
-// J6: какой экран открыть по start_param. Формат — КиП и libs/contracts/.../start_param.py (ветка C).
+// J6: какой экран открыть по start_param. Формат — libs/contracts/.../start_param.py (ветка C).
 
 export type Route =
   | { screen: 'today' }
@@ -10,7 +10,7 @@ export type Route =
 const DATED = /^(day|week)_(\d{4}-\d{2}-\d{2})$/;
 const ITEM = /^item_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
-/** Неизвестный или битый формат открывает «Сегодня» (КиП, J6). */
+/** Неизвестный или битый формат открывает «Сегодня» (J6). */
 export function parseStartParam(value: string | null | undefined): Route {
   if (!value || value === 'today') return { screen: 'today' };
   if (value === 'dialog') return { screen: 'dialog' };

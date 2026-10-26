@@ -45,7 +45,7 @@ def list_text(items: list[Item], truncated: bool) -> str:
 
 
 def error_text(code: str, message: str) -> str:
-    # КиП: модель видит «Ошибка past_time: время уже прошло».
+    # Модель видит «Ошибка past_time: время уже прошло».
     return f"Ошибка {code}: {message[:1].lower()}{message[1:]}"
 
 
@@ -68,7 +68,7 @@ def _clock_part(item: Item, moment: datetime) -> str:
 
 def conflict_text(prefix: str, conflicts: list[ItemBrief], free_slots: list[TimeSlot]) -> str:
     """«Не создано: пересекается с «Встреча с дизайнером» в 15:00. Свободно: 16:00–17:00.»"""
-    # В ItemBrief нет конца встречи (контракт КиП), поэтому у пересечений только время начала.
+    # В ItemBrief нет конца встречи (контракт J3), поэтому у пересечений только время начала.
     busy = ", ".join(f"«{brief.title}» в {_clock(brief.starts_at)}" for brief in conflicts)
     if free_slots:
         free = ", ".join(f"{slot.starts_at:%H:%M}–{slot.ends_at:%H:%M}" for slot in free_slots)

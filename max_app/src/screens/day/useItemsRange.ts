@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { ItemsDay } from '../../api/types';
 
-/** Опрос раз в 20 с: ETag/304 делает его дешёвым, а записи, созданные голосом, появляются сами (КиП, J5). */
+/** Опрос раз в 20 с: ETag/304 делает его дешёвым, а записи, созданные голосом, появляются сами (J5). */
 export const POLL_INTERVAL_MS = 20_000;
 
 export type RangeState =

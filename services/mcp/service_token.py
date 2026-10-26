@@ -1,6 +1,5 @@
-"""Проверка сервисного токена на mcp: Authorization: Bearer <SERVICE_TOKEN> (КиП).
+"""Проверка сервисного токена на mcp: Authorization: Bearer <SERVICE_TOKEN>.
 
-Временная, до middleware из libs/common роли C: формат взят из КиП, код заменим на общий.
 Сделана чистым ASGI, а не BaseHTTPMiddleware: MCP отвечает потоком (Streamable HTTP),
 а BaseHTTPMiddleware буферизует и ломает такие ответы.
 """

@@ -21,7 +21,7 @@ from services.mcp.service_token import ServiceTokenMiddleware
 from services.mcp.tools.context import ToolServices
 
 # Защита от DNS rebinding в SDK по умолчанию пускает только localhost, а агент C
-# ходит по имени сервиса в сети compose: http://mcp:8000/mcp (КиП, «Транспорт»).
+# ходит по имени сервиса в сети compose: http://mcp:8000/mcp.
 _TRANSPORT_SECURITY = TransportSecuritySettings(
     allowed_hosts=["mcp:*", "localhost:*", "127.0.0.1:*"],
     allowed_origins=["http://mcp:*", "http://localhost:*", "http://127.0.0.1:*"],

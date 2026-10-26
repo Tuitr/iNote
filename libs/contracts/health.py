@@ -1,4 +1,4 @@
-"""Ответ /health/ready (КиП, раздел про health-эндпоинты)."""
+"""Ответ /health/ready."""
 
 from typing import Literal
 

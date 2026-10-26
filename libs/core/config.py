@@ -48,7 +48,7 @@ def load_default_tz() -> str:
 
 
 def load_service_token() -> str:
-    """Общий токен внутренних вызовов: mcp его проверяет, scheduler им ходит в бота (КиП)."""
+    """Общий токен внутренних вызовов: mcp его проверяет, scheduler им ходит в бота."""
     return _require("SERVICE_TOKEN")
 
 

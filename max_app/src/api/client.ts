@@ -6,7 +6,7 @@ import type {
   Me,
 } from './types';
 
-/** Ошибка API в общем конверте {error: {code, message, details, trace_id}} (КиП, «Ошибки»). */
+/** Ошибка API в общем конверте {error: {code, message, details, trace_id}}. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -18,7 +18,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  /** Пользователю показываем первые 6 символов trace_id (КиП). */
+  /** Пользователю показываем первые 6 символов trace_id. */
   get shortTraceId(): string | null {
     return this.traceId ? this.traceId.slice(0, 6) : null;
   }
@@ -38,7 +38,7 @@ export interface ApiClient {
 
 export interface ApiClientOptions {
   baseUrl?: string;
-  /** Строка WebApp.initData как есть: пересборка ломает подпись (КиП, «Подпись initData»). */
+  /** Строка WebApp.initData как есть: пересборка ломает подпись. */
   getInitData: () => string;
 }
 
@@ -69,7 +69,7 @@ export function createApiClient({ baseUrl = '', getInitData }: ApiClientOptions)
   async function request(path: string, headers: Record<string, string> = {}): Promise<Response> {
     if (token === null) await login();
     let response = await send(path, headers);
-    // Токен живёт час: на 401 молча входим заново с тем же initData и повторяем один раз (КиП, J5).
+    // Токен живёт час: на 401 молча входим заново с тем же initData и повторяем один раз (J5).
     if (response.status === 401) {
       await login();
       response = await send(path, headers);

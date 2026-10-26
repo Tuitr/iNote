@@ -1,7 +1,4 @@
-"""Общая HTTP-часть сервисов mcp и api: подключения, health и лог запросов с trace_id.
-
-Временная, до libs/common роли C (там логи structlog и middleware X-Trace-Id по КиП).
-"""
+"""Общая HTTP-часть сервисов mcp и api: подключения, health и лог запросов с trace_id."""
 
 import logging
 import time

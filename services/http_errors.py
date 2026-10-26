@@ -1,4 +1,4 @@
-"""Перевод ошибок HTTP-сервисов D (api, mcp) в общий конверт ошибки (КиП, раздел «Ошибки»)."""
+"""Перевод ошибок HTTP-сервисов D (api, mcp) в общий конверт ошибки."""
 
 import logging
 import re
@@ -31,7 +31,7 @@ class HttpError(Exception):
 def incoming_trace_id(header: str) -> str:
     """trace_id из X-Trace-Id или новый.
 
-    По КиП цепочку начинает тот, к кому запрос пришёл первым (API — для запросов фронта),
+    Цепочку начинает тот, к кому запрос пришёл первым (API — для запросов фронта),
     поэтому без корректного X-Trace-Id trace_id создаётся здесь.
     """
     return header if _TRACE_ID.fullmatch(header) else uuid.uuid4().hex

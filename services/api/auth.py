@@ -1,6 +1,6 @@
 """Вход мини-приложения: проверка подписи initData из MAX и выдача JWT (J5).
 
-Подпись (план D, «Проверка initData»): секрет = HMAC-SHA256(ключ "WebAppData", сообщение — токен
+Подпись: секрет = HMAC-SHA256(ключ "WebAppData", сообщение — токен
 бота); подпись — HMAC-SHA256(секрет, пары key=value без hash, отсортированные по ключу и
 соединённые "\\n"), в hex. Строку разбираем как есть: если фронт её пересоберёт, подпись сломается.
 """
@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl
 
 import jwt
 
-# Старый initData мог утечь по ссылке: документация MAX советует срок около часа (план D).
+# Старый initData мог утечь по ссылке: документация MAX советует срок около часа.
 INIT_DATA_MAX_AGE = timedelta(hours=1)
 TOKEN_TTL = timedelta(hours=1)
 JWT_ALGORITHM = "HS256"
@@ -51,7 +51,7 @@ def issue_token(max_user_id: int, secret: str, now: datetime) -> tuple[str, date
     """JWT на TOKEN_TTL и момент, когда он истечёт.
 
     В sub — max_user_id, а не внутренний user_id: содержимое JWT фронт может прочитать,
-    а внутренний user_id наружу не отдаём (КиП).
+    а внутренний user_id наружу не отдаём.
     """
     # Целые секунды: в JWT время хранится в секундах, ответ должен с ним совпадать.
     expires_at = (now + TOKEN_TTL).replace(microsecond=0)

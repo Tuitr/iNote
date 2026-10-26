@@ -1,4 +1,4 @@
-"""Служебный REST для агента C (J8): /internal/v1. Наружу не публикуется (КиП)."""
+"""Служебный REST для агента C (J8): /internal/v1. Наружу не публикуется."""
 
 from fastapi import APIRouter, Request, Response, status
 

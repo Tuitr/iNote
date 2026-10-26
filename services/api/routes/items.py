@@ -126,7 +126,7 @@ async def search_items(
     limit: Annotated[int, Query(ge=1, le=10)] = 5,
 ) -> SearchItemsResult:
     search_service: SearchService = request.app.state.search_service
-    # Тот же поиск, что у инструмента MCP (J5): API начинает свою цепочку trace_id (КиП).
+    # Тот же поиск, что у инструмента MCP (J5): API начинает свою цепочку trace_id.
     caller = Caller(user_id=user.user_id, tz=user.settings.tz, trace_id=uuid.uuid4().hex)
     return await search_service.search(SearchItemsArgs(caller=caller, query=q, limit=limit))
 

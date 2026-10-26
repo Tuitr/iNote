@@ -79,7 +79,7 @@ def test_unknown_tool_is_reported_as_error() -> None:
 
 
 def test_committed_tool_schemas_are_up_to_date() -> None:
-    # Поменяли аргументы или ответ инструмента и не обновили снапшот — тест красный (КиП).
+    # Поменяли аргументы или ответ инструмента и не обновили снапшот — тест красный.
     # Обновить, если изменение согласовано с C и B: python -m services.mcp.export_tools
     assert TOOLS_PATH.read_text(encoding="utf-8") == render_tools()
 

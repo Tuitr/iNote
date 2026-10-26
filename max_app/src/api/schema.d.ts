@@ -136,7 +136,7 @@ export interface paths {
         };
         /**
          * Get Dialog
-         * @description ЧЕРНОВИК: формат истории диалога утверждается на G3 (КиП). Реплики от новых к старым; next_cursor передать в before, чтобы получить более старые.
+         * @description ЧЕРНОВИК: формат истории диалога утверждается на G3. Реплики от новых к старым; next_cursor передать в before, чтобы получить более старые.
          */
         get: operations["get_dialog_v1_dialog_get"];
         put?: never;
@@ -181,7 +181,7 @@ export interface components {
         };
         /**
          * DialogTurnView
-         * @description Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3 (КиП).
+         * @description Реплика в истории диалога. ЧЕРНОВИК D: формат истории утверждается на G3.
          */
         DialogTurnView: {
             /** Id */

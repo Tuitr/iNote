@@ -19,7 +19,7 @@ router = APIRouter(prefix="/v1", tags=["dialog (черновик до G3)"], res
 @router.get(
     "/dialog",
     description=(
-        "ЧЕРНОВИК: формат истории диалога утверждается на G3 (КиП). Реплики от новых к старым; "
+        "ЧЕРНОВИК: формат истории диалога утверждается на G3. Реплики от новых к старым; "
         "next_cursor передать в before, чтобы получить более старые."
     ),
     responses={200: json_example("dialog.response"), **VALIDATION},

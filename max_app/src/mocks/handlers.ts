@@ -1,4 +1,4 @@
-// MSW-моки J5 по примерам из contracts/examples/j5 (КиП: «OpenAPI с примерами — из них E собирает MSW»).
+// MSW-моки J5 по примерам из contracts/examples/j5.
 import { http, HttpResponse } from 'msw';
 import authExample from '../../../contracts/examples/j5/auth_max.response.json';
 import meExample from '../../../contracts/examples/j5/me.response.json';

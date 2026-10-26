@@ -1,4 +1,4 @@
-"""Подписанный initData для тестов: так его подписывает MAX (план D, «Проверка initData»)."""
+"""Подписанный initData для тестов: так его подписывает MAX."""
 
 import hashlib
 import hmac

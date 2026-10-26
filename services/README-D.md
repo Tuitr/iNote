@@ -13,8 +13,8 @@
 `Dockerfile` в корне, зависимости по `uv.lock`).
 
 Логика — в `libs/core` (сервисы → репозитории), контейнеры — тонкие адаптеры. Модели контрактов —
-`libs/contracts`, снапшоты и примеры — `contracts/`. Решения и их причины — `docs/PROJECT_LOG.md`,
-планы запросов — `docs/d-explain.md`.
+`libs/contracts`, снапшоты и примеры — `contracts/`. Планы запросов —
+`docs/d-explain.md`.
 
 ## Как запустить
 

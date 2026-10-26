@@ -1,8 +1,4 @@
-"""Аргументы и ответы 8 MCP-инструментов (J3).
-
-Источник: черновик D (раздел «J3: аргументы 8 инструментов») и КиП (раздел «J3»).
-Никита решил, что до G1 черновик D считается контрактом для заглушек: это v0.
-"""
+"""Аргументы и ответы 8 MCP-инструментов (J3)."""
 
 import re
 from datetime import date
@@ -21,7 +17,7 @@ _ITEM_REF = re.compile(r"^[0-9a-f]{8}(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 def _require_date_only(value: Any) -> Any:
     # Без этой проверки pydantic принял бы «2026-10-18T00:00:00» без смещения как дату,
-    # а по КиП время без смещения — validation_error.
+    # а время без смещения по контракту — validation_error.
     if isinstance(value, str) and not _DATE_ONLY.fullmatch(value):
         raise ValueError("ожидается дата в формате YYYY-MM-DD")
     return value
