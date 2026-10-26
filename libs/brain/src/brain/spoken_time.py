@@ -7,7 +7,8 @@ GigaChat ошибается в арифметике дат и сам выбир�
 time_guard.py.
 
 - День: «сегодня», «завтра» (всегда следующая календарная дата, и ночью тоже),
-  «послезавтра», «следующий день», «через N дней / недель», день недели, «1 мая», «03.06.2027».
+  «послезавтра», «следующий день», «через N дней / недель / месяцев», день недели, «1 мая»,
+  «03.06.2027».
   Дата без года — ближайшая будущая. Несуществующая дата (01.13, 31.02) — проблема, не время.
 - Время: «в 5», «в 17:30», «на десять пятнадцать», «без десяти 3», «пол третьего», «в обед».
   Час 1–12 без «утра / дня / вечера / ночи» — неоднозначно (спросить); 0, 13–23 и «09:30» с
@@ -138,7 +139,9 @@ _WORD_DATE_RE: Final = re.compile(
 )
 _MONTH_ONLY_RE: Final = re.compile(r"\bв\s+(" + "|".join(_MONTHS_PREPOSITIONAL) + r")\b")
 _WEEKDAY_RE: Final = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r")\b")
-_IN_DAYS_RE: Final = re.compile(r"через\s+(?:(\d{1,2})\s+)?(день|дня|дней|неделю|недели|недель)")
+_IN_DAYS_RE: Final = re.compile(
+    r"через\s+(?:(\d{1,2})\s+)?(день|дня|дней|неделю|недели|недель|месяц|месяца|месяцев)\b"
+)
 _NEXT_DAY_RE: Final = re.compile(r"следующ\w*\s+(?:день|дня|дню)")
 # относительное время и периоды — их разбирает модель
 _LEFT_TO_MODEL_RE: Final = re.compile(
@@ -200,19 +203,18 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
     normalized = normalize(text)
     if _LEFT_TO_MODEL_RE.search(normalized):
         return Spoken(supported=False)
+    times = _times(normalized)
+    # время сохраняется и при проблеме с датой: ответ датой дополнит просьбу с этим временем
+    said = times[0] if len(times) == 1 else None
     monthOnly = _MONTH_ONLY_RE.search(normalized)
     if monthOnly and not (_NUMERIC_DATE_RE.search(normalized) or _WORD_DATE_RE.search(normalized)):
-        times = _times(normalized)
-        said = times[0] if len(times) == 1 else None
         return Spoken(time=said, month=_MONTHS_PREPOSITIONAL[monthOnly[1]])
     local = now.astimezone(ZoneInfo(tz))
     days, problem = _days(normalized, local)
     if problem is not None:
-        return Spoken(problem=problem)
-    times = _times(normalized)
-    said = times[0] if len(times) == 1 else None
+        return Spoken(time=said, problem=problem)
     if len(set(days)) > 1:
-        return Spoken(problem=_dateConflict(sorted(set(days))))
+        return Spoken(time=said, problem=_dateConflict(sorted(set(days))))
     return Spoken(day=days[0] if days else None, time=said, supported=len(times) <= 1)
 
 
@@ -300,9 +302,19 @@ def _relativeDays(text: str, local: datetime) -> list[date]:
         found.append(today + timedelta(days=1))
     for match in _IN_DAYS_RE.finditer(text):
         count = int(match[1]) if match[1] else 1
+        if match[2].startswith("месяц"):
+            found.append(_addMonths(today, count))
+            continue
         days = count * DAYS_IN_WEEK if match[2].startswith("недел") else count
         found.append(today + timedelta(days=days))
     return found
+
+
+# Примечание: «через месяц» — то же число через N месяцев; 31-е в коротком месяце — последний день
+def _addMonths(today: date, count: int) -> date:
+    index = today.month - 1 + count
+    year, month = today.year + index // len(MONTH_NAMES), index % len(MONTH_NAMES) + 1
+    return date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
 
 
 # Примечание: ближайшая будущая дата с этим числом и месяцем; не существует — None

@@ -302,8 +302,8 @@ async def test_toolErrorNotRetried() -> None:
 
 # Примечание: «Записал» без изменяющего вызова — llm_no_action, текст пользователю не уходит
 async def test_successClaimWithoutCall() -> None:
-    subject, _ = brain(text("Записал, напомню завтра"))
-    result = await subject.run(turnInput("напомни завтра позвонить"), FakeTools())
+    subject, _ = brain(text("Записал, сделаю"))
+    result = await subject.run(turnInput("надо купить хлеб"), FakeTools())
     assert (result.outcome, result.errorCode, result.say) == ("error", "llm_no_action", None)
 
 
@@ -510,16 +510,31 @@ DELETED: Final = ok("Удалено", {"status": "deleted", "item": item()})
 # Примечание: «отмени все планы на неделю» — модели только list_items; по списку — вопрос
 # «Удалить 2 записи…?» с кнопкой, id в pending, ничего не удалено
 async def test_bulkDeleteAsks() -> None:
-    subject, llm = brain(call("list_items", **{"from": "2026-10-26", "to": "2026-11-02"}))
+    subject, llm = brain()
     tools = FakeTools({"list_items": [LISTED]})
     result = await subject.run(turnInput("Отмени все планы на неделю"), tools)
-    assert {tool.name for tool in llm.calls[0].tools} == {"list_items"}
+    # период понятен коду (эта неделя, пн–вс) — список без модели
+    assert llm.calls == []
+    assert tools.calls == [("list_items", {"from": "2026-10-19", "to": "2026-10-26"})]
     assert result.outcome == "clarify"
     assert result.say == "Удалить 2 записи: «Созвон с Иваном», «Сдать отчёт»?"
     assert result.clarify is not None
     assert result.clarify.options == ["Да, удалить"]
     assert result.clarify.pending == {"kind": "delete_many", "ids": [str(ITEM_ID), str(OTHER_ID)]}
-    assert [name for name, _ in tools.calls] == ["list_items"]
+
+
+# Примечание: «Удали планы на сегодня» (без «все») — тоже всё за период; период непонятен коду —
+# модели остаётся только list_items
+async def test_bulkDeletePluralAndModelPeriod() -> None:
+    today = ok("1 запись", {"items": [item()], "range": {}, "truncated": False})
+    subject, _ = brain()
+    tools = FakeTools({"list_items": [today]})
+    result = await subject.run(turnInput("Удали планы на сегодня"), tools)
+    assert tools.calls == [("list_items", {"from": "2026-10-24", "to": "2026-10-25"})]
+    assert result.outcome == "clarify"
+    subject, llm = brain(call("list_items", **{"from": "2026-10-24", "to": "2026-11-24"}))
+    await subject.run(turnInput("удали вообще все записи"), FakeTools({"list_items": [today]}))
+    assert {tool.name for tool in llm.calls[0].tools} == {"list_items"}
 
 
 # Примечание: «все напоминания» — удаляются только напоминания, даже если модель не задала вид
@@ -831,3 +846,20 @@ async def test_stateIdKept() -> None:
     await subject.run(turnInput("найди договор"), FakeTools({"search_items": [hits]}))
     assistant = llm.calls[1].messages[-2]
     assert (assistant.role, assistant.stateId) == ("assistant", "state-1")
+
+
+# Примечание: встреча без времени — «Во сколько встреча?» без модели; день — в pending
+async def test_eventWithoutTimeAsksBeforeModel() -> None:
+    subject, llm = brain()
+    result = await subject.run(turnInput("создай встречу с пингвином через неделю"), FakeTools())
+    assert (result.outcome, result.say, llm.calls) == ("clarify", "Во сколько встреча?", [])
+    assert result.clarify is not None
+    assert result.clarify.pending["said_day"] == "2026-10-31"
+
+
+# Примечание: несуществующая дата — вопрос до модели; ответ «01.05» и время из просьбы
+async def test_impossibleDateBeforeModel() -> None:
+    subject, llm = brain()
+    result = await subject.run(turnInput("шашлыки 01.31"), FakeTools())
+    assert (result.outcome, llm.calls) == ("clarify", [])
+    assert result.say == "Такой даты нет: «01.31». Какую дату ты имел в виду?"

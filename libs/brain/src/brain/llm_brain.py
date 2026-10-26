@@ -16,18 +16,19 @@ import time
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Final, Literal, cast, get_args
 from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
-from brain.spoken_time import parseSpoken
+from brain.spoken_time import Spoken, parseSpoken
 from brain.time_guard import (
     ASK_REMIND_TIME,
     REQUEST_KEY,
     TIME_OPTIONS,
     Ask,
+    askMissingTime,
     guardTime,
     partChoice,
     savedDay,
@@ -71,7 +72,12 @@ _DONE_RE: Final = re.compile(
 HIDDEN_ON_DELETE: Final = frozenset({"update_item", "complete_item"})
 # «отмени все планы на неделю», «удали всё на завтра»: модель только находит записи за период
 # (list_items), удаляет код — после «Да» на вопрос «Удалить N записей?»
-_BULK_RE: Final = re.compile(r"\b(вс[её]|все)\b", re.IGNORECASE)
+# «все», «всё» или множественное число («удали планы на сегодня», «отмени встречи на неделю»)
+_BULK_RE: Final = re.compile(
+    r"\b(вс[её]|все|планы|дела|записи|события|встречи|напоминания|задачи)\b", re.IGNORECASE
+)
+_WEEK_RE: Final = re.compile(r"недел", re.IGNORECASE)
+_NEXT_WEEK_RE: Final = re.compile(r"следующ\w*\s+недел", re.IGNORECASE)
 BULK_DELETE_TOOLS: Final = frozenset({"list_items"})
 DELETE_MANY: Final = "delete_many"
 ASK_DELETE_MANY: Final = "Удалить {count} {noun}: {titles}?"
@@ -213,12 +219,10 @@ class LlmBrain:
         if (choice := partChoice(turn)) is not None:
             # «утро» словом на «Утра или вечера?» — как нажатие кнопки
             return await self.resume(turn, str(choice), tools)
-        if (problem := parseSpoken(turn.text, turn.now, turn.tz).problem) is not None:
-            # нет такой даты или противоречие: спросить сразу, модель отвечала невпопад
-            state = _Turn(messages=[], knownIds=set(), model=self._model)
-            outcome = _askProblem(problem.question, problem.options, turn, state, started)
-            _logTurn(outcome, state)
-            return outcome
+        early = _Turn(messages=[], knownIds=set(), model=self._model)
+        if (earlyOutcome := await _beforeModel(turn, tools, early, started)) is not None:
+            _logTurn(earlyOutcome, early)
+            return earlyOutcome
         specs = _visibleTools(turn.text, await tools.listTools())
         state = _Turn(
             messages=buildMessages(turn),
@@ -494,6 +498,41 @@ async def _act(
 def _guarded(call: FunctionCall, turn: TurnInput) -> FunctionCall:
     guarded = guardTime(call, turn)
     return call if isinstance(guarded, Ask) else guarded
+
+
+# Примечание: что код решает без модели (модель здесь ошибалась): дата с проблемой — вопрос;
+# «удали все планы на завтра» — список за период и «Удалить N?»; встреча или напоминание без
+# времени — «Во сколько?» (модель придумывала 00:00 или отвечала бессвязным текстом)
+async def _beforeModel(
+    turn: TurnInput, tools: ToolExecutor, state: _Turn, started: float
+) -> TurnResult | None:
+    spoken = parseSpoken(turn.text, turn.now, turn.tz)
+    if spoken.problem is not None:
+        return _askProblem(spoken.problem.question, spoken.problem.options, turn, state, started)
+    if _isBulkDelete(turn.text) and (period := _bulkPeriod(turn, spoken)) is not None:
+        args: JsonObject = {"from": period[0].isoformat(), "to": period[1].isoformat()}
+        call = FunctionCall("list_items", args)
+        result = await tools.call(call.name, args)
+        state.actions.append(ExecutedAction(name=call.name, args=args, result=result))
+        return _askDeleteMany(call, result, turn, state, started) or _result(
+            "answer", state, started
+        )
+    if (ask := askMissingTime(turn, spoken)) is not None:
+        return _askGuard(ask, turn, state, started)
+    return None
+
+
+# Примечание: период удаления, который понятен коду: день из фразы или эта / следующая неделя
+def _bulkPeriod(turn: TurnInput, spoken: Spoken) -> tuple[date, date] | None:
+    if spoken.day is not None:
+        return spoken.day, spoken.day + timedelta(days=1)
+    today = turn.now.astimezone(ZoneInfo(turn.tz)).date()
+    monday = today - timedelta(days=today.weekday())
+    if _NEXT_WEEK_RE.search(turn.text):
+        return monday + timedelta(days=7), monday + timedelta(days=14)
+    if _WEEK_RE.search(turn.text):
+        return monday, monday + timedelta(days=7)
+    return None
 
 
 # Примечание: вопрос о дате до модели; просьба — в pending, ответ датой её дополнит

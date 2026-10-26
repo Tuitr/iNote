@@ -325,3 +325,16 @@ def test_monthDayAnswer() -> None:
         call = FunctionCall("create_task", {"title": "поездка", "kind": "task"})
         args = called(guardTime(call, turn(answer, ask.pending, now=LATE)))
         assert args["starts_at"] == "2027-05-04", answer
+
+
+# Ответ «01.05» на «Такой даты нет» для встречи без времени: модель дала дату прошлого года без
+# времени — спросить время, день (01.05.2027) сохранить
+def test_eventDateAnswerAsksTime() -> None:
+    pending: JsonObject = {
+        "kind": "ask",
+        "question": "Такой даты нет: «32.04». Какую дату ты имел в виду?",
+        "request": "шашлыки 01.31",
+    }
+    call = FunctionCall("create_event", {"title": "шашлыки", "starts_at": "2026-05-01"})
+    ask = asked(guardTime(call, turn("01.05", pending, now=LATE)))
+    assert (ask.question, ask.pending["said_day"]) == ("Во сколько встреча?", "2027-05-01")

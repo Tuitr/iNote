@@ -47,6 +47,10 @@ _CORRECTION_RE: Final = re.compile(
     r"^\s*(?:нет|не|а|давай|лучше|исправь|поменяй|перенеси|передвинь)\b", re.IGNORECASE
 )
 ASK_MONTH_DAY: Final = "Какого числа в {month}?"
+ASK_EVENT_DAY_TIME: Final = "На какой день и во сколько поставить встречу?"
+_EVENT_RE: Final = re.compile(r"\b(?:встреч\w*|созвон\w*|собрани\w*)")
+_CREATE_RE: Final = re.compile(r"\b(?:созда|запланир|назнач|постав|добав|запиш)\w*")
+_REMIND_WORD_RE: Final = re.compile(r"\bнапомн")
 # своё поле pending вопроса «Какого числа в мае?»: месяц, к которому относится ответ числом
 SAID_MONTH_KEY: Final = "said_month"
 _DAY_NUMBER_RE: Final = re.compile(
@@ -79,14 +83,40 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     pending = turn.pending or {}
     context = _dialogContext(turn)
     day = spoken.day or _monthDayAnswer(pending, turn) or _askedSpoken(pending, turn).day
-    day = day or _savedDay(pending) or context.day
-    said = spoken.time or _partAnswer(turn.text, _savedTime(pending) or context.time)
-    said = said or _savedTime(pending) or context.time
+    request = _requestSpoken(pending, turn)
+    day = day or _savedDay(pending) or context.day or request.day
+    earlier = _savedTime(pending) or context.time or request.time
+    said = spoken.time or _partAnswer(turn.text, earlier) or earlier
     ask = _question(call, field, spoken, turn, day=day, said=said)
     if ask is not None:
         return _withRequest(ask, turn)
     hasDayContext = bool(pending) or context.day is not None
     return _withMoment(call, field, day, said, turn, nearestModel=not hasDayContext)
+
+
+# Примечание: просьба создать встречу или напоминание без времени — вопрос до модели: она
+# придумывала время (00:00) или отвечала бессвязным текстом; день, если назван, — в pending
+def askMissingTime(turn: TurnInput, spoken: Spoken) -> Ask | None:
+    lowered = turn.text.lower()
+    if turn.pending or not spoken.supported or spoken.time is not None or spoken.month:
+        return None
+    if _PART_OF_DAY_RE.search(lowered):
+        return None
+    isEvent = _EVENT_RE.search(lowered) is not None and _CREATE_RE.search(lowered) is not None
+    if isEvent and spoken.day is None:
+        pending: JsonObject = {
+            "kind": "ask",
+            "question": ASK_EVENT_DAY_TIME,
+            REQUEST_KEY: turn.text,
+        }
+        return Ask(ASK_EVENT_DAY_TIME, [], [STARTS_AT], pending)
+    if not isEvent and not _REMIND_WORD_RE.search(lowered):
+        return None
+    question = ASK_EVENT_TIME if isEvent else ASK_REMIND_TIME
+    pending = {"kind": "ask", "question": question, REQUEST_KEY: turn.text}
+    if spoken.day is not None:
+        pending[SAID_DAY_KEY] = spoken.day.isoformat()
+    return Ask(question, list(TIME_OPTIONS), [STARTS_AT if isEvent else REMIND_AT], pending)
 
 
 # Примечание: кнопкой не нажали, а ответили словом («утро») на «Утра или вечера?» — номер варианта
@@ -235,6 +265,15 @@ def _focused(call: FunctionCall, turn: TurnInput) -> ItemBrief | None:
     return next((b for b in turn.focus if str(b.id).startswith(itemId)), None)
 
 
+# Примечание: исходная просьба из pending своего вопроса («…01.13…, напомни в обед» → «в обед»)
+def _requestSpoken(pending: Mapping[str, object], turn: TurnInput) -> Spoken:
+    request = pending.get(REQUEST_KEY)
+    if not isinstance(request, str):
+        return Spoken()
+    spoken = parseSpoken(request, turn.now, turn.tz)
+    return Spoken(day=spoken.day, time=spoken.time) if spoken.supported else Spoken()
+
+
 # Примечание: день из вопроса, на который отвечают («На какое время послезавтра…?»)
 def _askedSpoken(pending: Mapping[str, object], turn: TurnInput) -> Spoken:
     question = pending.get("question")
@@ -290,10 +329,12 @@ def _needsTime(
     if not isTimed or _PART_OF_DAY_RE.search(turn.text.lower()):
         return False
     # ответ на вопрос модели: время могло прозвучать раньше в диалоге — его знает модель
-    isOurQuestion = pending.get("question") in {ASK_EVENT_TIME, ASK_REMIND_TIME, ASK_DAY}
-    if pending and not isOurQuestion:
-        return False
-    return _moment(call.arguments.get(field)) is not None
+    isOurQuestion = (
+        pending.get("question") in {ASK_EVENT_TIME, ASK_REMIND_TIME, ASK_DAY}
+        or REQUEST_KEY in pending
+    )
+    # время модели (или дата без времени у встречи) — придумано: пользователь его не называл
+    return not pending or isOurQuestion
 
 
 # Примечание: «Во сколько?»: день уже понятен — он сохраняется в pending для ответа временем
