@@ -135,6 +135,8 @@ HINT_DUPLICATE: Final = "Этот вызов уже выполнен, его р�
 # «Напомни …» без времени: модель создавала задачу без срока — напоминанию нужно время
 _REMIND_RE: Final = re.compile(r"\bнапомн", re.IGNORECASE)
 MOMENT_FIELDS: Final = ("starts_at", "remind_at")
+# ответ на уточнение не длиннее — это ответ («через 5 дней», «в пятницу в 10»), а не новая фраза
+MAX_ANSWER_WORDS: Final = 5
 # «напомни об этой встрече за 40 минут» — встреча из фокуса, а не найденная по названию
 _THIS_RE: Final = re.compile(
     r"\b(?:эт(?:ой|у|а|от|им|ом)|не[её]|ней|е[её]|она|него|н[её]м)\b", re.IGNORECASE
@@ -651,9 +653,20 @@ def _foundItems(data: Mapping[str, object] | None) -> list[Mapping[str, object]]
 # Примечание: задача («добавь задачу … завтра в 5») — модели без времени: срок задачи — дата на весь
 # день, а на «в 5» модель спрашивала «утра или вечера?»
 def _forModelTurn(turn: TurnInput) -> TurnInput:
+    turn = _withEarlierRequest(turn)
     if not _TASK_RE.search(turn.text) or parseSpoken(turn.text, turn.now, turn.tz).time is None:
         return turn
     return turn.model_copy(update={"text": withoutTime(turn.text)})
+
+
+# Примечание: короткий ответ на уточнение («через 5 дней» на «На какой день поставить встречу?») —
+# модели вся просьба одной фразой: «поставь встречу с У в 11:00 через 5 дней». По одному ответу
+# она теряла просьбу из истории и спрашивала «Что запланировать на этот день?»
+def _withEarlierRequest(turn: TurnInput) -> TurnInput:
+    earlier = clarificationTexts(turn)
+    if not earlier or len(turn.text.split()) > MAX_ANSWER_WORDS:
+        return turn
+    return turn.model_copy(update={"text": " ".join([*earlier, turn.text])})
 
 
 # Примечание: просьба удалить всё — эта фраза или прошлая в уточнении («Удали все планы» →

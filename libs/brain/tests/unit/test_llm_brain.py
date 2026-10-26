@@ -483,6 +483,37 @@ async def test_taskDayAnswerCreatesTask() -> None:
     ]
 
 
+# Примечание: модель сама спросила день, ответ «через 5 дней» — модели уходит вся просьба
+async def test_shortAnswerCarriesRequest() -> None:
+    subject, llm = brain(text("Что запланировать?"))
+    history = [
+        ("user", "поставь встречу с У в 11:00"),
+        ("assistant", "На какой день поставить встречу с У в 11:00?"),
+    ]
+    await subject.run(
+        turnInput(
+            "через 5 дней",
+            history=[{"role": r, "text": t, "at": NOW} for r, t in history],
+        ),
+        FakeTools(),
+    )
+    assert llm.calls[0].messages[-1].content.endswith("поставь встречу с У в 11:00 через 5 дней")
+
+
+# Примечание: новая просьба после вопроса — без склейки с прошлой
+async def test_newRequestNotMerged() -> None:
+    subject, llm = brain(text("Готово"))
+    history = [("user", "поставь встречу в 11:00"), ("assistant", "На какой день?")]
+    await subject.run(
+        turnInput(
+            "покажи планы на завтра",
+            history=[{"role": r, "text": t, "at": NOW} for r, t in history],
+        ),
+        FakeTools(),
+    )
+    assert llm.calls[0].messages[-1].content.endswith("\nпокажи планы на завтра")
+
+
 # Примечание: несуществующая дата — вопрос, а не время 13:00
 async def test_impossibleDateAsks() -> None:
     subject, _ = brain(
