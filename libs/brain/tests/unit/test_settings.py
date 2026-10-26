@@ -14,7 +14,7 @@ def cleanEnv(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SERVICE_TOKEN", SERVICE_TOKEN)
 
 
-# Примечание: по умолчанию — fake: без ключа, сети и денег; GigaChat-2-Max, 20 с, 4 шага
+# Примечание: по умолчанию — fake: без ключа, сети и денег; GigaChat-2-Max, 12 с, 4 шага
 def test_defaultsAreFree() -> None:
     settings = LlmSettings()
     assert settings.provider == "fake"

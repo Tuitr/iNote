@@ -32,7 +32,7 @@ pytestmark = pytest.mark.anyio
 MOSCOW = ZoneInfo("Europe/Moscow")
 MAX_USER_ID = 123456789
 MAX_CHAT_ID = 987654321
-SERVICE_TOKEN = "test-service-token"  # noqa: S105 — токен только для тестов
+SERVICE_TOKEN = "test-service-token"
 
 Handler = Callable[[httpx.Request], httpx.Response]
 

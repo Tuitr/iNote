@@ -176,7 +176,7 @@ async def test_parallel_calls_with_same_key_create_one_item(
 
 
 async def test_replay_answers_even_when_time_has_passed_since_first_call(
-    item_service: ItemService, user_id: int, session_factory: async_sessionmaker[AsyncSession]
+    item_service: ItemService, user_id: int
 ) -> None:
     # Первый вызов прошёл, ответ потерялся по таймауту, повтор пришёл, когда время уже прошло.
     first = await item_service.create_task(

@@ -68,13 +68,6 @@ def example(name: str) -> object:
     return data
 
 
-# Примечание: пример ответа без trace_id (его подставляет агент)
-def expectedReply(name: str) -> dict[str, object]:
-    data: dict[str, object] = json.loads((EXAMPLES / "reply" / name).read_text())
-    data.pop("trace_id")
-    return data
-
-
 # Примечание: /v1/messages идёт через ход агента; trace_id цепочки сохраняется в Reply
 async def test_messageRunsTurn(client: httpx.AsyncClient) -> None:
     request = example("message_request.json")
