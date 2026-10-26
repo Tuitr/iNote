@@ -10,7 +10,7 @@ async function startMocks(): Promise<void> {
   if (import.meta.env.VITE_MOCKS !== 'true') return;
   const { worker } = await import('./mocks/browser');
   // Запросы не к /v1 (скрипт MAX, ресурсы Vite) идут в сеть как обычно.
-  await worker.start({ onUnhandledRequest: 'bypass' });
+  await worker.start({ onUnhandledFrame: 'bypass' });
 }
 
 const client = createApiClient({ baseUrl: import.meta.env.VITE_API_URL ?? '', getInitData });
