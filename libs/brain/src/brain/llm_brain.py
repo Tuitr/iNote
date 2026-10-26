@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
-from brain.spoken_time import nearestDate, parseSpoken
+from brain.spoken_time import nearestDate, parseSpoken, withoutTime
 from brain.time_guard import (
     ASK_REMIND_TIME,
     REQUEST_KEY,
@@ -82,6 +82,7 @@ _WEEK_RE: Final = re.compile(r"недел", re.IGNORECASE)
 _NEXT_WEEK_RE: Final = re.compile(r"следующ\w*\s+недел", re.IGNORECASE)
 # «удали все планы» без периода — все записи: на десять лет в обе стороны
 ALL_PLANS_SPAN: Final = timedelta(days=3650)
+_TASK_RE: Final = re.compile(r"\bзадач", re.IGNORECASE)
 # «да», «удаляй» — ответ, а не новая просьба, даже если начинается с «удали»
 SHORT_ANSWER_WORDS: Final = 2
 BULK_DELETE_TOOLS: Final = frozenset({"list_items"})
@@ -234,7 +235,7 @@ class LlmBrain:
             return earlyOutcome
         specs = _visibleTools(turn.text, await tools.listTools())
         state = _Turn(
-            messages=buildMessages(turn),
+            messages=buildMessages(_forModelTurn(turn)),
             knownIds={str(b.id) for b in turn.focus},
             model=self._model,
             deadline=time.monotonic() + self._turnBudgetS,
@@ -530,6 +531,14 @@ async def _beforeModel(
     if (ask := askMissingTime(turn, spoken)) is not None:
         return _askGuard(ask, turn, state, started)
     return None
+
+
+# Примечание: задача («добавь задачу … завтра в 5») — модели без времени: срок задачи — дата на весь
+# день, а на «в 5» модель спрашивала «утра или вечера?»
+def _forModelTurn(turn: TurnInput) -> TurnInput:
+    if not _TASK_RE.search(turn.text) or parseSpoken(turn.text, turn.now, turn.tz).time is None:
+        return turn
+    return turn.model_copy(update={"text": withoutTime(turn.text)})
 
 
 # Примечание: просьба удалить всё — эта фраза или прошлая в уточнении («Удали все планы» →

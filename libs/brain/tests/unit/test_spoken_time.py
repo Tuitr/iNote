@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 import pytest
 
-from brain.spoken_time import SaidTime, Spoken, normalize, parseSpoken
+from brain.spoken_time import SaidTime, Spoken, normalize, parseSpoken, withoutTime
 
 MSK = "Europe/Moscow"
 # понедельник 26.10.2026, ночь — когда шли тесты
@@ -125,3 +125,16 @@ def test_leftToModel(text: str) -> None:
 def test_nothing(text: str) -> None:
     spoken = parse(text)
     assert (spoken.day, spoken.time, spoken.problem) == (None, None, None)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Задача купить билеты завтра в 5", "задача купить билеты завтра"),
+        ("Добавь задачу сдать отчёт послезавтра в 15:00", "добавь задачу сдать отчет послезавтра"),
+        ("задача в обед купить хлеб", "задача купить хлеб"),
+    ],
+)
+# Примечание: задача — модели без времени: её срок — дата на весь день
+def test_withoutTime(text: str, expected: str) -> None:
+    assert withoutTime(text) == expected

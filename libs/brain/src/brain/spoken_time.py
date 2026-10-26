@@ -218,6 +218,16 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
     return Spoken(day=days[0] if days else None, time=said, supported=len(times) <= 1)
 
 
+# Примечание: фраза без времени суток (для задачи: её срок — дата на весь день, время не нужно,
+# а модель на «в 5» спрашивала «утра или вечера?»); нормализованный текст
+def withoutTime(text: str) -> str:
+    # предлог перед «15:00» — вместе со временем
+    normalized = re.sub(r"\b(?:в|на|к)\s+(?=\d{1,2}:\d{2})", "", normalize(text))
+    for pattern in (_NAMED_RE, _BEFORE_RE, _HALF_RE, _CLOCK_RE, _AT_RE):
+        normalized = pattern.sub(" ", normalized)
+    return " ".join(normalized.split())
+
+
 # Примечание: нижний регистр, «ё» → «е», числительные → цифры («десять пятнадцать» → «10 15»)
 def normalize(text: str) -> str:
     words = text.lower().replace("ё", "е").replace("-", " ").split()

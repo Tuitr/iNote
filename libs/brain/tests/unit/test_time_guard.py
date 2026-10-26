@@ -338,3 +338,39 @@ def test_eventDateAnswerAsksTime() -> None:
     call = FunctionCall("create_event", {"title": "шашлыки", "starts_at": "2026-05-01"})
     ask = asked(guardTime(call, turn("01.05", pending, now=LATE)))
     assert (ask.question, ask.pending["said_day"]) == ("Во сколько встреча?", "2027-05-01")
+
+
+# Задача — на весь день: время модели или фразы отбрасывается, «утра или вечера?» не спрашиваем
+def test_taskIsAllDay() -> None:
+    call = FunctionCall(
+        "create_task", {"title": "отчёт", "kind": "task", "starts_at": "2026-10-28T15:00:00+03:00"}
+    )
+    assert (
+        called(guardTime(call, turn("сдать отчёт послезавтра в 15:00", now=LATE)))["starts_at"]
+        == "2026-10-28"
+    )
+    ambiguous = FunctionCall(
+        "create_task", {"title": "отчёт", "kind": "task", "starts_at": "2026-10-28T05:00:00+03:00"}
+    )
+    assert (
+        called(guardTime(ambiguous, turn("задача сдать отчёт послезавтра в 5", now=LATE)))[
+            "starts_at"
+        ]
+        == "2026-10-28"
+    )
+    later = FunctionCall(
+        "create_task", {"title": "отчёт", "kind": "task", "starts_at": "2026-10-26T06:00:00+03:00"}
+    )
+    assert (
+        called(guardTime(later, turn("задача через 2 часа сдать отчёт", now=LATE)))["starts_at"]
+        == "2026-10-26"
+    )
+
+
+# Напоминание и встреча — со временем, как раньше
+def test_reminderKeepsTime() -> None:
+    call = reminder(remind_at="2026-10-28T15:00:00+03:00")
+    assert (
+        called(guardTime(call, turn("напомни послезавтра в 15:00", now=LATE)))["remind_at"]
+        == "2026-10-28T15:00:00+03:00"
+    )

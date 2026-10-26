@@ -86,7 +86,7 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     call = _inField(call, field)
     spoken = parseSpoken(turn.text, turn.now, turn.tz)
     if not spoken.supported:
-        return call
+        return _allDay(call, turn) if _isTask(call, field, turn) else call
     pending = turn.pending or {}
     context = _dialogContext(turn)
     day = spoken.day or _monthDayAnswer(pending, turn) or _askedSpoken(pending, turn).day
@@ -94,11 +94,34 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     day = day or _savedDay(pending) or context.day or request.day
     earlier = _savedTime(pending) or context.time or request.time
     said = spoken.time or _partAnswer(turn.text, earlier) or earlier
-    ask = _question(call, field, spoken, turn, day=day, said=said)
+    isTask = _isTask(call, field, turn)
+    # у задачи времени нет — весь день: «утра или вечера?» не спрашиваем
+    ask = _question(call, field, spoken, turn, day=day, said=None if isTask else said)
     if ask is not None:
         return _withRequest(ask, turn)
     hasDayContext = bool(pending) or context.day is not None
-    return _withMoment(call, field, day, said, turn, nearestModel=not hasDayContext)
+    guarded = _withMoment(call, field, day, said, turn, nearestModel=not hasDayContext)
+    return _allDay(guarded, turn) if isTask else guarded
+
+
+# Примечание: задача (не напоминание, не встреча): срок — дата на весь день
+def _isTask(call: FunctionCall, field: str, turn: TurnInput) -> bool:
+    if field != STARTS_AT or call.name == "create_event":
+        return False
+    if call.name == "create_task":
+        return True
+    brief = _focused(call, turn)
+    return (call.arguments.get("kind") or (brief.kind if brief else None)) == "task"
+
+
+# Примечание: момент срока задачи → её дата в поясе пользователя (весь день), без конца
+def _allDay(call: FunctionCall, turn: TurnInput) -> FunctionCall:
+    moment = _moment(call.arguments.get(STARTS_AT))
+    if moment is None:
+        return call
+    day = moment.astimezone(ZoneInfo(turn.tz)).date()
+    arguments = {k: v for k, v in call.arguments.items() if k != ENDS_AT}
+    return FunctionCall(call.name, {**arguments, STARTS_AT: day.isoformat()})
 
 
 # Примечание: просьба создать встречу или напоминание без времени — вопрос до модели: она
