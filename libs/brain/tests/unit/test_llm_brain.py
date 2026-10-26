@@ -336,13 +336,30 @@ async def test_deleteRequestHidesUpdateAndComplete(phrase: str) -> None:
 
 
 # Примечание: «сделал» — только complete_item: GigaChat удалял запись вместо отметки
-@pytest.mark.parametrize("phrase", ["Я сходил на встречу с Петром", "Отметь выполненной"])
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "Я сходил на встречу с Петром",
+        "Отметь выполненной",
+        "я помыл машину",
+        "я уже купила хлеб",
+        "уже позвонил Ивану",
+    ],
+)
 async def test_doneRequestHidesUpdateAndDelete(phrase: str) -> None:
     subject, llm = brain(text("Какую запись отметить?"))
     await subject.run(turnInput(phrase), FakeTools())
     names = {tool.name for tool in llm.calls[0].tools}
     assert "complete_item" in names
     assert not names & {"update_item", "delete_item"}
+
+
+# Примечание: «я хотел …», «я забыл …» — не отметка сделанного: перенос и удаление доступны
+@pytest.mark.parametrize("phrase", ["я хотел бы перенести встречу", "я забыл про созвон"])
+async def test_wishIsNotDone(phrase: str) -> None:
+    subject, llm = brain(text("Какую запись?"))
+    await subject.run(turnInput(phrase), FakeTools())
+    assert "update_item" in {tool.name for tool in llm.calls[0].tools}
 
 
 # Примечание: «в 5» без «утра/вечера» — вопрос с двумя кнопками, вызова нет; кнопка сразу
