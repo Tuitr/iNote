@@ -48,6 +48,13 @@ _CORRECTION_RE: Final = re.compile(
 )
 ASK_MONTH_DAY: Final = "Какого числа в {month}?"
 ASK_EVENT_DAY_TIME: Final = "На какой день и во сколько поставить встречу?"
+# сколько прошлых реплик пользователя смотреть в одном уточнении (история агента — 10 сообщений)
+MAX_CLARIFICATION_TURNS: Final = 5
+_NEW_REQUEST_RE: Final = re.compile(
+    r"^\s*(?:пожалуйста\s+|а\s+)?(?:созда|запланир|назнач|постав|добав|запиш|напомн|удал|отмен|"
+    r"перенес|найди|покажи|что\s+у\s+меня|когда\s+у\s+меня)",
+    re.IGNORECASE,
+)
 _EVENT_RE: Final = re.compile(r"\b(?:встреч\w*|созвон\w*|собрани\w*)")
 _CREATE_RE: Final = re.compile(r"\b(?:созда|запланир|назнач|постав|добав|запиш)\w*")
 _REMIND_WORD_RE: Final = re.compile(r"\bнапомн")
@@ -98,7 +105,9 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
 # придумывала время (00:00) или отвечала бессвязным текстом; день, если назван, — в pending
 def askMissingTime(turn: TurnInput, spoken: Spoken) -> Ask | None:
     lowered = turn.text.lower()
-    if turn.pending or not spoken.supported or spoken.time is not None or spoken.month:
+    if (turn.pending and not isNewRequest(turn.text)) or clarificationTexts(turn):
+        return None
+    if not spoken.supported or spoken.time is not None or spoken.month:
         return None
     if _PART_OF_DAY_RE.search(lowered):
         return None
@@ -186,22 +195,41 @@ def _asCorrection(call: FunctionCall, turn: TurnInput) -> FunctionCall:
 # Примечание: идёт уточнение (бот спросил, пользователь отвечает) — день и время из прошлых
 # реплик пользователя в этом уточнении: модель спрашивала текстом, и pending не было
 def _dialogContext(turn: TurnInput) -> Spoken:
-    history = list(turn.history)
     found = Spoken()
-    while len(history) >= 2 and history[-1].role == "assistant" and _isQuestion(history[-1].text):  # noqa: PLR2004
-        user = history[-2]
-        history = history[:-2]
-        if user.role != "user":
-            break
-        spoken = parseSpoken(user.text, turn.now, turn.tz)
+    for earlier in reversed(clarificationTexts(turn)):
+        spoken = parseSpoken(earlier, turn.now, turn.tz)
         if not spoken.supported or spoken.problem is not None:
             continue
         found = Spoken(day=found.day or spoken.day, time=found.time or spoken.time)
     return found
 
 
+# Примечание: прошлые реплики пользователя в текущем уточнении (от ранней к поздней): пока бот
+# отвечал вопросом — неважно, кто спросил (модель или код) и чем кончается текст; новая
+# просьба уточнение обрывает
+def clarificationTexts(turn: TurnInput) -> list[str]:
+    if isNewRequest(turn.text):
+        return []
+    history = list(turn.history)
+    texts: list[str] = []
+    while len(history) >= 2 and history[-1].role == "assistant" and _isQuestion(history[-1].text):  # noqa: PLR2004
+        user = history[-2]
+        history = history[:-2]
+        if user.role != "user" or len(texts) >= MAX_CLARIFICATION_TURNS:
+            break
+        texts.insert(0, user.text)
+        if isNewRequest(user.text):
+            break
+    return texts
+
+
+# Примечание: реплика начинает новую просьбу, а не отвечает на вопрос бота
+def isNewRequest(text: str) -> bool:
+    return _NEW_REQUEST_RE.match(text) is not None
+
+
 def _isQuestion(text: str) -> bool:
-    return text.rstrip().endswith("?") or "уточни" in text.lower()
+    return "?" in text or "уточни" in text.lower()
 
 
 # Примечание: ответ «утро» / «вечером» на неясный час — тот же час с частью суток

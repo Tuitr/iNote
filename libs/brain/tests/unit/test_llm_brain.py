@@ -532,9 +532,12 @@ async def test_bulkDeletePluralAndModelPeriod() -> None:
     result = await subject.run(turnInput("Удали планы на сегодня"), tools)
     assert tools.calls == [("list_items", {"from": "2026-10-24", "to": "2026-10-25"})]
     assert result.outcome == "clarify"
-    subject, llm = brain(call("list_items", **{"from": "2026-10-24", "to": "2026-11-24"}))
-    await subject.run(turnInput("удали вообще все записи"), FakeTools({"list_items": [today]}))
-    assert {tool.name for tool in llm.calls[0].tools} == {"list_items"}
+    # период не назван — все записи (на 10 лет в обе стороны), тоже с подтверждением
+    subject, llm = brain()
+    tools = FakeTools({"list_items": [today]})
+    result = await subject.run(turnInput("удали вообще все записи"), tools)
+    assert (result.outcome, llm.calls) == ("clarify", [])
+    assert tools.calls == [("list_items", {"from": "2016-10-26", "to": "2036-10-21"})]
 
 
 # Примечание: «все напоминания» — удаляются только напоминания, даже если модель не задала вид
@@ -575,7 +578,9 @@ async def test_bulkDeleteConfirmedByButton() -> None:
 
 
 # Примечание: ответ текстом: «да» — удалить, другое — ничего не трогать
-@pytest.mark.parametrize(("text", "deletes"), [("да", 2), ("Удаляй", 2), ("нет", 0), ("потом", 0)])
+@pytest.mark.parametrize(
+    ("text", "deletes"), [("да", 2), ("Удаляй", 2), ("Все", 2), ("нет", 0), ("потом", 0)]
+)
 async def test_bulkDeleteAnsweredByText(text: str, deletes: int) -> None:
     subject, llm = brain()
     tools = FakeTools({"delete_item": [DELETED, DELETED]})
@@ -863,3 +868,54 @@ async def test_impossibleDateBeforeModel() -> None:
     result = await subject.run(turnInput("шашлыки 01.31"), FakeTools())
     assert (result.outcome, llm.calls) == ("clarify", [])
     assert result.say == "Такой даты нет: «01.31». Какую дату ты имел в виду?"
+
+
+def asked(question: str, *answers: str) -> list[Turn]:
+    at = NOW.isoformat()
+    turns = [Turn.model_validate({"role": "user", "text": question, "at": at})]
+    turns.extend(
+        Turn.model_validate({"role": "assistant", "text": answer, "at": at}) for answer in answers
+    )
+    return turns
+
+
+# Примечание: «Удали все планы» → вопрос модели о сроке → «Все» / «на завтра»: ответ дополняет
+# просьбу — список за период кодом и «Удалить N?», без модели
+@pytest.mark.parametrize(
+    ("answer", "period"),
+    [("Все", ("2016-10-26", "2036-10-21")), ("на завтра", ("2026-10-25", "2026-10-26"))],
+)
+async def test_bulkDeleteAnswerToPeriodQuestion(answer: str, period: tuple[str, str]) -> None:
+    listed = ok("1 запись", {"items": [item()], "range": {}, "truncated": False})
+    subject, llm = brain()
+    tools = FakeTools({"list_items": [listed]})
+    history = asked("Удали все планы", "Нужно уточнить период удаления. На какой срок удалить?")
+    result = await subject.run(turnInput(answer, history=history), tools)
+    assert (result.outcome, llm.calls) == ("clarify", [])
+    assert tools.calls == [("list_items", {"from": period[0], "to": period[1]})]
+
+
+# Примечание: модель спросила время текстом (без «?» в конце); ответ «15:00» — день из просьбы
+async def test_dialogContextWithoutQuestionMark() -> None:
+    subject, _ = brain(
+        call("create_event", title="Встреча с пингвином", starts_at="2026-10-25T15:00:00+03:00"),
+        text("Ок"),
+    )
+    tools = FakeTools({"create_event": [CREATED]})
+    history = asked(
+        "Создай встречу с пингвином через неделю",
+        "На какое время назначить встречу с пингвином через неделю? "
+        "Например, 10:00, 15:00 или 18:00.",
+    )
+    await subject.run(turnInput("15:00", history=history), tools)
+    assert tools.calls[0][1]["starts_at"] == "2026-10-31T15:00:00+03:00"
+
+
+# Примечание: новая просьба вместо ответа на «На какой день?» — старый вопрос закрыт, своя проверка
+async def test_newRequestClosesPending() -> None:
+    subject, llm = brain()
+    pending = {"kind": "ask", "question": "На какой день поставить встречу?"}
+    result = await subject.run(
+        turnInput("Создай встречу с пингвином через неделю", pending=pending), FakeTools()
+    )
+    assert (result.outcome, result.say, llm.calls) == ("clarify", "Во сколько встреча?", [])
