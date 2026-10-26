@@ -1,0 +1,94 @@
+{
+  "$defs": {
+    "ItemBrief": {
+      "properties": {
+        "all_day": {
+          "default": false,
+          "title": "All Day",
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "ItemBrief",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "item": {
+      "$ref": "#/$defs/ItemBrief"
+    },
+    "max_chat_id": {
+      "title": "Max Chat Id",
+      "type": "integer"
+    },
+    "max_user_id": {
+      "title": "Max User Id",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "max_user_id",
+    "max_chat_id",
+    "item"
+  ],
+  "title": "FocusRequest",
+  "type": "object"
+}

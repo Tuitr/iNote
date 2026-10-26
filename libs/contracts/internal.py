@@ -25,6 +25,19 @@ class ResolveUserResponse(BaseModel):
     created: bool
 
 
+class UserSettingsPatch(BaseModel):
+    """Тело PATCH /internal/v1/users/{user_id}/settings: любое подмножество полей UserSettings.
+
+    Непереданные поля и null не меняются. Ответ — UserSettings целиком (КиП, J8).
+    Мини-приложение только читает, поэтому настройки меняются через бота.
+    """
+
+    tz: IanaTimezone | None = None
+    voice_replies: bool | None = None
+    default_event_min: int | None = Field(default=None, ge=5, le=480)
+    remind_before_min: int | None = Field(default=None, ge=0, le=1440)
+
+
 class DialogTurn(BaseModel):
     role: Literal["user", "assistant"]
     text: str

@@ -11,6 +11,8 @@ from services.api.current_user import CurrentUser
 from services.api.docs import UNAUTHORIZED, VALIDATION, json_example
 from services.http_errors import HttpError
 
+MAX_CURSOR = 2**63 - 1
+
 router = APIRouter(prefix="/v1", tags=["dialog (черновик до G3)"], responses=UNAUTHORIZED)
 
 
@@ -36,7 +38,8 @@ def _cursor(before: str | None) -> int | None:
     if before is None:
         return None
     # Курсор для фронта непрозрачный; внутри — id последней показанной реплики.
-    if not before.isdigit():
+    # Больше bigint база не примет: такой курсор фронт получить от нас не мог.
+    if not before.isdigit() or int(before) > MAX_CURSOR:
         raise HttpError(
             ErrorCode.VALIDATION_ERROR, "Неверный курсор", {"invalid": ["query.before"]}
         )

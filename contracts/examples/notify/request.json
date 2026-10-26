@@ -1,0 +1,22 @@
+{
+  "notification_id": "5c1e7a90-3f2b-4d6c-8e1a-9b0c2d3e4f5a",
+  "kind": "reminder",
+  "user": {
+    "max_user_id": 100200300,
+    "max_chat_id": 500600700,
+    "tz": "Europe/Moscow"
+  },
+  "item": {
+    "id": "7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+    "kind": "reminder",
+    "title": "Позвонить Ивану",
+    "notes": null,
+    "starts_at": null,
+    "ends_at": null,
+    "all_day": false,
+    "remind_at": "2026-10-18T10:00:00+03:00",
+    "status": "open"
+  },
+  "fire_at": "2026-10-18T10:00:00+03:00",
+  "attempt": 1
+}

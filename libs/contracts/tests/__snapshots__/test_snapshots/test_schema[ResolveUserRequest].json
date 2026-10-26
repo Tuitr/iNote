@@ -1,0 +1,32 @@
+{
+  "properties": {
+    "max_chat_id": {
+      "title": "Max Chat Id",
+      "type": "integer"
+    },
+    "max_user_id": {
+      "exclusiveMinimum": 0,
+      "title": "Max User Id",
+      "type": "integer"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    }
+  },
+  "required": [
+    "max_user_id",
+    "max_chat_id"
+  ],
+  "title": "ResolveUserRequest",
+  "type": "object"
+}

@@ -32,6 +32,7 @@ from libs.core.errors import InvalidArgumentsError, NotFoundError, PastTimeError
 from libs.core.repositories.items import ItemRepo, NewItem
 from libs.core.repositories.notifications import NotificationRepo
 from libs.core.repositories.users import UserRepo
+from libs.core.services.recurrence import check_rrule, next_occurrence
 from libs.core.services.time import (
     days_range_utc,
     local_midnight_utc,
@@ -85,6 +86,8 @@ class ItemService:
             idempotency_key=caller.idempotency_key,
             search_hints=args.search_hints,
         )
+        if task.rrule is not None:
+            check_rrule(task.rrule, task.starts_at or task.remind_at, caller.tz)
         now = self._clock()
         created = False
         async with self._session_factory() as session, session.begin():
@@ -124,8 +127,8 @@ class ItemService:
     async def update_item(self, args: UpdateItemArgs) -> MutationResult:
         """Переданные поля заменяются, null очищает, непереданные не меняются (J3).
 
-        Повтор того же вызова приводит к тому же состоянию, поэтому ключ идемпотентности
-        здесь хранить не нужно.
+        Повтор того же вызова ничего не меняет, поэтому ключ идемпотентности здесь хранить
+        не нужно.
         """
         caller = args.caller
         changed = args.model_fields_set - {"caller", "id", "allow_conflict"}
@@ -134,7 +137,12 @@ class ItemService:
             user = await require_user(session, caller.user_id)
             items = ItemRepo(session)
             row = await _find_one(items, caller, args.id, deleted=False)
-            values = _updated_values(args, changed, row, user, now)
+            values = {
+                field: value
+                for field, value in _updated_values(args, changed, row, user, now).items()
+                # Двойное нажатие кнопки повторяет те же значения: запись не трогаем.
+                if getattr(row, field) != value
+            }
             starts_at = values.get("starts_at", row.starts_at)
             ends_at = values.get("ends_at", row.ends_at)
             moved = bool({"starts_at", "ends_at"} & values.keys())
@@ -142,11 +150,13 @@ class ItemService:
                 conflict = await _conflict(items, caller, starts_at, ends_at, row.id, now)
                 if conflict is not None:
                     return conflict
-            old_remind_at = row.remind_at
-            row = await items.update(caller.user_id, row.id, values)
-            if row.remind_at != old_remind_at:
-                await _reschedule(session, row, now)
-        await bump_version(self._redis, caller.user_id)
+            if values:
+                old_remind_at = row.remind_at
+                row = await items.update(caller.user_id, row.id, values)
+                if row.remind_at != old_remind_at:
+                    await reschedule(session, row, now)
+        if values:
+            await bump_version(self._redis, caller.user_id)
         return MutationResult(status="updated", item=to_item(row, caller.tz))
 
     async def complete_item(self, args: CompleteItemArgs) -> MutationResult:
@@ -160,8 +170,12 @@ class ItemService:
             row = await _find_one(items, caller, args.id, deleted=False)
             changed = row.status != target
             if changed:
-                row = await items.update(caller.user_id, row.id, {"status": target})
-                await _reschedule(session, row, now)
+                values = {"status": target}
+                if args.done:
+                    # Выполнено вхождение серии: запись переезжает на следующее и остаётся open.
+                    values = next_in_series(row, caller.tz, now) or values
+                row = await items.update(caller.user_id, row.id, values)
+                await reschedule(session, row, now)
         if changed:
             await bump_version(self._redis, caller.user_id)
         return MutationResult(
@@ -184,7 +198,7 @@ class ItemService:
             if changed:
                 deleted_at = None if args.restore else now
                 row = await items.update(caller.user_id, row.id, {"deleted_at": deleted_at})
-                await _reschedule(session, row, now)
+                await reschedule(session, row, now)
         if changed:
             await bump_version(self._redis, caller.user_id)
         # В J3 нет статуса «восстановлено»: восстановление — изменение записи.
@@ -260,7 +274,7 @@ class ItemService:
         """Карточка записи. Удалённая, чужая и несуществующая — одинаково not_found (КиП)."""
         async with self._session_factory() as session:
             rows = await ItemRepo(session).find_by_ref(
-                user_id, str(item_id), deleted=False, limit=1
+                user_id, str(item_id), deleted=False, limit=1, for_update=False
             )
         if not rows:
             raise NotFoundError("Запись не найдена", {"id": str(item_id)})
@@ -326,6 +340,8 @@ def _new_event(args: CreateEventArgs, user: UserRow, now: datetime) -> NewItem:
         all_day = True
         # У встречи на весь день нет автонапоминания, только явное (план S1, решение 10).
         remind_before = args.remind_before_min
+    if args.rrule is not None:
+        check_rrule(args.rrule, starts_at, tz)
     return NewItem(
         kind="event",
         title=args.title,
@@ -399,6 +415,9 @@ def _updated_values(
         raise InvalidArgumentsError("Для напоминания нужно время", {"missing": ["remind_at"]})
     if row.kind == "event" and starts_at is None:
         raise InvalidArgumentsError("У встречи должно быть начало", {"missing": ["starts_at"]})
+    rule = values.get("rrule", row.rrule)
+    if rule is not None and changed & {"rrule", "starts_at", "remind_at", "remind_before_min"}:
+        check_rrule(rule, starts_at or remind_at, tz)
     for field, value in (
         ("starts_at", starts_at),
         ("all_day", all_day),
@@ -423,6 +442,24 @@ def _moved_end(
     if row.ends_at is not None and shift is not None and not row.all_day:
         return row.ends_at + shift
     return starts_at + timedelta(minutes=user.default_event_min)
+
+
+def next_in_series(row: ItemRow, tz: str, now: datetime) -> dict[str, Any] | None:
+    """Даты следующего вхождения серии; None — повтора нет или серия закончилась."""
+    current = row.starts_at or row.remind_at
+    if row.rrule is None or current is None:
+        return None
+    following = next_occurrence(row.rrule, current, tz, now)
+    if following is None:
+        return None
+    # Длительность встречи и «за сколько напомнить» сохраняются.
+    shift_of = following.starts_at - current
+    values: dict[str, Any] = {"rrule": following.rrule}
+    for field in ("starts_at", "ends_at", "remind_at"):
+        value = getattr(row, field)
+        if value is not None:
+            values[field] = value + shift_of
+    return values
 
 
 def _reminder(starts_at: datetime, remind_before_min: int | None, now: datetime) -> datetime | None:
@@ -473,7 +510,7 @@ async def require_user(session: AsyncSession, user_id: int) -> UserRow:
 
 async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | None) -> ItemRow:
     """Запись по полному или короткому id. Чужая и несуществующая — одинаково not_found (КиП)."""
-    rows = await items.find_by_ref(caller.user_id, ref, deleted, MAX_ID_CANDIDATES)
+    rows = await items.find_by_ref(caller.user_id, ref, deleted, MAX_ID_CANDIDATES, for_update=True)
     if not rows:
         raise NotFoundError("Запись не найдена", {"id": ref})
     if len(rows) > 1:
@@ -486,7 +523,7 @@ async def _find_one(items: ItemRepo, caller: Caller, ref: str, deleted: bool | N
     return rows[0]
 
 
-async def _reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None:
+async def reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None:
     """Уведомления по текущему состоянию записи: неотправленные отменяются, новое ставится,
     только если запись открыта, не удалена и время напоминания впереди.
     """

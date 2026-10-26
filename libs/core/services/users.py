@@ -41,17 +41,24 @@ class UserService:
         async with self._session_factory() as session, session.begin():
             repo = UserRepo(session)
             existing = await repo.get_by_max_user_id(max_user_id)
-            if existing is not None:
-                return _resolved(existing, created=False)
-            inserted = await repo.insert_if_absent(max_user_id, max_chat_id, name, self._default_tz)
-            if inserted is not None:
-                return _resolved(inserted, created=True)
-            # Того же пользователя одновременно создал параллельный запрос (бот повторил апдейт).
-            # ON CONFLICT дождался его коммита, поэтому строка уже видна.
-            concurrent = await repo.get_by_max_user_id(max_user_id)
-            if concurrent is None:
-                raise RuntimeError("Пользователь не создан и не найден после конфликта вставки")
-            return _resolved(concurrent, created=False)
+            if existing is None:
+                inserted = await repo.insert_if_absent(
+                    max_user_id, max_chat_id, name, self._default_tz
+                )
+                if inserted is not None:
+                    return _resolved(inserted, created=True)
+                # Того же пользователя одновременно создал параллельный запрос (бот повторил
+                # апдейт). ON CONFLICT дождался его коммита, поэтому строка уже видна.
+                existing = await repo.get_by_max_user_id(max_user_id)
+                if existing is None:
+                    raise RuntimeError("Пользователь не создан и не найден после конфликта вставки")
+            # Scheduler шлёт напоминания в max_chat_id (J4): он должен быть свежим.
+            # Строка из этой же сессии: изменённые поля SQLAlchemy запишет при коммите.
+            if max_chat_id is not None:
+                existing.max_chat_id = max_chat_id
+            if name is not None:
+                existing.name = name
+            return _resolved(existing, created=False)
 
     async def find_profile(self, max_user_id: int) -> UserProfile | None:
         """Профиль по max_user_id из токена мини-приложения; None — такого пользователя нет."""

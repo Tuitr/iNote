@@ -1,9 +1,0 @@
-{
-  "name": "Степан",
-  "settings": {
-    "tz": "Asia/Yekaterinburg",
-    "voice_replies": true,
-    "default_event_min": 60,
-    "remind_before_min": 15
-  }
-}

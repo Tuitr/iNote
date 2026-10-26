@@ -31,15 +31,6 @@ class AuthMaxResponse(BaseModel):
     start_param: str | None
 
 
-class MePatch(BaseModel):
-    """Любое подмножество полей UserSettings; непереданные поля не меняются."""
-
-    tz: IanaTimezone | None = None
-    voice_replies: bool | None = None
-    default_event_min: int | None = Field(default=None, ge=5, le=480)
-    remind_before_min: int | None = Field(default=None, ge=0, le=1440)
-
-
 class ItemsRange(BaseModel):
     model_config = ConfigDict(
         validate_by_name=True, validate_by_alias=True, serialize_by_alias=True

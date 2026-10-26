@@ -10,11 +10,11 @@ from libs.contracts.tools import CreateEventArgs, CreateTaskArgs
 from libs.core.db.models import ItemRow, NotificationRow
 from libs.core.errors import InvalidArgumentsError, PastTimeError
 from libs.core.services.items import ItemService, free_slots
-from libs.core.services.time import local_today, now_utc
+from libs.core.services.time import now_utc, to_user_tz
 from libs.core.tests.fakes import FakeRedis
 
 MOSCOW = ZoneInfo("Europe/Moscow")
-TOMORROW = local_today("Europe/Moscow") + timedelta(days=1)
+TOMORROW = to_user_tz(now_utc(), "Europe/Moscow").date() + timedelta(days=1)
 
 
 def _at(clock: str, day: date = TOMORROW) -> datetime:
@@ -147,10 +147,15 @@ class TestCreateEvent:
     async def test_all_day_event_reminds_only_when_asked(
         self, item_service: ItemService, user_id: int
     ) -> None:
-        result = await item_service.create_event(_event(user_id, TOMORROW, remind_before_min=60))
+        # Послезавтра, а не завтра: «за час до полуночи завтра» после 23:00 уже прошло бы
+        # и напоминания не было бы — тест зависел бы от времени суток.
+        day_after_tomorrow = TOMORROW + timedelta(days=1)
+        result = await item_service.create_event(
+            _event(user_id, day_after_tomorrow, remind_before_min=60)
+        )
 
         assert result.item is not None
-        assert result.item.remind_at == _at("23:00", TOMORROW - timedelta(days=1))
+        assert result.item.remind_at == _at("23:00", TOMORROW)
 
     async def test_all_day_event_with_end_time_is_invalid(
         self, item_service: ItemService, user_id: int
@@ -165,12 +170,14 @@ class TestCreateEvent:
     async def test_all_day_event_today_is_not_in_the_past(
         self, item_service: ItemService, user_id: int
     ) -> None:
-        result = await item_service.create_event(_event(user_id, local_today("Europe/Moscow")))
+        result = await item_service.create_event(
+            _event(user_id, to_user_tz(now_utc(), "Europe/Moscow").date())
+        )
 
         assert result.status == "created"
 
     async def test_past_events_are_rejected(self, item_service: ItemService, user_id: int) -> None:
-        yesterday = local_today("Europe/Moscow") - timedelta(days=1)
+        yesterday = to_user_tz(now_utc(), "Europe/Moscow").date() - timedelta(days=1)
         an_hour_ago = (now_utc() - timedelta(hours=1)).astimezone(MOSCOW).replace(microsecond=0)
 
         with pytest.raises(PastTimeError) as all_day_error:

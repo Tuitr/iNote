@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "ItemBrief": {
+      "properties": {
+        "all_day": {
+          "default": false,
+          "title": "All Day",
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "task",
+            "reminder",
+            "event"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "remind_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remind At"
+        },
+        "starts_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts At"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "done",
+            "cancelled"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "ItemBrief",
+      "type": "object"
+    },
+    "JsonObject": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "Turn": {
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "text",
+        "at"
+      ],
+      "title": "Turn",
+      "type": "object"
+    },
+    "UserSettings": {
+      "properties": {
+        "default_event_min": {
+          "default": 60,
+          "minimum": 1,
+          "title": "Default Event Min",
+          "type": "integer"
+        },
+        "tz": {
+          "title": "Tz",
+          "type": "string"
+        },
+        "voice_replies": {
+          "default": false,
+          "title": "Voice Replies",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tz"
+      ],
+      "title": "UserSettings",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "asr_low_confidence": {
+      "default": false,
+      "title": "Asr Low Confidence",
+      "type": "boolean"
+    },
+    "focus": {
+      "items": {
+        "$ref": "#/$defs/ItemBrief"
+      },
+      "title": "Focus",
+      "type": "array"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Turn"
+      },
+      "maxItems": 10,
+      "title": "History",
+      "type": "array"
+    },
+    "input_type": {
+      "enum": [
+        "voice",
+        "text"
+      ],
+      "title": "Input Type",
+      "type": "string"
+    },
+    "now": {
+      "format": "date-time",
+      "title": "Now",
+      "type": "string"
+    },
+    "pending": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JsonObject"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "settings": {
+      "$ref": "#/$defs/UserSettings"
+    },
+    "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "tz": {
+      "title": "Tz",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "input_type",
+    "now",
+    "tz",
+    "settings"
+  ],
+  "title": "TurnInput",
+  "type": "object"
+}

@@ -8,7 +8,9 @@ from libs.contracts.internal import (
     DialogTurnsRequest,
     ResolveUserRequest,
     ResolveUserResponse,
+    UserSettingsPatch,
 )
+from libs.contracts.settings import UserSettings
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[3] / "contracts" / "examples" / "j8"
 
@@ -16,6 +18,8 @@ MODEL_BY_EXAMPLE: dict[str, type[BaseModel]] = {
     "users_resolve.request": ResolveUserRequest,
     "users_resolve.response": ResolveUserResponse,
     "dialog_turns.request": DialogTurnsRequest,
+    "users_settings.request": UserSettingsPatch,
+    "users_settings.response": UserSettings,
 }
 
 

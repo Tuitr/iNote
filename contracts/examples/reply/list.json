@@ -1,0 +1,56 @@
+{
+  "text": "Сегодня, ср 21 октября:\n10:00–11:00 Созвон с командой\n18:00 Купить продукты",
+  "format": "markdown",
+  "state": "answer",
+  "buttons": [
+    [
+      {
+        "kind": "action",
+        "text": "Завтра",
+        "action": "list_period",
+        "args": {
+          "period": "tomorrow"
+        }
+      },
+      {
+        "kind": "action",
+        "text": "Неделя",
+        "action": "list_period",
+        "args": {
+          "period": "week"
+        }
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "text": "Открыть день",
+        "start_param": "day_2026-10-21"
+      }
+    ]
+  ],
+  "items": [
+    {
+      "id": "1b0c2d4e-6f70-4a8b-9c1d-2e3f4a5b6c7d",
+      "kind": "event",
+      "title": "Созвон с командой",
+      "starts_at": "2026-10-21T10:00:00+03:00",
+      "ends_at": "2026-10-21T11:00:00+03:00",
+      "all_day": false,
+      "status": "open",
+      "remind_at": null
+    },
+    {
+      "id": "9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4",
+      "kind": "task",
+      "title": "Купить продукты",
+      "starts_at": "2026-10-21T18:00:00+03:00",
+      "ends_at": null,
+      "all_day": false,
+      "status": "open",
+      "remind_at": null
+    }
+  ],
+  "speak": false,
+  "trace_id": "0123456789abcdef0123456789abcdef"
+}

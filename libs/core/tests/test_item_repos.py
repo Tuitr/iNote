@@ -192,3 +192,22 @@ async def test_notification_is_saved_with_the_item_transaction(
     assert notification.item_id == item.id
     assert notification.fire_at == REMINDER.remind_at
     assert (notification.status, notification.attempt) == ("pending", 0)
+
+
+async def test_item_found_for_change_is_locked_until_commit(
+    session_factory: async_sessionmaker[AsyncSession], users: tuple[int, int]
+) -> None:
+    # Пока агент меняет запись, Scheduler (SKIP LOCKED) и второй вызов её не трогают.
+    alice, _ = users
+    row = await _insert(session_factory, alice, REMINDER)
+    assert row is not None
+
+    async with session_factory() as changing, changing.begin():
+        await ItemRepo(changing).find_by_ref(
+            alice, str(row.id), deleted=False, limit=1, for_update=True
+        )
+        async with session_factory() as other, other.begin():
+            locked_elsewhere = await other.scalars(
+                select(ItemRow).where(ItemRow.id == row.id).with_for_update(skip_locked=True)
+            )
+            assert list(locked_elsewhere) == []

@@ -9,7 +9,7 @@ from mcp_types import CallToolResult
 
 from libs.contracts.tools import TOOLS
 from services.mcp.export_tools import TOOLS_PATH, render_tools
-from services.mcp.server import TOOL_HANDLERS, build_server
+from services.mcp.server import TOOL_HANDLERS, build_server, list_tool_specs
 from services.mcp.tools.context import ToolServices
 
 CALLER = {"user_id": 17, "tz": "Europe/Moscow", "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"}
@@ -82,3 +82,16 @@ def test_committed_tool_schemas_are_up_to_date() -> None:
     # Поменяли аргументы или ответ инструмента и не обновили снапшот — тест красный (КиП).
     # Обновить, если изменение согласовано с C и B: python -m services.mcp.export_tools
     assert TOOLS_PATH.read_text(encoding="utf-8") == render_tools()
+
+
+def test_every_tool_and_argument_is_described_for_the_model() -> None:
+    # Модель выбирает инструмент и заполняет поля по описаниям (B); caller она не видит.
+    for tool in list_tool_specs():
+        assert tool.description, tool.name
+        properties = tool.input_schema["properties"]
+        undescribed = [
+            name
+            for name, schema in properties.items()
+            if name != "caller" and not schema.get("description")
+        ]
+        assert undescribed == [], tool.name

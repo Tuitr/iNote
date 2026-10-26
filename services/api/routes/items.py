@@ -23,6 +23,8 @@ from services.http_errors import HttpError
 
 # Защита от запроса «за десять лет»: экран показывает дни и недели, столько записей не нужно.
 MAX_API_ITEMS = 500
+# group=day строит каждый день периода: без предела «0001–9999» съел бы память сервиса.
+MAX_PERIOD_DAYS = 62
 
 router = APIRouter(prefix="/v1", tags=["items"], responses=UNAUTHORIZED)
 
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/v1", tags=["items"], responses=UNAUTHORIZED)
     "/items",
     response_model=ItemsByDayResponse | ItemsResponse,
     description=(
+        "Период не длиннее 62 дней. "
         "ETag равен версии данных пользователя: с If-None-Match той же версии ответ 304 без тела. "
         "Ответы кешируются на 5 минут под версией данных."
     ),
@@ -63,6 +66,12 @@ async def list_items(
         raise HttpError(
             ErrorCode.VALIDATION_ERROR,
             "Конец периода должен быть позже начала",
+            {"invalid": ["query.to"]},
+        )
+    if (to - from_).days > MAX_PERIOD_DAYS:
+        raise HttpError(
+            ErrorCode.VALIDATION_ERROR,
+            f"Период не длиннее {MAX_PERIOD_DAYS} дней",
             {"invalid": ["query.to"]},
         )
     redis = request.app.state.redis_client

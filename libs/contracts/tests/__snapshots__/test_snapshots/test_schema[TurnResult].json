@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "BrainErrorCode": {
+      "enum": [
+        "llm_timeout",
+        "llm_rate_limited",
+        "llm_bad_output",
+        "llm_no_action"
+      ],
+      "type": "string"
+    },
+    "Clarify": {
+      "properties": {
+        "missing": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Missing",
+          "type": "array"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Options",
+          "type": "array"
+        },
+        "pending": {
+          "$ref": "#/$defs/JsonObject"
+        }
+      },
+      "required": [
+        "missing",
+        "pending"
+      ],
+      "title": "Clarify",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "$ref": "#/$defs/JsonObject"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "ExecutedAction": {
+      "properties": {
+        "args": {
+          "$ref": "#/$defs/JsonObject"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/ToolResult"
+        }
+      },
+      "required": [
+        "name",
+        "args",
+        "result"
+      ],
+      "title": "ExecutedAction",
+      "type": "object"
+    },
+    "JsonObject": {
+      "additionalProperties": true,
+      "type": "object"
+    },
+    "ToolErrorCode": {
+      "enum": [
+        "validation_error",
+        "not_found",
+        "past_time",
+        "conflict",
+        "rate_limited",
+        "internal",
+        "upstream_unavailable",
+        "upstream_timeout"
+      ],
+      "type": "string"
+    },
+    "ToolResult": {
+      "properties": {
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonObject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "summary"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    },
+    "TurnOutcome": {
+      "enum": [
+        "done",
+        "clarify",
+        "answer",
+        "error"
+      ],
+      "type": "string"
+    },
+    "Usage": {
+      "properties": {
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "llm_calls": {
+          "minimum": 0,
+          "title": "Llm Calls",
+          "type": "integer"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "tokens_in": {
+          "minimum": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "minimum": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "model",
+        "llm_calls",
+        "tokens_in",
+        "tokens_out",
+        "latency_ms"
+      ],
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/ExecutedAction"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "clarify": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Clarify"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "error_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BrainErrorCode"
+        },
+        {
+          "$ref": "#/$defs/ToolErrorCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Code"
+    },
+    "focus": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": "Focus",
+      "type": "array"
+    },
+    "outcome": {
+      "$ref": "#/$defs/TurnOutcome"
+    },
+    "say": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Say"
+    },
+    "usage": {
+      "$ref": "#/$defs/Usage"
+    }
+  },
+  "required": [
+    "outcome",
+    "usage"
+  ],
+  "title": "TurnResult",
+  "type": "object"
+}

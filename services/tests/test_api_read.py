@@ -15,6 +15,7 @@ from libs.core.services.dialog import DialogService
 from libs.core.services.items import ItemService
 from libs.core.services.users import UserService
 from libs.core.tests.fakes import FakeRedis
+from services.api.app import create_app
 from services.api.auth import issue_token
 from services.tests.init_data import JWT_SECRET
 
@@ -87,25 +88,11 @@ async def test_requests_without_valid_token_are_unauthorized(
         assert response.json()["error"]["code"] == "unauthorized"
 
 
-async def test_me_and_patch_me(api_client: TestClient, user_id: int) -> None:
+async def test_me(api_client: TestClient, user_id: int) -> None:
     me = api_client.get("/v1/me", headers=_auth())
-    patched = api_client.patch(
-        "/v1/me", json={"tz": "Asia/Yekaterinburg", "voice_replies": True}, headers=_auth()
-    )
-    bad = api_client.patch("/v1/me", json={"tz": "Mars/Olympus"}, headers=_auth())
 
     assert me.status_code == 200
     assert me.json()["settings"]["tz"] == "Europe/Moscow"
-    assert patched.status_code == 200
-    assert patched.json()["settings"] == {
-        "tz": "Asia/Yekaterinburg",
-        "voice_replies": True,
-        "default_event_min": 60,
-        "remind_before_min": 15,
-    }
-    assert api_client.get("/v1/me", headers=_auth()).json() == patched.json()
-    assert bad.status_code == 400
-    assert bad.json()["error"]["details"] == {"invalid": ["body.tz"]}
 
 
 async def test_group_by_day_reproduces_j5_example(
@@ -206,6 +193,7 @@ async def test_dialog_pages_from_newest(
         f"/v1/dialog?limit=1&before={first['next_cursor']}", headers=_auth()
     ).json()
     bad = api_client.get("/v1/dialog?before=abc", headers=_auth())
+    too_big = api_client.get(f"/v1/dialog?before={2**63}", headers=_auth())
 
     assert [turn["role"] for turn in first["turns"]] == ["assistant"]
     assert [brief["id"] for brief in first["turns"][0]["items"]] == [reminder_id]
@@ -213,4 +201,59 @@ async def test_dialog_pages_from_newest(
     assert first["next_cursor"] is not None
     assert [turn["text"] for turn in second["turns"]] == ["Напомни позвонить Ивану"]
     assert second["next_cursor"] is None
-    assert bad.status_code == 400
+    assert (bad.status_code, too_big.status_code) == (400, 400)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PATCH", "/v1/me"),
+        ("PATCH", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+        ("DELETE", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+        ("POST", "/v1/items"),
+        ("PUT", "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90"),
+    ],
+)
+async def test_writes_from_mini_app_are_not_allowed(
+    api_client: TestClient, user_id: int, method: str, path: str
+) -> None:
+    response = api_client.request(method, path, headers=_auth(), json={})
+
+    assert response.status_code == 405
+
+
+async def test_period_longer_than_62_days_is_rejected(api_client: TestClient, user_id: int) -> None:
+    # Запрос «с 0001 по 9999 год» иначе построил бы миллионы дней в памяти.
+    ok = api_client.get("/v1/items?from=2026-10-01&to=2026-12-02&group=day", headers=_auth())
+    too_long = api_client.get("/v1/items?from=2026-10-01&to=2026-12-03", headers=_auth())
+    absurd = api_client.get("/v1/items?from=0001-01-01&to=9999-12-31&group=day", headers=_auth())
+
+    assert ok.status_code == 200
+    assert len(ok.json()["days"]) == 62
+    assert (too_long.status_code, absurd.status_code) == (400, 400)
+    assert too_long.json()["error"]["details"] == {"invalid": ["query.to"]}
+
+
+async def test_unexpected_failure_is_internal_error_envelope(
+    api_env: pytest.MonkeyPatch, user_id: int
+) -> None:
+    async def broken(*args: Any) -> None:
+        raise RuntimeError("SELECT * FROM секреты")
+
+    trace_id = "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        api_env.setattr(client.app.state.item_service, "get_item", broken)
+        response = client.get(
+            "/v1/items/7f3a9c2e-5b1d-4c8e-9a21-0d4e5f6a8b90",
+            headers={**_auth(), "X-Trace-Id": trace_id},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "internal",
+            "message": "Внутренняя ошибка",
+            "details": {},
+            "trace_id": trace_id,
+        }
+    }

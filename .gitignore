@@ -1,9 +1,40 @@
+# --- общее (зоны C и D) ---
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
+*.py[cod]
 *.egg-info/
 build/
+dist/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
+.import_linter_cache/
+.DS_Store
 .idea/
-.env.local
+.vscode/
+
+# --- зона C: локальные заметки и служебное, не в git ---
+.transfer/
+CLAUDE.md
+# Локальные копии планов команды у C (общие копии — в docs/plan/, их ведёт D).
+# Остальное в docs/ — в git: стандарты, реестр ключей, решения, журнал и документы зон.
+/docs/[A-E] · *.md
+/docs/Команда и протоколы.md
+# --- конец зоны C ---
+
+# сертификаты стенда скачиваются на сервере (deploy/certs/README.md)
+deploy/certs/*
+!deploy/certs/README.md
+# бэкапы PostgreSQL стенда (сервис backup в docker-compose.stand.yml)
+deploy/backups/
+# --- зона B ---
+# отчёты и трассы eval (python -m brain.eval)
+.eval/
+# --- конец зоны B ---

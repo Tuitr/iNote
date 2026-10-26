@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "summary": "Ошибка past_time: время уже прошло",
+  "data": null,
+  "error": {
+    "code": "past_time",
+    "message": "Время уже прошло",
+    "details": {
+      "starts_at": "2026-10-17T09:00:00+03:00"
+    }
+  }
+}

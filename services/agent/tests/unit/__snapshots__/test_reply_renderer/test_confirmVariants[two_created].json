@@ -1,0 +1,30 @@
+{
+  "buttons": [],
+  "format": "markdown",
+  "items": [
+    {
+      "all_day": false,
+      "ends_at": null,
+      "id": "8c28d0ad-059f-525a-b049-f97cfd7ce54c",
+      "kind": "reminder",
+      "remind_at": null,
+      "starts_at": "2026-10-22T10:00:00+03:00",
+      "status": "open",
+      "title": "Позвонить Ивану"
+    },
+    {
+      "all_day": true,
+      "ends_at": null,
+      "id": "3d624e4c-3100-5efb-8c97-6435ee0d07e3",
+      "kind": "task",
+      "remind_at": null,
+      "starts_at": null,
+      "status": "open",
+      "title": "Купить хлеб"
+    }
+  ],
+  "speak": false,
+  "state": "done",
+  "text": "Напоминание создано\nПозвонить Ивану\nЗавтра, чт 22 октября, 10:00\n\nЗадача создана\nКупить хлеб\nбез срока",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

@@ -1,0 +1,54 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "pick_option",
+        "args": {
+          "choice": 0
+        },
+        "kind": "action",
+        "text": "09:00"
+      },
+      {
+        "action": "pick_option",
+        "args": {
+          "choice": 1
+        },
+        "kind": "action",
+        "text": "13:00"
+      },
+      {
+        "action": "pick_option",
+        "args": {
+          "choice": 2
+        },
+        "kind": "action",
+        "text": "19:00"
+      }
+    ],
+    [
+      {
+        "action": "pick_option",
+        "args": {
+          "choice": 3
+        },
+        "kind": "action",
+        "text": "завтра"
+      }
+    ],
+    [
+      {
+        "action": "cancel",
+        "args": {},
+        "kind": "action",
+        "text": "Отмена"
+      }
+    ]
+  ],
+  "format": "plain",
+  "items": [],
+  "speak": false,
+  "state": "clarify",
+  "text": "На какое время?",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

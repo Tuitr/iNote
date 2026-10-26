@@ -1,0 +1,77 @@
+{
+  "properties": {
+    "asr_duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asr Duration Ms"
+    },
+    "asr_low_confidence": {
+      "default": false,
+      "title": "Asr Low Confidence",
+      "type": "boolean"
+    },
+    "locale": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Locale"
+    },
+    "max_chat_id": {
+      "title": "Max Chat Id",
+      "type": "integer"
+    },
+    "max_user_id": {
+      "title": "Max User Id",
+      "type": "integer"
+    },
+    "name": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Name"
+    },
+    "source": {
+      "default": "text",
+      "enum": [
+        "text",
+        "voice"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "max_user_id",
+    "max_chat_id",
+    "text"
+  ],
+  "title": "MessageRequest",
+  "type": "object"
+}

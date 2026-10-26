@@ -1,11 +1,13 @@
-"""Поиск без эмбеддера: подсказки от LLM (search_hints) вместо вектора.
+"""Подсказки для поиска по смыслу (search_hints) от LLM агента.
 
-Команда решила отказаться от эмбеддера (2026-10-21): смысл в поиск добавляет LLM агента — при
-создании записи она пишет search_hints (синонимы и близкие слова), и они ищутся обычным
-полнотекстом и триграммами. Колонка embedding, индекс HNSW и расширение vector больше не нужны.
+При создании записи LLM пишет синонимы и близкие слова, они ищутся обычным полнотекстом
+и триграммами — эмбеддер не нужен (решение команды 2026-10-22).
+
+Номер 0004 оставлен, хотя идёт сразу после 0002: миграцию 0003 с колонкой embedding убрали
+вместе с эмбеддером, а базы, накатанные до 0004, уже совпадают с этой схемой.
 
 Revision ID: 0004
-Revises: 0003
+Revises: 0002
 Create Date: 2026-10-22
 """
 
@@ -14,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0004"
-down_revision = "0003"
+down_revision = "0002"
 branch_labels = None
 depends_on = None
 
@@ -25,9 +27,6 @@ _TSV = f"to_tsvector('russian', {_TEXT} || ' ' || coalesce(source_text, ''))"
 
 
 def upgrade() -> None:
-    op.drop_index("ix_items_embedding_hnsw", table_name="items")
-    op.drop_column("items", "embedding")
-    op.execute("DROP EXTENSION IF EXISTS vector")
     op.add_column("items", sa.Column("search_hints", sa.Text, nullable=True))
     _replace_search_columns(_TSV, _TEXT)
 
@@ -35,11 +34,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     _replace_search_columns(_TSV_0002, _TEXT_0002)
     op.drop_column("items", "search_hints")
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.execute("ALTER TABLE items ADD COLUMN embedding vector(768)")
-    op.execute(
-        "CREATE INDEX ix_items_embedding_hnsw ON items USING hnsw (embedding vector_cosine_ops)"
-    )
 
 
 def _replace_search_columns(tsv: str, text: str) -> None:

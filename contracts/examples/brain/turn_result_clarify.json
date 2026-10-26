@@ -1,0 +1,31 @@
+{
+  "outcome": "clarify",
+  "actions": [],
+  "say": "На какое время поставить встречу с Иваном?",
+  "clarify": {
+    "missing": [
+      "starts_at"
+    ],
+    "options": [
+      "10:00",
+      "15:00",
+      "19:00"
+    ],
+    "pending": {
+      "tool": "create_event",
+      "args": {
+        "title": "Встреча с Иваном",
+        "date": "2026-10-18"
+      }
+    }
+  },
+  "focus": [],
+  "error_code": null,
+  "usage": {
+    "model": "fake-llm",
+    "llm_calls": 1,
+    "tokens_in": 812,
+    "tokens_out": 40,
+    "latency_ms": 930
+  }
+}

@@ -1,16 +1,19 @@
-"""Запросы к таблице items: каждый метод принимает user_id первым и видит только его записи."""
+"""Запросы к таблице items: каждый метод принимает user_id первым и видит только его записи.
+
+Исключение — lock_passed_series: Scheduler обходит серии всех пользователей.
+"""
 
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Text, and_, cast, func, literal, select, update
+from sqlalchemy import ColumnElement, Text, and_, case, cast, exists, func, literal, select, update
 from sqlalchemy.dialects.postgresql import TSQUERY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from libs.core.db.models import ItemRow
+from libs.core.db.models import ItemRow, NotificationRow
 
 
 @dataclass(frozen=True)
@@ -66,11 +69,13 @@ class ItemRepo:
         )
 
     async def find_by_ref(
-        self, user_id: int, ref: str, deleted: bool | None, limit: int
+        self, user_id: int, ref: str, deleted: bool | None, limit: int, for_update: bool
     ) -> list[ItemRow]:
         """Записи по полному id или по его первым 8 символам (J3), не больше limit.
 
         deleted: False — только неудалённые, True — только удалённые, None — любые.
+        for_update — запись будут менять: блокируем до конца транзакции, чтобы параллельное
+        изменение (второй вызов агента, сдвиг серии Scheduler) не перетёрло это.
         """
         if len(ref) == len(str(UUID(int=0))):
             matches_ref = ItemRow.id == UUID(ref)
@@ -81,7 +86,10 @@ class ItemRepo:
             statement = statement.where(
                 ItemRow.deleted_at.is_not(None) if deleted else ItemRow.deleted_at.is_(None)
             )
-        return list(await self._session.scalars(statement.order_by(ItemRow.id).limit(limit)))
+        statement = statement.order_by(ItemRow.id).limit(limit)
+        if for_update:
+            statement = statement.with_for_update()
+        return list(await self._session.scalars(statement))
 
     async def update(self, user_id: int, item_id: UUID, values: dict[str, Any]) -> ItemRow:
         """Меняет поля записи пользователя и updated_at; возвращает запись после изменения."""
@@ -194,6 +202,41 @@ class ItemRepo:
             .limit(limit)
         )
         return [(row, float(score)) for row, score in await self._session.execute(statement)]
+
+    async def lock_passed_series(self, limit: int) -> list[ItemRow]:
+        """Открытые серии, чьё текущее вхождение уже прошло, — для Scheduler, по всем пользователям.
+
+        Вхождение прошло, когда закончилось: конец встречи, конец дня для «весь день», иначе
+        начало или время напоминания. Серию с ещё не отправленным созревшим напоминанием не
+        трогаем: сдвиг отменил бы его. SKIP LOCKED — запись сейчас меняет пользователь
+        или другая реплика.
+        """
+        occurrence_end = func.coalesce(
+            case((ItemRow.all_day, ItemRow.starts_at + timedelta(days=1))),
+            ItemRow.ends_at,
+            ItemRow.starts_at,
+            ItemRow.remind_at,
+        )
+        unsent_due = exists().where(
+            NotificationRow.item_id == ItemRow.id,
+            NotificationRow.status.in_(("pending", "sending")),
+            NotificationRow.fire_at <= func.now(),
+            NotificationRow.fire_at == ItemRow.remind_at,
+        )
+        statement = (
+            select(ItemRow)
+            .where(
+                ItemRow.rrule.is_not(None),
+                ItemRow.status == "open",
+                ItemRow.deleted_at.is_(None),
+                occurrence_end <= func.now(),
+                ~unsent_due,
+            )
+            .order_by(occurrence_end)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return list(await self._session.scalars(statement))
 
 
 def _search_scope(user_id: int, search: SearchFilter) -> ColumnElement[bool]:

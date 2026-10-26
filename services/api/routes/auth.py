@@ -28,7 +28,8 @@ async def auth_max(body: AuthMaxRequest, request: Request) -> AuthMaxResponse:
         )
     except AuthError as error:
         raise HttpError(ErrorCode.UNAUTHORIZED, str(error)) from error
-    resolved = await user_service.resolve(login.max_user_id, None, login.name)
+    # Без имени в initData сохранённое имя не стираем: resolve меняет только пришедшие поля.
+    resolved = await user_service.resolve(login.max_user_id, None, login.name or None)
     token, expires_at = issue_token(login.max_user_id, settings.jwt_secret, now)
     return AuthMaxResponse(
         token=token,

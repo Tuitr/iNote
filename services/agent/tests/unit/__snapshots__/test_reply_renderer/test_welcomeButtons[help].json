@@ -1,0 +1,48 @@
+{
+  "buttons": [
+    [
+      {
+        "action": "list_period",
+        "args": {
+          "period": "today"
+        },
+        "kind": "action",
+        "text": "Сегодня"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "tomorrow"
+        },
+        "kind": "action",
+        "text": "Завтра"
+      },
+      {
+        "action": "list_period",
+        "args": {
+          "period": "week"
+        },
+        "kind": "action",
+        "text": "Неделя"
+      }
+    ],
+    [
+      {
+        "kind": "open_app",
+        "start_param": "today",
+        "text": "Мой день"
+      },
+      {
+        "kind": "open_app",
+        "start_param": "dialog",
+        "text": "История"
+      }
+    ]
+  ],
+  "format": "plain",
+  "items": [],
+  "speak": false,
+  "state": "answer",
+  "text": "Пиши обычным текстом или голосом:\n• «напомни завтра в 10 позвонить Ивану»\n• «создай задачу купить хлеб»\n• «встреча с Петром завтра в 15»\n• «что у меня завтра», «найди договор»\nКоманды: /today — сегодня, /tomorrow — завтра, /week — неделя, /settings — часовой пояс.",
+  "trace_id": "ab12f0c4d5e6f708192a3b4c5d6e7f80"
+}

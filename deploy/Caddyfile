@@ -1,0 +1,37 @@
+# Стенд с HTTPS (зона C): Caddy получает сертификат Let's Encrypt для STAND_DOMAIN и держит 443.
+# Наружу — ровно три вещи: webhook MAX → бот, API мини-приложения → api (D), статика → max_app (E).
+# /internal/*, /dev/*, /health/*, /v1/* (агент), /mcp — никогда (проверяет tests/deploy).
+# Порядок важен: route выполняет директивы сверху вниз, закрытые пути отсекаются первыми.
+{
+	email {$ACME_EMAIL}
+}
+
+{$STAND_DOMAIN} {
+	encode zstd gzip
+
+	route {
+		@private path /internal /internal/* /dev /dev/* /health /health/* /metrics /metrics/* /v1 /v1/* /mcp /mcp/*
+		respond @private 404
+
+		# MAX шлёт апдейты POST-ом на https://<домен>/webhook/max (только 443, без порта в URL)
+		@webhook {
+			method POST
+			path /webhook/max
+		}
+		# апдейт MAX — небольшой JSON; бот тоже режет тело больше 1 МБ
+		request_body @webhook {
+			max_size 1MB
+		}
+		reverse_proxy @webhook bot:8000
+
+		# J5: мини-приложение ходит в /api/v1/*, api (D) обслуживает /v1/*
+		@api path /api/v1/*
+		uri @api strip_prefix /api
+		reverse_proxy @api api:8000
+
+		# остальное — статика мини-приложения (E); всё прочее под /api — 404
+		@apiOther path /api /api/*
+		respond @apiOther 404
+		reverse_proxy max_app:8000
+	}
+}

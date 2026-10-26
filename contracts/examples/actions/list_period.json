@@ -1,0 +1,10 @@
+{
+  "max_user_id": 100200300,
+  "max_chat_id": 500600700,
+  "action": "list_period",
+  "args": {
+    "period": "tomorrow"
+  },
+  "callback_id": "cb.synthetic.list_period",
+  "label": "Завтра"
+}

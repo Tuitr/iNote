@@ -36,11 +36,6 @@ def local_time_utc(day: date, clock: time, tz: str) -> datetime:
     return datetime.combine(day, clock, tzinfo=ZoneInfo(tz)).astimezone(UTC)
 
 
-def local_today(tz: str) -> date:
-    """Сегодняшняя дата по часам пояса tz."""
-    return to_user_tz(now_utc(), tz).date()
-
-
 def days_range_utc(start: date, end: date, tz: str) -> tuple[datetime, datetime]:
     """Полуинтервал [start, end) из дат пользователя в моменты UTC: end не включается."""
     return local_midnight_utc(start, tz), local_midnight_utc(end, tz)
