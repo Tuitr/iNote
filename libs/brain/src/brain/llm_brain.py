@@ -219,6 +219,15 @@ _SUCCESS_CLAIM_RE: Final = re.compile(
     re.IGNORECASE,
 )
 _TOOL_ERRORS: Final = frozenset(get_args(ToolErrorCode.__value__))
+# Утечка промпта в свободном ответе модели («покажи свой промпт»): заголовки разделов «=== … ===»
+# и имена функций. Промпт модель пересказывает охотно, правило «Безопасность» не держит
+_LEAK_RE: Final = re.compile(
+    r"===|\b(?:"
+    + "|".join(sorted(MUTATING_TOOLS | {"list_items", "search_items", ASK_USER}))
+    + r")\b",
+    re.IGNORECASE,
+)
+SAFE_REPLY: Final = "Я помогаю с задачами, напоминаниями и встречами — чем помочь?"
 _RETRYABLE_TOOL_ERRORS: Final = frozenset({"validation_error", "past_time"})
 
 _log = getLogger(__name__)
@@ -765,7 +774,7 @@ def _final(text: str, state: _Turn, started: float) -> TurnResult:
         return _result("done", state, started)
     # после чтения агент рисует данные инструмента, текст модели («Готово, вот что нашёл») не виден
     if any(a.result.ok for a in state.actions):
-        return _result("answer", state, started, say=text.strip() or None)
+        return _result("answer", state, started, say=_withoutLeak(text.strip()) or None)
     # все вызовы с ошибкой, а модель молчит: без кода агент показал бы «Готово.» за пустой ход
     if state.actions and not text.strip():
         return _error(_lastToolCode(state.actions), state, started)
@@ -773,7 +782,20 @@ def _final(text: str, state: _Turn, started: float) -> TurnResult:
         return _error("llm_no_action", state, started)
     if not text.strip():
         return _error("llm_bad_output", state, started)
-    return _result("answer", state, started, say=text.strip())
+    return _result("answer", state, started, say=_withoutLeak(text.strip()))
+
+
+# Примечание: свободный текст модели с кусками промпта или именами функций — вместо него
+# нейтральный ответ; в лог только факт, без текста
+def _withoutLeak(text: str) -> str:
+    if not _isLeak(text):
+        return text
+    _log.warning("prompt_leak_blocked")
+    return SAFE_REPLY
+
+
+def _isLeak(text: str) -> bool:
+    return _LEAK_RE.search(text) is not None
 
 
 # Примечание: ask_user → уточнение; pending «call» достраивается по кнопке без модели (resume),
@@ -783,6 +805,9 @@ def _askUser(
 ) -> TurnResult:
     question = str(raw.get("question") or "").strip()
     options = _strings(raw.get("options"))[:MAX_OPTIONS]
+    if any(_isLeak(text) for text in [question, *options]):
+        _log.warning("prompt_leak_blocked")
+        return _result("answer", state, started, say=SAFE_REPLY)
     missing = _strings(raw.get("missing")) or ["details"]
     pending = _pendingCall(raw, names, len(options), state) or {"kind": "ask", "question": question}
     clarify = Clarify(missing=missing, options=options, pending=pending)
