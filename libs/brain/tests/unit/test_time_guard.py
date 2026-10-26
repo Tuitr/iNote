@@ -311,3 +311,17 @@ def test_monthWithoutDayAsks() -> None:
     ask = asked(guardTime(call, turn("в мае конечно ты че", now=LATE)))
     assert ask.question == "Какого числа в мае?"
     assert ask.pending["request"] == "в мае конечно ты че"
+
+
+# 8. Ответ «4» на «Какого числа в мае?» — 4 мая, а не «без срока»
+def test_monthDayAnswer() -> None:
+    ask = asked(
+        guardTime(
+            FunctionCall("create_task", {"title": "поездка", "kind": "task"}),
+            turn("в мае конечно", now=LATE),
+        )
+    )
+    for answer in ["4", "4-го", "четыре", "4 числа"]:
+        call = FunctionCall("create_task", {"title": "поездка", "kind": "task"})
+        args = called(guardTime(call, turn(answer, ask.pending, now=LATE)))
+        assert args["starts_at"] == "2027-05-04", answer

@@ -18,7 +18,7 @@ from typing import Final
 from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject
-from brain.spoken_time import SaidTime, Spoken, monthLabel, parseSpoken
+from brain.spoken_time import SaidTime, Spoken, monthLabel, nearestDate, normalize, parseSpoken
 from contracts.agent_side import ItemBrief, ToolResult, TurnInput
 
 TIME_TOOLS: Final = frozenset({"create_task", "create_event", "update_item"})
@@ -47,6 +47,11 @@ _CORRECTION_RE: Final = re.compile(
     r"^\s*(?:нет|не|а|давай|лучше|исправь|поменяй|перенеси|передвинь)\b", re.IGNORECASE
 )
 ASK_MONTH_DAY: Final = "Какого числа в {month}?"
+# своё поле pending вопроса «Какого числа в мае?»: месяц, к которому относится ответ числом
+SAID_MONTH_KEY: Final = "said_month"
+_DAY_NUMBER_RE: Final = re.compile(
+    r"(?:на\s+)?(\d{1,2})(?:\s*-?(?:го|е|ое|числа))?(?:\s+числа)?\.?"
+)
 # своё поле pending: исходная просьба, к которой относится ответ на вопрос
 REQUEST_KEY: Final = "request"
 SHORT_ID_LENGTH: Final = 8
@@ -73,7 +78,8 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
         return call
     pending = turn.pending or {}
     context = _dialogContext(turn)
-    day = spoken.day or _askedSpoken(pending, turn).day or _savedDay(pending) or context.day
+    day = spoken.day or _monthDayAnswer(pending, turn) or _askedSpoken(pending, turn).day
+    day = day or _savedDay(pending) or context.day
     said = spoken.time or _partAnswer(turn.text, _savedTime(pending) or context.time)
     said = said or _savedTime(pending) or context.time
     ask = _question(call, field, spoken, turn, day=day, said=said)
@@ -114,7 +120,8 @@ def _question(
         return Ask(problem.question, list(problem.options), [field], asked)
     if spoken.month is not None and day is None and call.name != "update_item":
         question = ASK_MONTH_DAY.format(month=monthLabel(spoken.month))
-        return Ask(question, [], [field], {"kind": "ask", "question": question})
+        monthAsk: JsonObject = {"kind": "ask", "question": question, SAID_MONTH_KEY: spoken.month}
+        return Ask(question, [], [field], monthAsk)
     isDated = day is not None or pending.get("kind") == "call" or call.name == "update_item"
     if call.name == "create_event" and not isDated:
         return _askDay(said)
@@ -241,6 +248,16 @@ def _askedSpoken(pending: Mapping[str, object], turn: TurnInput) -> Spoken:
 def savedDay(turn: TurnInput) -> JsonObject:
     spoken = parseSpoken(turn.text, turn.now, turn.tz)
     return {SAID_DAY_KEY: spoken.day.isoformat()} if spoken.day is not None else {}
+
+
+# Примечание: ответ числом («4», «4-го», «четыре») на «Какого числа в мае?» — дата в том месяце
+def _monthDayAnswer(pending: Mapping[str, object], turn: TurnInput) -> date | None:
+    month = pending.get(SAID_MONTH_KEY)
+    match = _DAY_NUMBER_RE.fullmatch(normalize(turn.text))
+    if not isinstance(month, int) or match is None:
+        return None
+    today = turn.now.astimezone(ZoneInfo(turn.tz)).date()
+    return nearestDate(int(match[1]), month, today)
 
 
 def _savedDay(pending: Mapping[str, object]) -> date | None:

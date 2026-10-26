@@ -305,6 +305,11 @@ def _relativeDays(text: str, local: datetime) -> list[date]:
     return found
 
 
+# Примечание: ближайшая будущая дата с этим числом и месяцем; не существует — None
+def nearestDate(day: int, month: int, today: date) -> date | None:
+    return _date(day, month, None, today)
+
+
 # Примечание: дата из дня, месяца и года; без года — ближайшая будущая; не существует — None
 def _date(day: int, month: int, rawYear: str | None, today: date) -> date | None:
     if not 1 <= month <= len(MONTH_NAMES):
