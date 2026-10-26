@@ -168,8 +168,6 @@ def _name(user: MaxUser) -> str | None:
 
 # Примечание: голосовое = вложение audio; длительности и mime в схеме MAX нет
 def _findVoice(attachments: list[MaxAttachment]) -> VoiceRef | None:
-    # TODO(C): подтвердить на живом апдейте, что голосовое приходит как type=audio (долг S4: отчёт
-    # claude/s4-zone-c-report.md, «Живой MAX»)
     for attachment in attachments:
         payload = attachment.payload
         if attachment.type == "audio" and payload is not None and payload.url is not None:
