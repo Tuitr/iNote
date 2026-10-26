@@ -58,6 +58,13 @@ services:
       LLM_GIGACHAT_CA_BUNDLE: /certs/russian_trusted_root_ca.pem
     volumes:
       - ./certs:/certs:ro
+    # Логи агента (в т. ч. brain_turn с tokens_in / tokens_out) — в журнал systemd сервера:
+    # json-file удаляется вместе с контейнером при каждой выкатке, журнал переживает её.
+    # Чтение: journalctl CONTAINER_TAG=va-agent | grep brain_turn; docker logs тоже работает
+    logging:
+      driver: journald
+      options:
+        tag: va-agent
 
   asr:
     environment:
