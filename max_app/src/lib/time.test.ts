@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { Item } from '../api/types';
 import {
   addDays,
+  addMonths,
   dayLabel,
   itemTimeLabel,
+  monthLabel,
+  monthName,
   relativeDayTitle,
+  startOfMonth,
   startOfWeek,
   todayIn,
   weekdayShort,
@@ -94,5 +98,22 @@ describe('itemTimeLabel', () => {
   it('напоминание без срока — по remind_at, без пересчёта в пояс браузера', () => {
     const item = { ...base, kind: 'reminder' as const, remind_at: '2026-10-22T10:00:00+05:00' };
     expect(itemTimeLabel(item)).toBe('10:00');
+  });
+});
+
+describe('месяцы', () => {
+  it('startOfMonth и addMonths переходят через год', () => {
+    expect(startOfMonth('2026-10-22')).toBe('2026-10-01');
+    expect(addMonths('2026-12-31', 1)).toBe('2027-01-01');
+    expect(addMonths('2026-03-31', -1)).toBe('2026-02-01');
+  });
+
+  it('monthName — месяц в именительном падеже без года', () => {
+    expect(monthName('2026-05-22')).toBe('Май');
+    expect(monthName('2026-10-01')).toBe('Октябрь');
+  });
+
+  it('monthLabel — месяц в именительном падеже с годом', () => {
+    expect(monthLabel('2026-10-22')).toBe('Октябрь 2026');
   });
 });

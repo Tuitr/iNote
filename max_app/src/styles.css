@@ -189,3 +189,160 @@ body {
 .week-strip__day--selected .week-strip__dot--on {
   background: #fff;
 }
+
+/* Выпадающий календарь месяца */
+
+.month-picker {
+  position: relative;
+  align-self: flex-start;
+}
+
+.month-picker button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.month-picker__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 15px !important;
+  line-height: 20px;
+  color: var(--text-secondary) !important;
+}
+
+.month-picker button:active {
+  background: var(--states-background-pressed-transparent);
+}
+
+.month-picker__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -4px;
+  z-index: 10;
+  width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--background-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.month-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.month-picker__title {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.month-picker__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  color: var(--text-secondary) !important;
+}
+
+.month-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.month-picker__weekday {
+  padding: 4px 0;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.month-picker__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 0 4px !important;
+  border-radius: 10px;
+  font-size: 15px !important;
+  line-height: 20px;
+}
+
+.month-picker__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.month-picker__dot--on {
+  background: var(--text-themed);
+}
+
+.month-picker__day--today {
+  color: var(--text-themed) !important;
+  font-weight: 600;
+}
+
+.month-picker__day--selected,
+.month-picker__day--selected:active {
+  background: var(--button-primary) !important;
+  color: #fff !important;
+}
+
+.month-picker__title--button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px !important;
+  border-radius: 10px;
+  font-size: 17px !important;
+  font-weight: 600 !important;
+}
+
+.month-picker__title--button svg {
+  color: var(--text-secondary);
+}
+
+/* Сетка месяцев и годов: 3 колонки по 4 ряда. */
+.month-picker__grid--wide {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.month-picker__cell {
+  padding: 14px 0 !important;
+  border-radius: 12px;
+  font-size: 15px !important;
+  line-height: 20px;
+}
+
+.month-picker__cell--today {
+  color: var(--text-themed) !important;
+  font-weight: 600 !important;
+}
+
+.month-picker__cell--selected,
+.month-picker__cell--selected:active {
+  background: var(--button-primary) !important;
+  color: #fff !important;
+}
+
+.month-picker__day--selected .month-picker__dot--on {
+  background: #fff;
+}

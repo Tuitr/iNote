@@ -93,3 +93,27 @@ export function itemTimeLabel(item: Item): string {
   if (item.remind_at) return clockTime(item.remind_at);
   return '';
 }
+
+/** Первое число месяца, в который входит дата. */
+export function startOfMonth(date: string): string {
+  return `${date.slice(0, 7)}-01`;
+}
+
+/** Первое число месяца через n месяцев от месяца даты. */
+export function addMonths(date: string, months: number): string {
+  const value = new Date(`${startOfMonth(date)}T00:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + months);
+  return value.toISOString().slice(0, 10);
+}
+
+/** «Октябрь» — название месяца в именительном падеже, для сетки месяцев. */
+export function monthName(date: string): string {
+  return capitalize(formatDate(date, { month: 'long' }));
+}
+
+/** «Октябрь 2026» — заголовок календаря месяца. */
+export function monthLabel(date: string): string {
+  // В ru-RU отдельный месяц приходит в именительном падеже: «октябрь 2026 г.».
+  const text = formatDate(date, { month: 'long', year: 'numeric' }).replace(/\s*г\.$/, '');
+  return capitalize(text);
+}

@@ -1,11 +1,20 @@
 import { MaxUI } from '@maxhub/max-ui';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import meExample from '../../../../contracts/examples/j5/me.response.json';
 import { createApiClient } from '../../api/client';
 import type { Me } from '../../api/types';
-import { addDays, dayLabel, dayLabelLong, startOfWeek, todayIn, weekdayLong } from '../../lib/time';
+import {
+  addDays,
+  dayLabel,
+  dayLabelLong,
+  monthLabel,
+  startOfMonth,
+  startOfWeek,
+  todayIn,
+  weekdayLong,
+} from '../../lib/time';
 import { MOCK_TZ } from '../../mocks/data';
 import { server, TEST_BASE_URL } from '../../test/server';
 import { DayScreen } from './DayScreen';
@@ -97,6 +106,73 @@ describe('DayScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сегодня' }));
     expect(screen.getByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
     expect(await titles()).toContain('Позвонить Ивану');
+  });
+
+  it('выпадающий календарь: все дни месяца, любой день открывается со своими записями', async () => {
+    renderDay();
+    await screen.findAllByTestId('item');
+    const toggle = screen.getByRole('button', { name: dayLabel(today) });
+    fireEvent.click(toggle);
+
+    let dialog = screen.getByRole('dialog', { name: 'Выбор дня' });
+    expect(within(dialog).getByText(monthLabel(today))).toBeInTheDocument();
+    const lastDay = Number(addDays(startOfMonth(addDays(startOfMonth(today), 31)), -1).slice(8, 10));
+    expect(within(dialog).getAllByRole('button', { name: /,/ })).toHaveLength(lastDay);
+    expect(within(dialog).getByRole('button', { pressed: true })).toHaveAccessibleName(dayLabelLong(today));
+
+    // Через три дня — «Стоматолог»; если это уже следующий месяц, листаем.
+    const target = addDays(today, 3);
+    if (startOfMonth(target) !== startOfMonth(today)) {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Следующий месяц' }));
+      dialog = screen.getByRole('dialog', { name: 'Выбор дня' });
+    }
+    fireEvent.click(within(dialog).getByRole('button', { name: dayLabelLong(target) }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: weekdayLong(target) })).toBeInTheDocument();
+    expect(await titles()).toEqual(['Стоматолог']);
+  });
+
+  it('выпадающий календарь: переход к другому году и месяцу через сетки годов и месяцев', async () => {
+    renderDay();
+    await screen.findAllByTestId('item');
+    fireEvent.click(screen.getByRole('button', { name: dayLabel(today) }));
+
+    // Дни → месяцы текущего года.
+    fireEvent.click(screen.getByRole('button', { name: `${monthLabel(today)}. Выбрать месяц и год` }));
+    let dialog = screen.getByRole('dialog', { name: 'Выбор месяца' });
+    const year = Number(today.slice(0, 4));
+    expect(within(dialog).getAllByRole('button', { name: new RegExp(` ${year}$`) })).toHaveLength(12);
+    expect(within(dialog).getByRole('button', { pressed: true })).toHaveAccessibleName(monthLabel(today));
+
+    // Стрелка листает год, заголовок открывает сетку годов.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Следующий год' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: `${year + 1}. Выбрать год` }));
+    dialog = screen.getByRole('dialog', { name: 'Выбор года' });
+    expect(within(dialog).getByRole('button', { pressed: true })).toHaveAccessibleName(String(year));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Следующие годы' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: String(year - (year % 12) + 15) }));
+
+    // Год → месяцы этого года → март → дни марта.
+    const target = year - (year % 12) + 15;
+    dialog = screen.getByRole('dialog', { name: 'Выбор месяца' });
+    fireEvent.click(within(dialog).getByRole('button', { name: `Март ${target}` }));
+    dialog = screen.getByRole('dialog', { name: 'Выбор дня' });
+    expect(within(dialog).getByText(`Март ${target}`)).toBeInTheDocument();
+
+    const date = `${target}-03-08`;
+    fireEvent.click(within(dialog).getByRole('button', { name: dayLabelLong(date) }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: dayLabel(date) })).toBeInTheDocument();
+  });
+
+  it('выпадающий календарь закрывается по Escape', async () => {
+    renderDay();
+    await screen.findAllByTestId('item');
+    fireEvent.click(screen.getByRole('button', { name: dayLabel(today) }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('пустой день', async () => {

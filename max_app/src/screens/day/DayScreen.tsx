@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { Item, Me } from '../../api/types';
 import { ErrorState } from '../../components/ErrorState';
-import { addDays, dayLabel, relativeDayTitle, startOfWeek, weekdayLong } from '../../lib/time';
+import { addDays, relativeDayTitle, startOfWeek, weekdayLong } from '../../lib/time';
 import { ItemCell } from './ItemCell';
+import { MonthPicker } from './MonthPicker';
 import { useItemsRange } from './useItemsRange';
 import { useToday } from './useToday';
 import { WeekStrip } from './WeekStrip';
@@ -33,7 +34,6 @@ export function DayScreen({ client, me, initialDate }: DayScreenProps) {
   const days = state.status === 'ready' ? state.days : undefined;
   const day = days?.find((value) => value.date === selected);
 
-
   return (
     <main className="screen">
       <header className="screen-header">
@@ -48,9 +48,7 @@ export function DayScreen({ client, me, initialDate }: DayScreenProps) {
           )}
         </div>
         {/* Заголовок всегда в две строки: полоска недели не прыгает при смене дня. */}
-        <Typography.Body variant="medium" className="muted">
-          {dayLabel(selected)}
-        </Typography.Body>
+        <MonthPicker client={client} selected={selected} today={today} onSelect={setSelected} />
       </header>
 
       <WeekStrip
