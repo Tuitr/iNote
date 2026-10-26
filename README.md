@@ -3,6 +3,27 @@
 Бот в MAX: голосом или текстом ставит задачи, напоминания и встречи, отвечает «что у меня завтра»,
 ищет старые записи и присылает напоминания; мини-приложение MAX показывает календарь.
 
+## Архитектура кратко
+
+```
+MAX → bot → asr (голос → текст, Yandex SpeechKit)
+        → agent + Brain (GigaChat выбирает инструмент) → mcp (8 инструментов) → libs/core → PostgreSQL
+scheduler → bot: напоминания вовремя
+max_app (мини-приложение) → api (только чтение) → libs/core → PostgreSQL
+```
+
+- `user_id` подставляет агент, модель его не видит; подтверждение «записал» строится из ответа
+  инструмента, а не из текста модели; даты и обязательные поля проверяет код.
+- Redis — дедуп, локи, контекст диалога и кеши; источник правды — PostgreSQL.
+- Наружу через Caddy с HTTPS открыты только webhook бота, `/api/v1/*` и статика мини-приложения.
+
+## Документация
+
+- Техническая: [docs/architecture.md](docs/architecture.md) — контракты J1–J8, роли A–E, деплой.
+- Продуктовая: [productDock/README.md](productDock/README.md).
+- Стандарты, ключи Redis, решения: [docs/standards.md](docs/standards.md),
+  [docs/redis-keys.md](docs/redis-keys.md), [docs/decisions.md](docs/decisions.md).
+
 <!-- --- зона C --- -->
 ## Зона C: бот, агент, Redis, стенд
 
