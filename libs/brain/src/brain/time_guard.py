@@ -18,7 +18,15 @@ from typing import Final
 from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject
-from brain.spoken_time import SaidTime, Spoken, monthLabel, nearestDate, normalize, parseSpoken
+from brain.spoken_time import (
+    SaidTime,
+    Spoken,
+    monthLabel,
+    nearestDate,
+    normalize,
+    parseSpoken,
+    remindOffset,
+)
 from contracts.agent_side import ItemBrief, ToolResult, TurnInput
 
 TIME_TOOLS: Final = frozenset({"create_task", "create_event", "update_item"})
@@ -30,6 +38,7 @@ ENDS_AT: Final = "ends_at"
 SAID_TIME_KEY: Final = "said_time"
 SAID_DAY_KEY: Final = "said_day"
 ASK_DAY: Final = "На какой день поставить встречу?"
+ASK_TASK_DAY: Final = "На какой день поставить задачу?"
 DAY_OPTIONS: Final = ("Сегодня", "Завтра", "Послезавтра")
 ASK_HALF_DAY: Final = "Утра или вечера: {first} или {second}?"
 ASK_EVENT_TIME: Final = "Во сколько встреча?"
@@ -86,6 +95,8 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     call = _inField(call, field)
     spoken = parseSpoken(turn.text, turn.now, turn.tz)
     if not spoken.supported:
+        if _isUndatedTask(call, field):
+            return _withRequest(_askTaskDay(), turn)
         return _allDay(call, turn) if _isTask(call, field, turn) else call
     pending = turn.pending or {}
     context = _dialogContext(turn)
@@ -97,6 +108,8 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     isTask = _isTask(call, field, turn)
     # у задачи времени нет — весь день: «утра или вечера?» не спрашиваем
     ask = _question(call, field, spoken, turn, day=day, said=None if isTask else said)
+    if ask is None and day is None and _isUndatedTask(call, field):
+        ask = _askTaskDay()
     if ask is not None:
         return _withRequest(ask, turn)
     hasDayContext = bool(pending) or context.day is not None
@@ -132,7 +145,8 @@ def askMissingTime(turn: TurnInput, spoken: Spoken) -> Ask | None:
         return None
     if not spoken.supported or spoken.time is not None or spoken.month:
         return None
-    if _PART_OF_DAY_RE.search(lowered):
+    # «напомни за 40 минут» — время есть: от начала записи
+    if _PART_OF_DAY_RE.search(lowered) or remindOffset(turn.text) is not None:
         return None
     isEvent = _EVENT_RE.search(lowered) is not None and _CREATE_RE.search(lowered) is not None
     if isEvent and spoken.day is None:
@@ -407,6 +421,19 @@ def _askDay(said: SaidTime | None) -> Ask:
             "is_clear": said.isClear,
         }
     return Ask(ASK_DAY, list(DAY_OPTIONS), [STARTS_AT], pending)
+
+
+# Примечание: новая задача без срока: у задачи всегда есть день — модель его не дала, пользователь
+# не назвал
+def _isUndatedTask(call: FunctionCall, field: str) -> bool:
+    if call.name != "create_task" or field != STARTS_AT:
+        return False
+    return call.arguments.get("kind", "task") == "task" and not call.arguments.get(STARTS_AT)
+
+
+def _askTaskDay() -> Ask:
+    pending: JsonObject = {"kind": "ask", "question": ASK_TASK_DAY}
+    return Ask(ASK_TASK_DAY, list(DAY_OPTIONS), [STARTS_AT], pending)
 
 
 # Примечание: «Утра или вечера?»: два момента; кнопка сразу выполнит вызов (pending call)

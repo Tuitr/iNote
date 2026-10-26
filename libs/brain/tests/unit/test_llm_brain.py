@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final
 from zoneinfo import ZoneInfo
 
@@ -494,6 +494,41 @@ async def test_reminderWithoutTimeAsks() -> None:
     assert (result.outcome, result.say, tools.calls) == ("clarify", "Во сколько напомнить?", [])
     assert result.clarify is not None
     assert result.clarify.options == ["10:00", "15:00", "19:00"]
+
+
+# Примечание: «напомни об этой встрече за 40 минут» — встреча в фокусе: remind_at = начало − 40 мин
+# считает код, без модели и без вопроса «Во сколько напомнить?»
+async def test_remindBeforeFocusedEvent() -> None:
+    subject, llm = brain()
+    focus = [ItemBrief(id=ITEM_ID, kind="event", title="Суд", startsAt=NOW + timedelta(days=1))]
+    updated = ok("Изменено", {"status": "updated", "item": item()})
+    tools = FakeTools({"update_item": [updated]})
+    result = await subject.run(turnInput("напомни об этой встрече за 40 минут", focus=focus), tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        ("update_item", {"id": str(ITEM_ID), "remind_at": "2026-10-25T11:20:00+03:00"})
+    ]
+    assert llm.calls == []
+
+
+# Примечание: встреча не в фокусе — модель находит её, remind_at всё равно считает код от начала
+# найденной встречи; время встречи не трогается
+async def test_remindBeforeFoundEvent() -> None:
+    subject, _ = brain(
+        call("search_items", query="встреча с Иваном"),
+        call("update_item", id=str(ITEM_ID), starts_at="2026-10-25T14:00:00+03:00"),
+        text("Готово"),
+    )
+    found = item(starts_at="2026-10-25T15:00:00+03:00")
+    hits = ok("1 запись", {"results": [{"item": found, "score": 0.9}]})
+    updated = ok("Изменено", {"status": "updated", "item": item()})
+    tools = FakeTools({"search_items": [hits], "update_item": [updated]})
+    result = await subject.run(turnInput("напомни за час до встречи с Иваном"), tools)
+    assert result.outcome == "done"
+    assert tools.calls[1] == (
+        "update_item",
+        {"id": str(ITEM_ID), "remind_at": "2026-10-25T14:00:00+03:00"},
+    )
 
 
 LISTED: Final = ok(

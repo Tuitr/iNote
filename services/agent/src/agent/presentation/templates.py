@@ -67,6 +67,7 @@ class SearchTemplates(_Section):
     similar: str
     empty: str
     line: str
+    done: str
 
 
 # Примечание: свободный ответ без текста модели и «ещё обрабатываю»

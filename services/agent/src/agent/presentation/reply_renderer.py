@@ -440,14 +440,17 @@ class TemplateReplyRenderer:
         if not items:
             return _plain(t.empty, ReplyState.ANSWER, scope.traceId)
         confident = bool(data.get("best_match_confident")) or len(items) == 1
-        lines = [
-            t.line.format(when=self._when(item, scope), title=escapeMarkdown(item.title))
-            for item in items
-        ]
+        lines = [self._searchLine(item, scope) for item in items]
         text = _fit(t.found if confident else t.similar, lines, self._t.list.more)
         return _markdown(
             text, ReplyState.ANSWER, scope.traceId, buttons=self._searchButtons(items), items=items
         )
+
+    # Примечание: строка результата поиска; выполненная — с пометкой
+    def _searchLine(self, item: ReplyItem, scope: _Scope) -> str:
+        t = self._t.search
+        line = t.line.format(when=self._when(item, scope), title=escapeMarkdown(item.title))
+        return t.done.format(line=line) if item.status == "done" else line
 
     # Примечание: одна запись — «В календаре»; несколько — по кнопке с названием на каждую из
     # первых трёх (лимит open_app в ряду MAX), остальные — в мини-приложении

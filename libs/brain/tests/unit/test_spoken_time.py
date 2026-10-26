@@ -1,10 +1,10 @@
 """Разбор даты и времени кодом: примеры из отчёта о тестах 26.10.2026 и похожие формулировки."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
-from brain.spoken_time import SaidTime, Spoken, normalize, parseSpoken, withoutTime
+from brain.spoken_time import SaidTime, Spoken, normalize, parseSpoken, remindOffset, withoutTime
 
 MSK = "Europe/Moscow"
 # понедельник 26.10.2026, ночь — когда шли тесты
@@ -138,3 +138,14 @@ def test_nothing(text: str) -> None:
 # Примечание: задача — модели без времени: её срок — дата на весь день
 def test_withoutTime(text: str, expected: str) -> None:
     assert withoutTime(text) == expected
+
+
+# Смещение напоминания «за N …» — от начала записи; без «за» — нет
+def test_remindOffset() -> None:
+    assert remindOffset("напомни об этой встрече за 40 минут") == timedelta(minutes=40)
+    assert remindOffset("напомни за сорок минут") == timedelta(minutes=40)
+    assert remindOffset("за час до встречи") == timedelta(hours=1)
+    assert remindOffset("напомни за полчаса") == timedelta(minutes=30)
+    assert remindOffset("за 2 часа напомни") == timedelta(hours=2)
+    assert remindOffset("напомни за день") == timedelta(days=1)
+    assert remindOffset("напомни завтра в 10") is None

@@ -62,9 +62,16 @@ cases:
             starts_at: "2026-10-25"
             title: { contains: [презентац] }
 
-  - id: task_without_time
-    group: reminder
+  # задача без даты — без срока не создаётся: «На какой день поставить задачу?»
+  - id: task_without_day_asks
+    group: clarify
     text: запиши задачу купить хлеб
+    expect:
+      outcome: clarify
+
+  - id: task_with_day_no_time
+    group: reminder
+    text: запиши задачу на завтра купить хлеб
     expect:
       calls:
         - name: create_task

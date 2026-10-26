@@ -15,6 +15,8 @@ time_guard.py.
   ведущим нулём — однозначно.
 - Противоречие («в мае 03.06.2027», «в пятницу 28.10», две разные даты) — проблема.
 - «Через 2 часа», «на следующей неделе», «в мае» без числа — supported=False: решает модель.
+- Смещение напоминания: «за 40 минут», «за час», «за полчаса», «за 2 часа», «за день» — насколько
+  раньше начала записи напомнить (remindOffset).
 """
 
 import calendar
@@ -164,6 +166,14 @@ _AT_RE: Final = re.compile(
     r"(?:\s+час\w*)?(?:\s+(\d{1,2})(?![./:\d]))?(?:\s+минут\w*)?(?:\s+" + _PART_RE + ")?"
 )
 _NAMED_RE: Final = re.compile(r"\b(?:в\s+)?(обед|полдень|полночь)\b")
+_OFFSET_RE: Final = re.compile(
+    r"\bза\s+(?:(\d{1,4})\s+)?(пол\s*часа|минут\w*|мин|час\w*|день|дня|дней|сутки|суток)\b"
+)
+_OFFSET_UNITS: Final = (
+    ("пол", timedelta(minutes=30)),
+    ("мин", timedelta(minutes=1)),
+    ("час", timedelta(hours=1)),
+)
 _PART_ANYWHERE_RE: Final = re.compile(r"\b(утром|днем|вечером|ночью)\b")
 
 
@@ -216,6 +226,16 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
     if len(set(days)) > 1:
         return Spoken(time=said, problem=_dateConflict(sorted(set(days))))
     return Spoken(day=days[0] if days else None, time=said, supported=len(times) <= 1)
+
+
+# Примечание: «напомни за 40 минут» — насколько раньше начала записи напомнить; нет — None
+def remindOffset(text: str) -> timedelta | None:
+    match = _OFFSET_RE.search(normalize(text))
+    if match is None:
+        return None
+    count = int(match[1]) if match[1] else 1
+    unit = next((step for prefix, step in _OFFSET_UNITS if match[2].startswith(prefix)), None)
+    return count * (unit or timedelta(days=1))
 
 
 # Примечание: фраза без времени суток (для задачи: её срок — дата на весь день, время не нужно,

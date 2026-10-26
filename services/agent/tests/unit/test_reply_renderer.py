@@ -483,6 +483,17 @@ def test_searchSimilarButtons() -> None:
     assert [b["start_param"] for b in row] == [f"item_{r['item']['id']}" for r in results[:3]]
 
 
+# Примечание: выполненная запись в поиске помечена — «что было про медведя» после «сделал»
+def test_searchMarksDone() -> None:
+    bear = item("купить медведя", "2026-10-21T00:00:00+03:00", all_day=True, status="done")
+    results = [{"item": bear}, {"item": item("купить медведя 2", None)}]
+    reply = render(turn("answer", action("search_items", {"results": results})))
+    assert reply["text"].splitlines()[1:] == [
+        "Сегодня, ср 21 октября — купить медведя (✓ выполнено)",
+        "без срока — купить медведя 2",
+    ]
+
+
 # Примечание: start_param не собрался по J6 — кнопка «сегодня» и warning без значения
 def test_invalidStartParamFallsBackToToday() -> None:
     with structlog.testing.capture_logs() as logs:

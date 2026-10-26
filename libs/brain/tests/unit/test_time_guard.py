@@ -367,6 +367,19 @@ def test_taskIsAllDay() -> None:
     )
 
 
+# Задача без даты («купить медведя») — не «без срока»: спросить день; ответ «Завтра» — срок
+def test_undatedTaskAsksDay() -> None:
+    call = FunctionCall("create_task", {"title": "купить медведя", "kind": "task"})
+    ask = asked(guardTime(call, turn("купить медведя", now=LATE)))
+    assert (ask.question, ask.options) == (
+        "На какой день поставить задачу?",
+        ["Сегодня", "Завтра", "Послезавтра"],
+    )
+    assert ask.pending["request"] == "купить медведя"
+    args = called(guardTime(call, turn("Завтра", ask.pending, now=LATE)))
+    assert args["starts_at"] == "2026-10-27"
+
+
 # Напоминание и встреча — со временем, как раньше
 def test_reminderKeepsTime() -> None:
     call = reminder(remind_at="2026-10-28T15:00:00+03:00")

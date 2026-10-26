@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
-from brain.spoken_time import nearestDate, parseSpoken, withoutTime
+from brain.spoken_time import Spoken, nearestDate, parseSpoken, remindOffset, withoutTime
 from brain.time_guard import (
     ASK_REMIND_TIME,
     REQUEST_KEY,
@@ -122,6 +122,10 @@ HINT_DUPLICATE: Final = "Этот вызов уже выполнен, его р�
 # «Напомни …» без времени: модель создавала задачу без срока — напоминанию нужно время
 _REMIND_RE: Final = re.compile(r"\bнапомн", re.IGNORECASE)
 MOMENT_FIELDS: Final = ("starts_at", "remind_at")
+# «напомни об этой встрече за 40 минут» — встреча из фокуса, а не найденная по названию
+_THIS_RE: Final = re.compile(
+    r"\b(?:эт(?:ой|у|а|от|им|ом)|не[её]|ней|е[её]|она|него|н[её]м)\b", re.IGNORECASE
+)
 # перенос принят, а время записи другое — «Изменено» показывать нельзя
 TIME_NOT_APPLIED: Final = "Не получилось поменять время. Скажи ещё раз, на какое время перенести."
 # «когда у меня маникюр» — это поиск записи, а не список за две недели
@@ -480,6 +484,8 @@ def _rejection(
 def _isReminderWithoutTime(call: FunctionCall, turn: TurnInput) -> bool:
     if call.name != "create_task" or not _REMIND_RE.search(turn.text):
         return False
+    if remindOffset(turn.text) is not None:
+        return False
     return not any(_moment(call.arguments.get(name)) for name in MOMENT_FIELDS)
 
 
@@ -489,6 +495,11 @@ async def _act(
     call: FunctionCall, turn: TurnInput, tools: ToolExecutor, state: _Turn, started: float
 ) -> tuple[TurnResult | None, ToolResult]:
     skipped = ToolResult(ok=True, summary="")
+    before = _remindBefore(call, turn, _eventStart(call, turn, state))
+    if before is not None:
+        result = await tools.call(before.name, before.arguments)
+        state.actions.append(ExecutedAction(name=before.name, args=before.arguments, result=result))
+        return _afterCall(before, result, turn, state, started), result
     if _isReminderWithoutTime(call, turn):
         pending: JsonObject = {"kind": "ask", "question": ASK_REMIND_TIME, **savedDay(turn)}
         ask = Ask(ASK_REMIND_TIME, list(TIME_OPTIONS), ["remind_at"], pending)
@@ -528,9 +539,73 @@ async def _beforeModel(
         return _askDeleteMany(call, result, bulk, state, started) or _result(
             "answer", state, started
         )
+    if (before := _remindBeforeFocused(turn, spoken)) is not None:
+        result = await tools.call(before.name, before.arguments)
+        state.actions.append(ExecutedAction(name=before.name, args=before.arguments, result=result))
+        if not result.ok:
+            return _error(
+                _toolCode(result.error.code if result.error else "internal"), state, started
+            )
+        return _result("done", state, started)
     if (ask := askMissingTime(turn, spoken)) is not None:
         return _askGuard(ask, turn, state, started)
     return None
+
+
+# Примечание: «напомни об этой встрече за 40 минут» — встреча в фокусе: remind_at считает код, без
+# модели (защита «напомни без времени» спрашивала «Во сколько напомнить?»)
+def _remindBeforeFocused(turn: TurnInput, spoken: Spoken) -> FunctionCall | None:
+    if not _REMIND_RE.search(turn.text) or not _THIS_RE.search(turn.text):
+        return None
+    # день или время названы («встреча завтра в 15, напомни об этом за час») — это новая запись
+    if spoken.day is not None or spoken.time is not None:
+        return None
+    event = next(
+        (b for b in reversed(turn.focus) if b.kind == "event" and b.startsAt and not b.allDay), None
+    )
+    if event is None:
+        return None
+    return _remindBefore(FunctionCall("update_item", {"id": str(event.id)}), turn, event.startsAt)
+
+
+# Примечание: перенос напоминания встречи «за N минут»: remind_at = начало − смещение, считает код;
+# время встречи не трогаем (guardTime у встречи переложил бы remind_at в starts_at)
+def _remindBefore(
+    call: FunctionCall, turn: TurnInput, startsAt: datetime | None
+) -> FunctionCall | None:
+    offset = remindOffset(turn.text)
+    if call.name != "update_item" or offset is None or startsAt is None:
+        return None
+    if not _REMIND_RE.search(turn.text):
+        return None
+    remindAt = (startsAt - offset).astimezone(ZoneInfo(turn.tz))
+    return FunctionCall(
+        call.name, {"id": call.arguments.get("id"), "remind_at": remindAt.isoformat()}
+    )
+
+
+# Примечание: начало встречи, которую меняет вызов: из фокуса или из найденного в этом ходе
+def _eventStart(call: FunctionCall, turn: TurnInput, state: _Turn) -> datetime | None:
+    itemId = str(call.arguments.get("id") or "").lower()
+    if len(itemId) < SHORT_ID_LENGTH:
+        return None
+    for brief in turn.focus:
+        if str(brief.id).startswith(itemId) and brief.kind == "event" and not brief.allDay:
+            return brief.startsAt
+    for action in state.actions:
+        for item in _foundItems(action.result.data):
+            if str(item.get("id", "")).startswith(itemId) and item.get("kind") == "event":
+                return _moment(item.get("starts_at"))
+    return None
+
+
+# Примечание: записи из data инструмента: item, items, results[].item (формы J3)
+def _foundItems(data: Mapping[str, object] | None) -> list[Mapping[str, object]]:
+    if not data:
+        return []
+    raw = [data.get("item"), *_list(data.get("items"))]
+    raw.extend(r.get("item") for r in _list(data.get("results")) if isinstance(r, dict))
+    return [item for item in raw if isinstance(item, dict)]
 
 
 # Примечание: задача («добавь задачу … завтра в 5») — модели без времени: срок задачи — дата на весь
