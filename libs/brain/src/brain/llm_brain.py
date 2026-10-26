@@ -22,7 +22,14 @@ from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
-from brain.spoken_time import Spoken, nearestDate, parseSpoken, remindOffset, withoutTime
+from brain.spoken_time import (
+    Spoken,
+    nearestDate,
+    parseSpoken,
+    remindOffset,
+    withoutOffset,
+    withoutTime,
+)
 from brain.time_guard import (
     ASK_REMIND_TIME,
     REQUEST_KEY,
@@ -30,6 +37,7 @@ from brain.time_guard import (
     Ask,
     askMissingTime,
     clarificationTexts,
+    dayChoice,
     guardTime,
     isNewRequest,
     partChoice,
@@ -125,6 +133,27 @@ MOMENT_FIELDS: Final = ("starts_at", "remind_at")
 # «напомни об этой встрече за 40 минут» — встреча из фокуса, а не найденная по названию
 _THIS_RE: Final = re.compile(
     r"\b(?:эт(?:ой|у|а|от|им|ом)|не[её]|ней|е[её]|она|него|н[её]м)\b", re.IGNORECASE
+)
+# «напомни за 40 минут до встречи» без имени — тоже встреча из фокуса: модель искала по слову
+# «встреча» и брала первую попавшуюся
+_GENERIC_REMIND_WORDS: Final = frozenset(
+    {
+        "напомни",
+        "напомнить",
+        "напомните",
+        "мне",
+        "о",
+        "об",
+        "про",
+        "до",
+        "перед",
+        "начала",
+        "встреча",
+        "встречи",
+        "встрече",
+        "встречу",
+        "пожалуйста",
+    }
 )
 # перенос принят, а время записи другое — «Изменено» показывать нельзя
 TIME_NOT_APPLIED: Final = "Не получилось поменять время. Скажи ещё раз, на какое время перенести."
@@ -233,6 +262,9 @@ class LlmBrain:
         if (choice := partChoice(turn)) is not None:
             # «утро» словом на «Утра или вечера?» — как нажатие кнопки
             return await self.resume(turn, str(choice), tools)
+        if (day := dayChoice(turn)) is not None:
+            # «сегодня» словом на «На какой день?» — как нажатие кнопки, без модели
+            return await self.resume(turn, str(day), tools)
         early = _Turn(messages=[], knownIds=set(), model=self._model)
         if (earlyOutcome := await _beforeModel(turn, tools, early, started)) is not None:
             _logTurn(earlyOutcome, early)
@@ -555,7 +587,10 @@ async def _beforeModel(
 # Примечание: «напомни об этой встрече за 40 минут» — встреча в фокусе: remind_at считает код, без
 # модели (защита «напомни без времени» спрашивала «Во сколько напомнить?»)
 def _remindBeforeFocused(turn: TurnInput, spoken: Spoken) -> FunctionCall | None:
-    if not _REMIND_RE.search(turn.text) or not _THIS_RE.search(turn.text):
+    isFocused = _THIS_RE.search(turn.text) or set(withoutOffset(turn.text).split()) <= (
+        _GENERIC_REMIND_WORDS
+    )
+    if not _REMIND_RE.search(turn.text) or not isFocused:
         return None
     # день или время названы («встреча завтра в 15, напомни об этом за час») — это новая запись
     if spoken.day is not None or spoken.time is not None:

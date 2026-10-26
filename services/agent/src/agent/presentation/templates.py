@@ -45,6 +45,10 @@ class ChangedTemplates(_Section):
     conflict: str
     freeSlots: str
     noDate: str
+    remindBefore: str
+    minutes: list[str]
+    hours: list[str]
+    days: list[str]
 
 
 # Примечание: списки за день, неделю и произвольный период

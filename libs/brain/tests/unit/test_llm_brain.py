@@ -419,6 +419,53 @@ async def test_eventWithoutDayAsksDay() -> None:
     assert result.clarify.pending["said_time"] == {"hour": 10, "minute": 15, "is_clear": False}
 
 
+# Примечание: «в 19:00 встреча с Павлом» → «На какой день?» → «сегодня» словом: встреча создаётся
+# кодом из вопроса, без модели (модель читала «сегодня» как «что у меня сегодня»)
+async def test_dayAnswerCreatesEventWithoutModel() -> None:
+    subject, llm = brain(
+        call("create_event", title="Встреча с Павлом", starts_at="2026-10-24T19:00:00+03:00")
+    )
+    asked = await subject.run(turnInput("в 19:00 встреча с Павлом"), FakeTools())
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["Сегодня", "Завтра", "Послезавтра"]
+    created = ok("Создано", {"status": "created", "item": item()})
+    tools = FakeTools({"create_event": [created]})
+    result = await subject.run(turnInput("сегодня", pending=asked.clarify.pending, focus=[]), tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        (
+            "create_event",
+            {"title": "Встреча с Павлом", "starts_at": "2026-10-24T19:00:00+03:00"},
+        )
+    ]
+    assert len(llm.calls) == 1
+
+
+# Примечание: прошедшее «сегодня» в варианты не попадает
+async def test_dayQuestionSkipsPastToday() -> None:
+    subject, _ = brain(
+        call("create_event", title="Встреча с Павлом", starts_at="2026-10-24T09:00:00+03:00")
+    )
+    asked = await subject.run(turnInput("в 09:00 встреча с Павлом"), FakeTools())
+    assert asked.clarify is not None
+    assert asked.clarify.options == ["Завтра", "Послезавтра"]
+
+
+# Примечание: «купить медведя» → «На какой день поставить задачу?» → «на завтра»: задача на завтра
+async def test_taskDayAnswerCreatesTask() -> None:
+    subject, _ = brain(call("create_task", title="купить медведя", kind="task"))
+    asked = await subject.run(turnInput("купить медведя"), FakeTools())
+    assert (asked.outcome, asked.say) == ("clarify", "На какой день поставить задачу?")
+    assert asked.clarify is not None
+    created = ok("Создано", {"status": "created", "item": item(kind="task")})
+    tools = FakeTools({"create_task": [created]})
+    result = await subject.run(turnInput("на завтра", pending=asked.clarify.pending), tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        ("create_task", {"title": "купить медведя", "kind": "task", "starts_at": "2026-10-25"})
+    ]
+
+
 # Примечание: несуществующая дата — вопрос, а не время 13:00
 async def test_impossibleDateAsks() -> None:
     subject, _ = brain(
@@ -504,6 +551,25 @@ async def test_remindBeforeFocusedEvent() -> None:
     updated = ok("Изменено", {"status": "updated", "item": item()})
     tools = FakeTools({"update_item": [updated]})
     result = await subject.run(turnInput("напомни об этой встрече за 40 минут", focus=focus), tools)
+    assert result.outcome == "done"
+    assert tools.calls == [
+        ("update_item", {"id": str(ITEM_ID), "remind_at": "2026-10-25T11:20:00+03:00"})
+    ]
+    assert llm.calls == []
+
+
+# Примечание: «напомни за 40 минут до встречи» без имени — встреча из фокуса, а не первая найденная
+@pytest.mark.parametrize(
+    "phrase", ["напомни за 40 минут до встречи", "напомни о встрече за 40 минут"]
+)
+async def test_remindBeforeUnnamedMeetingUsesFocus(phrase: str) -> None:
+    subject, llm = brain()
+    focus = [
+        ItemBrief(id=ITEM_ID, kind="event", title="Чепецкий", startsAt=NOW + timedelta(days=1))
+    ]
+    updated = ok("Изменено", {"status": "updated", "item": item()})
+    tools = FakeTools({"update_item": [updated]})
+    result = await subject.run(turnInput(phrase, focus=focus), tools)
     assert result.outcome == "done"
     assert tools.calls == [
         ("update_item", {"id": str(ITEM_ID), "remind_at": "2026-10-25T11:20:00+03:00"})

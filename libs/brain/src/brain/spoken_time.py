@@ -238,6 +238,11 @@ def remindOffset(text: str) -> timedelta | None:
     return count * (unit or timedelta(days=1))
 
 
+# Примечание: фраза без смещения «за 40 минут» (нормализованная): что ещё сказано, кроме него
+def withoutOffset(text: str) -> str:
+    return " ".join(_OFFSET_RE.sub(" ", normalize(text)).split())
+
+
 # Примечание: фраза без времени суток (для задачи: её срок — дата на весь день, время не нужно,
 # а модель на «в 5» спрашивала «утра или вечера?»); нормализованный текст
 def withoutTime(text: str) -> str:

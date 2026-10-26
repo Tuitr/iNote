@@ -65,6 +65,8 @@ ELLIPSIS: Final = "…"
 SEARCH_APP_BUTTONS: Final = MAX_OPEN_APP_PER_ROW
 # /settings: кнопок поясов в ряду (12 поясов → 3 ряда; лимит MAX — 7)
 TZ_PER_ROW: Final = 4
+MINUTES_IN_HOUR: Final = 60
+MINUTES_IN_DAY: Final = 24 * MINUTES_IN_HOUR
 
 _log = getLogger(__name__)
 
@@ -295,7 +297,7 @@ class TemplateReplyRenderer:
         for action in mutations:
             data = action.result.data or {}
             item = _replyItem(data.get("item"))
-            blocks.append(self._confirmBlock(data, item, scope))
+            blocks.append(self._confirmBlock(data, item, scope, _onlyReminder(action)))
             if item is not None:
                 items.append(item)
                 statuses.append(str(data.get("status") or "created"))
@@ -305,7 +307,11 @@ class TemplateReplyRenderer:
 
     # Примечание: «Напоминание создано / Позвонить Ивану / Завтра, чт 22 октября, 10:00»
     def _confirmBlock(
-        self, data: Mapping[str, object], item: ReplyItem | None, scope: _Scope
+        self,
+        data: Mapping[str, object],
+        item: ReplyItem | None,
+        scope: _Scope,
+        onlyReminder: bool,
     ) -> str:
         status = str(data.get("status") or "created")
         if status == "conflict":
@@ -318,12 +324,30 @@ class TemplateReplyRenderer:
         }.get(status)
         if item is None:
             return header or self._t.answer.fallback
+        if status == "updated" and onlyReminder:
+            header = self._remindBefore(item) or header
         if header is None:
             created = self._t.created
             header = {"task": created.task, "reminder": created.reminder, "event": created.event}[
                 item.kind
             ]
         return "\n".join([header, escapeMarkdown(item.title), self._when(item, scope)])
+
+    # Примечание: «Напомню за 40 минут» — у встречи с началом и напоминанием; иначе None
+    def _remindBefore(self, item: ReplyItem) -> str | None:
+        if item.kind != "event" or item.startsAt is None or item.remindAt is None:
+            return None
+        minutes = round((item.startsAt - item.remindAt).total_seconds() / 60)
+        if minutes <= 0:
+            return None
+        changed = self._t.changed
+        if minutes % MINUTES_IN_DAY == 0:
+            offset = _countOf(minutes // MINUTES_IN_DAY, changed.days)
+        elif minutes % MINUTES_IN_HOUR == 0:
+            offset = _countOf(minutes // MINUTES_IN_HOUR, changed.hours)
+        else:
+            offset = _countOf(minutes, changed.minutes)
+        return changed.remindBefore.format(offset=offset)
 
     # Примечание: пересечение встреч — не ошибка: что мешает и какие окна свободны
     def _conflictBlock(self, data: Mapping[str, object], scope: _Scope) -> str:
@@ -601,3 +625,22 @@ def _markdown(
         items=list(items),
         traceId=traceId,
     )
+
+
+# Примечание: изменение, где задано только напоминание («напомни за 40 минут»), без переноса
+def _onlyReminder(action: ExecutedAction) -> bool:
+    return action.name == "update_item" and set(action.args) - {"id"} == {"remind_at"}
+
+
+# Примечание: «40 минут», «2 часа», «час» — число с формой слова; ровно одно — без числа
+def _countOf(count: int, forms: Sequence[str]) -> str:
+    if count == 1:
+        return forms[0]
+    tens, last = count % 100, count % 10
+    if last == 1 and tens != 11:  # noqa: PLR2004
+        form = forms[0]
+    elif 2 <= last <= 4 and not 12 <= tens <= 14:  # noqa: PLR2004
+        form = forms[1]
+    else:
+        form = forms[2]
+    return f"{count} {form}"

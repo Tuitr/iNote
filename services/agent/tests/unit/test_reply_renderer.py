@@ -494,6 +494,38 @@ def test_searchMarksDone() -> None:
     ]
 
 
+# Примечание: изменено только напоминание встречи — «Напомню за 40 минут», а не «Изменено»
+@pytest.mark.parametrize(
+    ("remindAt", "header"),
+    [
+        ("2026-10-21T09:20:00+03:00", "Напомню за 40 минут"),
+        ("2026-10-21T09:00:00+03:00", "Напомню за час"),
+        ("2026-10-21T08:00:00+03:00", "Напомню за 2 часа"),
+        ("2026-10-21T09:39:00+03:00", "Напомню за 21 минуту"),
+        ("2026-10-20T10:00:00+03:00", "Напомню за день"),
+    ],
+)
+def test_reminderOnlyChange(remindAt: str, header: str) -> None:
+    meeting = EVENT | {"remind_at": remindAt}
+    changed = action(
+        "update_item",
+        {"status": "updated", "item": meeting},
+        {"id": meeting["id"], "remind_at": remindAt},
+    )
+    lines = render(turn("done", changed))["text"].splitlines()
+    assert lines[:2] == [header, "Созвон с командой"]
+
+
+# Примечание: перенос встречи — по-прежнему «Изменено»
+def test_movedMeetingIsUpdated() -> None:
+    moved = action(
+        "update_item",
+        {"status": "updated", "item": EVENT | {"remind_at": "2026-10-21T09:00:00+03:00"}},
+        {"id": EVENT["id"], "starts_at": "2026-10-21T10:00:00+03:00"},
+    )
+    assert render(turn("done", moved))["text"].splitlines()[0] == "Изменено"
+
+
 # Примечание: start_param не собрался по J6 — кнопка «сегодня» и warning без значения
 def test_invalidStartParamFallsBackToToday() -> None:
     with structlog.testing.capture_logs() as logs:

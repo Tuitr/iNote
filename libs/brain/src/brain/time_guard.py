@@ -96,7 +96,7 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     spoken = parseSpoken(turn.text, turn.now, turn.tz)
     if not spoken.supported:
         if _isUndatedTask(call, field):
-            return _withRequest(_askTaskDay(), turn)
+            return _askTaskDay(call, turn)
         return _allDay(call, turn) if _isTask(call, field, turn) else call
     pending = turn.pending or {}
     context = _dialogContext(turn)
@@ -109,7 +109,7 @@ def guardTime(call: FunctionCall, turn: TurnInput) -> FunctionCall | Ask:
     # у задачи времени нет — весь день: «утра или вечера?» не спрашиваем
     ask = _question(call, field, spoken, turn, day=day, said=None if isTask else said)
     if ask is None and day is None and _isUndatedTask(call, field):
-        ask = _askTaskDay()
+        ask = _askTaskDay(call, turn)
     if ask is not None:
         return _withRequest(ask, turn)
     hasDayContext = bool(pending) or context.day is not None
@@ -200,7 +200,7 @@ def _question(
         return Ask(question, [], [field], monthAsk)
     isDated = day is not None or pending.get("kind") == "call" or call.name == "update_item"
     if call.name == "create_event" and not isDated:
-        return _askDay(said)
+        return _askDay(call, said, turn)
     if said is None and _needsTime(call, field, pending, turn):
         return _askTime(call, day)
     if said is not None and not said.isClear:
@@ -412,7 +412,10 @@ def _askTime(call: FunctionCall, day: date | None) -> Ask:
     return Ask(question, list(TIME_OPTIONS), [field], pending)
 
 
-def _askDay(said: SaidTime | None) -> Ask:
+# Примечание: «На какой день поставить встречу?»; время понятно — вопрос с готовыми вызовами:
+# кнопка или ответ словом («сегодня») создают встречу кодом. Ответ уходил модели, и одно слово
+# «сегодня» она читала как «что у меня сегодня»; прошедшее «сегодня, 19:00» в варианты не попадает
+def _askDay(call: FunctionCall, said: SaidTime | None, turn: TurnInput) -> Ask:
     pending: JsonObject = {"kind": "ask", "question": ASK_DAY}
     if said is not None:
         pending[SAID_TIME_KEY] = {
@@ -420,7 +423,17 @@ def _askDay(said: SaidTime | None) -> Ask:
             "minute": said.minute,
             "is_clear": said.isClear,
         }
-    return Ask(ASK_DAY, list(DAY_OPTIONS), [STARTS_AT], pending)
+    if said is None or not said.isClear:
+        return Ask(ASK_DAY, list(DAY_OPTIONS), [STARTS_AT], pending)
+    zone = ZoneInfo(turn.tz)
+    now = turn.now.astimezone(zone)
+    moments = [
+        (label, _combine(now.date() + timedelta(days=shift), said.hour, said.minute, zone))
+        for shift, label in enumerate(DAY_OPTIONS)
+    ]
+    upcoming = [(label, moment) for label, moment in moments if moment > now]
+    choices: list[JsonObject] = [{STARTS_AT: moment.isoformat()} for _, moment in upcoming]
+    return _dayCall(call, [label for label, _ in upcoming], choices, turn, pending)
 
 
 # Примечание: новая задача без срока: у задачи всегда есть день — модель его не дала, пользователь
@@ -431,9 +444,51 @@ def _isUndatedTask(call: FunctionCall, field: str) -> bool:
     return call.arguments.get("kind", "task") == "task" and not call.arguments.get(STARTS_AT)
 
 
-def _askTaskDay() -> Ask:
+# Примечание: «На какой день поставить задачу?» — как и у встречи, вопрос с готовыми вызовами
+def _askTaskDay(call: FunctionCall, turn: TurnInput) -> Ask:
+    today = turn.now.astimezone(ZoneInfo(turn.tz)).date()
+    choices: list[JsonObject] = [
+        {STARTS_AT: (today + timedelta(days=shift)).isoformat()}
+        for shift in range(len(DAY_OPTIONS))
+    ]
     pending: JsonObject = {"kind": "ask", "question": ASK_TASK_DAY}
-    return Ask(ASK_TASK_DAY, list(DAY_OPTIONS), [STARTS_AT], pending)
+    return _dayCall(call, list(DAY_OPTIONS), choices, turn, pending)
+
+
+# Примечание: вопрос о дне, где каждый вариант — готовый вызов (pending «call», как «Утра или
+# вечера?»); подписи — в pending: ответ словом сверяется с ними (dayChoice)
+def _dayCall(
+    call: FunctionCall,
+    labels: list[str],
+    choices: list[JsonObject],
+    turn: TurnInput,
+    pending: JsonObject,
+) -> Ask:
+    args = {k: v for k, v in call.arguments.items() if k not in {STARTS_AT, ENDS_AT}}
+    request = (turn.pending or {}).get(REQUEST_KEY) or turn.text
+    dayPending: JsonObject = {
+        **pending,
+        "kind": "call",
+        "tool": call.name,
+        "args": args,
+        "choices": list(choices),
+        "options": list(labels),
+        REQUEST_KEY: request,
+    }
+    return Ask(str(pending["question"]), labels, [STARTS_AT], dayPending)
+
+
+# Примечание: ответ словом («сегодня», «на завтра») на вопрос о дне — номер варианта, как кнопка
+def dayChoice(turn: TurnInput) -> int | None:
+    pending = turn.pending or {}
+    if pending.get("kind") != "call" or pending.get("question") not in {ASK_DAY, ASK_TASK_DAY}:
+        return None
+    labels = pending.get("options")
+    if not isinstance(labels, list):
+        return None
+    answer = re.sub(r"^на\s+", "", turn.text.strip().lower().rstrip(".!"))
+    lowered = [str(label).lower() for label in labels]
+    return lowered.index(answer) if answer in lowered else None
 
 
 # Примечание: «Утра или вечера?»: два момента; кнопка сразу выполнит вызов (pending call)
