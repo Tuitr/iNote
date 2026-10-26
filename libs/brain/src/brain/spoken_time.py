@@ -165,7 +165,10 @@ _AT_RE: Final = re.compile(
     r"\b(?:в|на)\s+(\d{1,2})(?![./:\d])(?!\s*(?:минут|раз|руб|%|недел|числ|год|лет))"
     r"(?:\s+час\w*)?(?:\s+(\d{1,2})(?![./:\d]))?(?:\s+минут\w*)?(?:\s+" + _PART_RE + ")?"
 )
-_NAMED_RE: Final = re.compile(r"\b(?:в\s+)?(обед|полдень|полночь)\b")
+_NAMED_RE: Final = re.compile(r"\b(?:в\s+)?(обед|полдень|полночь|полуночи|полночи)\b")
+# «завтра в полночь», «завтра ближе к полуночи» — конец названного дня, то есть 00:00 следующего;
+# 00:00 самого «завтра» уже наступит этой ночью
+_MIDNIGHT_RE: Final = re.compile(r"\b(?:полночь|полуночи|полночи)\b")
 _OFFSET_RE: Final = re.compile(
     r"\bза\s+(?:(\d{1,4})\s+)?(пол\s*часа|минут\w*|мин|час\w*|день|дня|дней|сутки|суток)\b"
 )
@@ -225,7 +228,10 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
         return Spoken(time=said, problem=problem)
     if len(set(days)) > 1:
         return Spoken(time=said, problem=_dateConflict(sorted(set(days))))
-    return Spoken(day=days[0] if days else None, time=said, supported=len(times) <= 1)
+    day = days[0] if days else None
+    if day is not None and said == SaidTime(0, 0, isClear=True) and _MIDNIGHT_RE.search(normalized):
+        day += timedelta(days=1)
+    return Spoken(day=day, time=said, supported=len(times) <= 1)
 
 
 # Примечание: «напомни за 40 минут» — насколько раньше начала записи напомнить; нет — None
@@ -391,7 +397,7 @@ def _times(text: str) -> list[SaidTime]:
     anywhere = _PART_ANYWHERE_RE.search(text)
     partAnywhere = anywhere[1] if anywhere else None
     for match in _NAMED_RE.finditer(text):
-        hour, minute = {"обед": LUNCH, "полдень": (12, 0), "полночь": (0, 0)}[match[1]]
+        hour, minute = LUNCH if match[1] == "обед" else (12, 0) if match[1] == "полдень" else (0, 0)
         add(SaidTime(hour, minute, isClear=True), match.span())
     for match in _BEFORE_RE.finditer(text):
         raw = match[1]

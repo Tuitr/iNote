@@ -149,3 +149,21 @@ def test_remindOffset() -> None:
     assert remindOffset("за 2 часа напомни") == timedelta(hours=2)
     assert remindOffset("напомни за день") == timedelta(days=1)
     assert remindOffset("напомни завтра в 10") is None
+
+
+# «Завтра ближе к полночь» (так распознаёт речь) — полночь в конце завтрашнего дня, а не 00:00
+# в начале завтра, то есть этой ночью
+@pytest.mark.parametrize(
+    "text",
+    [
+        "завтра ближе к полночь напомни почистить зубы",
+        "завтра в полночь",
+        "завтра ближе к полуночи",
+    ],
+)
+def test_midnightIsEndOfNamedDay(text: str) -> None:
+    spoken = parse(text)
+    assert (spoken.day, spoken.time) == (
+        parse("послезавтра").day,
+        SaidTime(0, 0, isClear=True),
+    )
