@@ -80,6 +80,23 @@ cases:
             remind_at: { absent: true }
             title: { contains: [хлеб] }
 
+  # --- повторы: правило rrule из фразы, первый раз — ближайший день ---
+  - id: repeat_every_tuesday
+    group: reminder
+    text: каждый вторник выносить мусор
+    expect:
+      calls:
+        - name: create_task
+          args: { rrule: { contains: ["freq=weekly", "byday=tu"] }, title: { contains: [мусор] } }
+
+  - id: repeat_three_tuesdays
+    group: reminder
+    text: три вторника подряд ходить в бассейн
+    expect:
+      calls:
+        - name: create_task
+          args: { starts_at: "2026-10-27", rrule: { contains: ["freq=weekly", "byday=tu", "count=3"] }, title: { contains: [бассейн] } }
+
   # --- встречи ---
   - id: event_tomorrow_15
     group: event
