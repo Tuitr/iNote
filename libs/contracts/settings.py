@@ -26,4 +26,4 @@ class UserSettings(BaseModel):
     tz: IanaTimezone
     voice_replies: bool = False
     default_event_min: int = Field(default=60, ge=5, le=480)
-    remind_before_min: int = Field(default=15, ge=0, le=1440)
+    remind_before_min: int = Field(default=60, ge=0, le=1440)

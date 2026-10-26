@@ -149,11 +149,13 @@ async def test_moved_meeting_keeps_duration_and_reminder_offset(
     assert (result.item.starts_at, result.item.ends_at, result.item.remind_at) == (
         _at("17:00"),
         _at("18:00"),
-        _at("16:45"),
+        _at("16:00"),
     )
     assert await _notifications(session_factory) == [
-        (_at("14:45"), "cancelled"),
-        (_at("16:45"), "pending"),
+        (_at("14:00"), "cancelled"),
+        (_at("15:00"), "cancelled"),
+        (_at("16:00"), "pending"),
+        (_at("17:00"), "pending"),
     ]
 
 

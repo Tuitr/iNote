@@ -62,7 +62,7 @@ def _monday(month: int, day: int, hour: int = 9, tz: ZoneInfo = MOSCOW) -> datet
 
 
 def _reminder_of(starts_at: datetime) -> datetime:
-    return starts_at - timedelta(minutes=15)
+    return starts_at - timedelta(minutes=60)
 
 
 async def _standup(service: ItemService, user_id: int, rrule: str = WEEKLY_MONDAY) -> str:
@@ -166,8 +166,11 @@ async def test_weekly_standup_is_created_with_one_reminder(
 ) -> None:
     await _standup(service, user_id)
 
-    # За 15 минут по настройкам пользователя.
-    assert await _notifications(session_factory) == [(_reminder_of(_monday(10, 26)), "pending")]
+    # За час по настройкам пользователя и в момент начала.
+    assert await _notifications(session_factory) == [
+        (_reminder_of(_monday(10, 26)), "pending"),
+        (_monday(10, 26), "pending"),
+    ]
 
 
 async def test_nonsense_rrule_is_rejected_everywhere(service: ItemService, user_id: int) -> None:
@@ -231,7 +234,9 @@ async def test_done_moves_standup_and_its_reminder_to_next_monday(
     assert result.item.remind_at == _reminder_of(_monday(11, 2))
     assert await _notifications(session_factory) == [
         (_reminder_of(_monday(10, 26)), "cancelled"),
+        (_monday(10, 26), "cancelled"),
         (_reminder_of(_monday(11, 2)), "pending"),
+        (_monday(11, 2), "pending"),
     ]
 
 
@@ -247,10 +252,7 @@ async def test_series_with_count_2_is_done_after_second_completion(
     assert (first.item.status, first.item.rrule) == ("open", "FREQ=WEEKLY;BYDAY=MO;COUNT=1")
     assert second.item is not None
     assert (second.item.status, second.item.starts_at) == ("done", _monday(11, 2))
-    assert [status for _, status in await _notifications(session_factory)] == [
-        "cancelled",
-        "cancelled",
-    ]
+    assert {status for _, status in await _notifications(session_factory)} == {"cancelled"}
 
 
 async def test_deleted_series_does_not_remind(
@@ -263,7 +265,10 @@ async def test_deleted_series_does_not_remind(
     )
 
     assert result.status == "deleted"
-    assert await _notifications(session_factory) == [(_reminder_of(_monday(10, 26)), "cancelled")]
+    assert await _notifications(session_factory) == [
+        (_reminder_of(_monday(10, 26)), "cancelled"),
+        (_monday(10, 26), "cancelled"),
+    ]
 
 
 async def test_list_shows_only_the_current_occurrence(service: ItemService, user_id: int) -> None:

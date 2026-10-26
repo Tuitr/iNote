@@ -38,7 +38,7 @@ def test_resolve_creates_user_then_finds_it(client: TestClient) -> None:
             "tz": "Europe/Moscow",
             "voice_replies": False,
             "default_event_min": 60,
-            "remind_before_min": 15,
+            "remind_before_min": 60,
         },
         "created": True,
     }
@@ -151,7 +151,7 @@ def test_settings_change_through_bot(client: TestClient) -> None:
         "tz": "Asia/Yekaterinburg",
         "voice_replies": True,
         "default_event_min": 60,
-        "remind_before_min": 15,
+        "remind_before_min": 60,
     }
     assert again.json()["tz"] == "Asia/Yekaterinburg"
 

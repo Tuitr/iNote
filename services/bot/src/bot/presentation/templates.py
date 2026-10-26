@@ -28,6 +28,8 @@ BOT_FAILED: Final = "Что-то пошло не так. Попробуй ещё
 # Название экранируется под markdown, время — в поясе пользователя
 NOTIFY_REMINDER: Final = "⏰ {title}\n{when}"
 NOTIFY_EVENT: Final = "Скоро встреча: {title}\n{when}"
+# второе уведомление встречи — в момент начала (fire_at = starts_at)
+NOTIFY_EVENT_STARTED: Final = "Встреча началась: {title}\n{when}"
 NOTIFY_TASK: Final = "Срок задачи: {title}\n{when}"
 NOTIFY_NO_TIME: Final = "без срока"
 NOTIFY_BUTTONS: Final = NotificationButtonTexts(
@@ -85,6 +87,12 @@ class RussianNotificationTexts:
         pattern = {"reminder": NOTIFY_REMINDER, "event": NOTIFY_EVENT}.get(
             request.kind, NOTIFY_TASK
         )
+        if (
+            request.kind == "event"
+            and item.startsAt is not None
+            and request.fireAt == item.startsAt
+        ):
+            pattern = NOTIFY_EVENT_STARTED
         return fitToLimit(pattern.format(title=title, when=_when(item, zone, dates)))
 
     # Примечание: подписи кнопок уведомления

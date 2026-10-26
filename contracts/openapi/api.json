@@ -1445,7 +1445,7 @@
             "maximum": 1440.0,
             "minimum": 0.0,
             "title": "Remind Before Min",
-            "default": 15
+            "default": 60
           }
         },
         "type": "object",

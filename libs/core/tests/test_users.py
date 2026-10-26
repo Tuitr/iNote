@@ -26,7 +26,7 @@ async def test_new_user_is_created_with_default_settings(user_service: UserServi
 
     assert resolved.created is True
     assert resolved.settings == UserSettings(
-        tz="Europe/Moscow", voice_replies=False, default_event_min=60, remind_before_min=15
+        tz="Europe/Moscow", voice_replies=False, default_event_min=60, remind_before_min=60
     )
 
 

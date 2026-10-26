@@ -37,7 +37,7 @@ async def test_rows_are_written_and_read_back(
 
     assert user is not None
     assert user.id == 1
-    assert (user.voice_replies, user.default_event_min, user.remind_before_min) == (False, 60, 15)
+    assert (user.voice_replies, user.default_event_min, user.remind_before_min) == (False, 60, 60)
     assert item is not None
     assert item.user_id == user.id
     assert (item.status, item.all_day, item.participants) == ("open", False, [])

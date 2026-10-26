@@ -529,9 +529,22 @@ async def reschedule(session: AsyncSession, row: ItemRow, now: datetime) -> None
     """
     notifications = NotificationRepo(session)
     await notifications.cancel_pending(row.user_id, row.id)
-    is_active = row.status == "open" and row.deleted_at is None
-    if is_active and row.remind_at is not None and row.remind_at > now:
-        await notifications.schedule(row.user_id, row.id, row.remind_at)
+    if row.status != "open" or row.deleted_at is not None:
+        return
+    for fire_at in fire_times(row):
+        if fire_at > now:
+            await notifications.schedule(row.user_id, row.id, fire_at)
+
+
+def fire_times(row: ItemRow) -> list[datetime]:
+    """Когда писать пользователю: в remind_at, а у встречи со временем ещё и в её начало
+    («Встреча началась»).
+    """
+    times = [row.remind_at] if row.remind_at is not None else []
+    has_start = row.kind == "event" and not row.all_day and row.starts_at is not None
+    if has_start and row.starts_at not in times:
+        times.append(row.starts_at)
+    return times
 
 
 async def _replay(items: ItemRepo, caller: Caller) -> ItemRow | None:
@@ -556,8 +569,9 @@ async def _insert(
         if replay is None:
             raise RuntimeError("Запись не создана и не найдена после конфликта ключа")
         return replay, False
-    if inserted.remind_at is not None:
-        await NotificationRepo(session).schedule(caller.user_id, inserted.id, inserted.remind_at)
+    notifications = NotificationRepo(session)
+    for fire_at in fire_times(inserted):
+        await notifications.schedule(caller.user_id, inserted.id, fire_at)
     return inserted, True
 
 

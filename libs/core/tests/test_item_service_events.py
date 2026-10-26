@@ -93,12 +93,14 @@ class TestCreateEvent:
         assert (item.starts_at, item.ends_at, item.remind_at) == (
             _at("15:00"),
             _at("16:00"),
-            _at("14:45"),
+            _at("14:00"),
         )
         async with session_factory() as session:
-            notification = await session.scalar(select(NotificationRow))
-        assert notification is not None
-        assert notification.fire_at == _at("14:45")
+            fire_times = await session.scalars(
+                select(NotificationRow.fire_at).order_by(NotificationRow.fire_at)
+            )
+            # за час по настройкам и в момент начала — «Встреча началась»
+            assert list(fire_times) == [_at("14:00"), _at("15:00")]
         assert fake_redis.values == {f"va:v1:mcp:ver:{user_id}": 1}
 
     async def test_explicit_end_and_no_reminder(
@@ -113,7 +115,8 @@ class TestCreateEvent:
 
         assert result.item is not None
         assert (result.item.ends_at, result.item.remind_at) == (_at("15:30"), None)
-        assert await _count(session_factory, NotificationRow) == 0
+        # без напоминания заранее, но «Встреча началась» остаётся
+        assert await _count(session_factory, NotificationRow) == 1
 
     @pytest.mark.parametrize("ends_at", ["15:00", "14:00"])
     async def test_end_not_after_start_is_invalid(
@@ -200,7 +203,7 @@ class TestCreateEvent:
 
         assert result.item is not None
         assert result.item.remind_at is None
-        assert await _count(session_factory, NotificationRow) == 0
+        assert await _count(session_factory, NotificationRow) == 1
 
     async def test_overlap_returns_conflict_with_free_slot_and_creates_nothing(
         self,

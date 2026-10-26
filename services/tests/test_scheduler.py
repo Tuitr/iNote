@@ -117,10 +117,12 @@ async def _time_passes(
         " WHERE next_try_at IS NOT NULL",
     )
     # Запись напоминает в то же время, что и её уведомление: Scheduler это сверяет.
+    # Уведомление «Встреча началась» (fire_at = starts_at) к remind_at не относится.
     await _execute(
         session_factory,
         "UPDATE items SET remind_at = n.fire_at FROM notifications n"
-        " WHERE n.item_id = items.id AND n.status = 'pending'",
+        " WHERE n.item_id = items.id AND n.status = 'pending'"
+        " AND n.fire_at IS DISTINCT FROM items.starts_at",
     )
 
 
@@ -483,9 +485,12 @@ async def test_passed_standup_moves_to_next_week_without_done(
     week = timedelta(days=7)
     assert moved.status == "open"
     assert (moved.starts_at, moved.ends_at) == (past.starts_at + week, past.ends_at + week)
+    # за час и в момент начала: оба ушли, на следующую неделю — снова оба
     assert await _all_notifications(session_factory) == [
         ("sent", past.remind_at),
+        ("sent", past.starts_at),
         ("pending", past.remind_at + week),
+        ("pending", past.starts_at + week),
     ]
     assert fake_redis.values == {f"va:v1:mcp:ver:{user_id}": 1}
 
@@ -512,6 +517,8 @@ async def test_series_waits_until_its_due_reminder_is_delivered(
     assert moved.starts_at == past.starts_at + timedelta(days=7)
     assert [status for status, _ in await _all_notifications(session_factory)] == [
         "sent",
+        "sent",
+        "pending",
         "pending",
     ]
 

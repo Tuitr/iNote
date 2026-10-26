@@ -178,3 +178,22 @@ async def test_focusOnlyAfterDelivery() -> None:
     await rig.deliver(notifyRequest(attempt=2))
     await rig.deliver(notifyRequest(attempt=3))
     assert [str(r.notificationId) for r in rig.focused] == [NID]
+
+
+# Примечание: второе уведомление встречи — в момент начала (fire_at = starts_at): «Встреча началась»
+async def test_eventStartedText() -> None:
+    rig = Rig()
+    started = notifyRequest(
+        kind="event",
+        fire_at="2026-10-18T15:00:00+03:00",
+        item={
+            "kind": "event",
+            "title": "Созвон",
+            "starts_at": "2026-10-18T15:00:00+03:00",
+            "ends_at": "2026-10-18T16:00:00+03:00",
+            "remind_at": "2026-10-18T14:00:00+03:00",
+        },
+    )
+    await rig.deliver(started)
+    [sent] = rig.gateway.sentMessages()
+    assert sent.text == "Встреча началась: Созвон\nСегодня, вс 18 октября, 15:00–16:00"

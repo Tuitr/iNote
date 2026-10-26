@@ -94,7 +94,7 @@ def test_valid_init_data_gives_token_me_and_start_param(api_client: TestClient) 
             "tz": "Europe/Moscow",
             "voice_replies": False,
             "default_event_min": 60,
-            "remind_before_min": 15,
+            "remind_before_min": 60,
         },
     }
     assert body["start_param"] == "today"

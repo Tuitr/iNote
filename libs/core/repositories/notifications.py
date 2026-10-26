@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import ColumnElement, and_, func, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -82,8 +82,7 @@ class NotificationRepo:
                 or_(
                     ItemRow.deleted_at.is_not(None),
                     ItemRow.status != "open",
-                    ItemRow.remind_at.is_(None),
-                    NotificationRow.fire_at != ItemRow.remind_at,
+                    not_(_is_current()),
                 ),
             )
         )
@@ -115,7 +114,7 @@ class NotificationRepo:
                 ItemRow.deleted_at.is_(None),
                 ItemRow.status == "open",
                 # Напоминание запись перенесли, пока оно было в отправке: старое не воскрешаем.
-                NotificationRow.fire_at == ItemRow.remind_at,
+                _is_current(),
             )
             .order_by(NotificationRow.fire_at)
             .limit(limit)
@@ -181,3 +180,11 @@ class NotificationRepo:
             )
             .values(lease_until=None, **values)
         )
+
+
+def _is_current() -> ColumnElement[bool]:
+    """Уведомление про нынешнее время записи: её remind_at или начало встречи («началась»)."""
+    return or_(
+        NotificationRow.fire_at == ItemRow.remind_at,
+        and_(ItemRow.kind == "event", NotificationRow.fire_at == ItemRow.starts_at),
+    )

@@ -9,7 +9,19 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, Text, and_, case, cast, exists, func, literal, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Text,
+    and_,
+    case,
+    cast,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import TSQUERY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -221,7 +233,10 @@ class ItemRepo:
             NotificationRow.item_id == ItemRow.id,
             NotificationRow.status.in_(("pending", "sending")),
             NotificationRow.fire_at <= func.now(),
-            NotificationRow.fire_at == ItemRow.remind_at,
+            or_(
+                NotificationRow.fire_at == ItemRow.remind_at,
+                and_(ItemRow.kind == "event", NotificationRow.fire_at == ItemRow.starts_at),
+            ),
         )
         statement = (
             select(ItemRow)

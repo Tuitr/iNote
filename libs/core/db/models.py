@@ -64,7 +64,7 @@ class UserRow(Base):
     tz: Mapped[str]
     voice_replies: Mapped[bool] = mapped_column(server_default=false())
     default_event_min: Mapped[int] = mapped_column(server_default="60")
-    remind_before_min: Mapped[int] = mapped_column(server_default="15")
+    remind_before_min: Mapped[int] = mapped_column(server_default="60")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
