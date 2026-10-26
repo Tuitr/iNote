@@ -165,10 +165,14 @@ _AT_RE: Final = re.compile(
     r"\b(?:в|на)\s+(\d{1,2})(?![./:\d])(?!\s*(?:минут|раз|руб|%|недел|числ|год|лет))"
     r"(?:\s+час\w*)?(?:\s+(\d{1,2})(?![./:\d]))?(?:\s+минут\w*)?(?:\s+" + _PART_RE + ")?"
 )
-_NAMED_RE: Final = re.compile(r"\b(?:в\s+)?(обед|полдень|полночь|полуночи|полночи)\b")
+_NAMED_RE: Final = re.compile(r"\b(?:в\s+)?(обед|полдень|полночь|полночью|полуночи|полночи)\b")
 # «завтра в полночь», «завтра ближе к полуночи» — конец названного дня, то есть 00:00 следующего;
 # 00:00 самого «завтра» уже наступит этой ночью
-_MIDNIGHT_RE: Final = re.compile(r"\b(?:полночь|полуночи|полночи)\b")
+_MIDNIGHT_RE: Final = re.compile(r"\b(?:полночь|полночью|полуночи|полночи)\b")
+# «ближе к полуночи», «около полуночи» — до полуночи, а не ровно 00:00: за 10 минут, в тот же день
+_NEAR_MIDNIGHT_RE: Final = re.compile(
+    r"\b(?:ближе|поближе|около|примерно|под)\s+(?:к\s+)?(?:полночь\w*|полуночи|полночи)"
+)
 _OFFSET_RE: Final = re.compile(
     r"\bза\s+(?:(\d{1,4})\s+)?(пол\s*часа|минут\w*|мин|час\w*|день|дня|дней|сутки|суток)\b"
 )
@@ -191,6 +195,10 @@ class SaidTime:
     def variants(self) -> tuple[tuple[int, int], tuple[int, int]]:
         morning = self.hour % HALF_DAY_HOURS
         return (morning, self.minute), (morning + HALF_DAY_HOURS, self.minute)
+
+
+# «ближе к полуночи» — 23:50
+NEAR_MIDNIGHT: Final = SaidTime(23, 50, isClear=True)
 
 
 # Примечание: о чём спросить вместо догадки: вопрос и варианты-кнопки
@@ -229,7 +237,11 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
     if len(set(days)) > 1:
         return Spoken(time=said, problem=_dateConflict(sorted(set(days))))
     day = days[0] if days else None
-    if day is not None and said == SaidTime(0, 0, isClear=True) and _MIDNIGHT_RE.search(normalized):
+    if said == SaidTime(0, 0, isClear=True) and _NEAR_MIDNIGHT_RE.search(normalized):
+        said = NEAR_MIDNIGHT
+    elif (
+        day is not None and said == SaidTime(0, 0, isClear=True) and _MIDNIGHT_RE.search(normalized)
+    ):
         day += timedelta(days=1)
     return Spoken(day=day, time=said, supported=len(times) <= 1)
 

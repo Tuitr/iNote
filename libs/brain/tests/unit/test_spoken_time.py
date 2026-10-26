@@ -155,11 +155,7 @@ def test_remindOffset() -> None:
 # в начале завтра, то есть этой ночью
 @pytest.mark.parametrize(
     "text",
-    [
-        "завтра ближе к полночь напомни почистить зубы",
-        "завтра в полночь",
-        "завтра ближе к полуночи",
-    ],
+    ["завтра в полночь", "завтра полночью"],
 )
 def test_midnightIsEndOfNamedDay(text: str) -> None:
     spoken = parse(text)
@@ -167,3 +163,18 @@ def test_midnightIsEndOfNamedDay(text: str) -> None:
         parse("послезавтра").day,
         SaidTime(0, 0, isClear=True),
     )
+
+
+# «ближе к полуночи» — за 10 минут до полуночи в названный день (без дня — сегодня), не 00:00
+@pytest.mark.parametrize(
+    ("text", "day"),
+    [
+        ("ближе к полуночи напомни сходить покурить", None),
+        ("завтра ближе к полночь напомни почистить зубы", "завтра"),
+        ("около полуночи завтра", "завтра"),
+    ],
+)
+def test_nearMidnightIsTenMinutesBefore(text: str, day: str | None) -> None:
+    spoken = parse(text)
+    assert spoken.time == SaidTime(23, 50, isClear=True)
+    assert spoken.day == (parse(day).day if day else None)
