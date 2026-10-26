@@ -488,7 +488,7 @@ def test_searchMarksDone() -> None:
     bear = item("купить медведя", "2026-10-21T00:00:00+03:00", all_day=True, status="done")
     results = [{"item": bear}, {"item": item("купить медведя 2", None)}]
     reply = render(turn("answer", action("search_items", {"results": results})))
-    assert reply["text"].splitlines()[1:] == [
+    assert str(reply["text"]).splitlines()[1:] == [
         "Сегодня, ср 21 октября — купить медведя (✓ выполнено)",
         "без срока — купить медведя 2",
     ]
@@ -512,7 +512,7 @@ def test_reminderOnlyChange(remindAt: str, header: str) -> None:
         {"status": "updated", "item": meeting},
         {"id": meeting["id"], "remind_at": remindAt},
     )
-    lines = render(turn("done", changed))["text"].splitlines()
+    lines = str(render(turn("done", changed))["text"]).splitlines()
     assert lines[:2] == [header, "Созвон с командой"]
 
 
@@ -523,7 +523,7 @@ def test_movedMeetingIsUpdated() -> None:
         {"status": "updated", "item": EVENT | {"remind_at": "2026-10-21T09:00:00+03:00"}},
         {"id": EVENT["id"], "starts_at": "2026-10-21T10:00:00+03:00"},
     )
-    assert render(turn("done", moved))["text"].splitlines()[0] == "Изменено"
+    assert str(render(turn("done", moved))["text"]).splitlines()[0] == "Изменено"
 
 
 # Примечание: start_param не собрался по J6 — кнопка «сегодня» и warning без значения
