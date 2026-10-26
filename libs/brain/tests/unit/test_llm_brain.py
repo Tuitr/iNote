@@ -275,7 +275,7 @@ async def test_toolErrorRetriedOnce() -> None:
         text("Готово"),
     )
     tools = FakeTools({"create_task": [failed("past_time"), CREATED]})
-    result = await subject.run(turnInput("напомни утром позвонить"), tools)
+    result = await subject.run(turnInput("напомни через 2 часа позвонить"), tools)
     assert result.outcome == "done"
     assert '"error": "past_time"' in llm.calls[1].messages[-1].content
 

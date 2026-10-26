@@ -6,7 +6,7 @@ GigaChat ошибается в арифметике дат и сам выбир�
 утро это или вечер») и проблема, о которой надо спросить. Считает момент и задаёт вопросы
 time_guard.py.
 
-- День: «сегодня», «завтра» (ночью, до 04:00 — наступающий день, то есть сегодняшняя дата),
+- День: «сегодня», «завтра» (всегда следующая календарная дата, и ночью тоже),
   «послезавтра», «следующий день», «через N дней / недель», день недели, «1 мая», «03.06.2027».
   Дата без года — ближайшая будущая. Несуществующая дата (01.13, 31.02) — проблема, не время.
 - Время: «в 5», «в 17:30», «на десять пятнадцать», «без десяти 3», «пол третьего», «в обед».
@@ -26,8 +26,6 @@ from zoneinfo import ZoneInfo
 HALF_DAY_HOURS: Final = 12
 DAYS_IN_WEEK: Final = 7
 MINUTES_IN_HOUR: Final = 60
-# ночью «завтра» — это наступающий день: до этого часа «завтра» = сегодняшняя дата
-NIGHT_ENDS_HOUR: Final = 4
 LATEST_NIGHT_HOUR: Final = 5
 SHORT_YEAR_BASE: Final = 2000
 # среди любых 5 лет подряд есть високосный (кроме вековых — для дат бота неважно)
@@ -193,6 +191,8 @@ class Spoken:
     time: SaidTime | None = None
     problem: Problem | None = None
     supported: bool = True
+    # «в мае» без числа: месяц назван, день — нет
+    month: int | None = None
 
 
 # Примечание: разбор фразы относительно «сейчас» пользователя
@@ -200,10 +200,11 @@ def parseSpoken(text: str, now: datetime, tz: str) -> Spoken:
     normalized = normalize(text)
     if _LEFT_TO_MODEL_RE.search(normalized):
         return Spoken(supported=False)
-    if _MONTH_ONLY_RE.search(normalized) and not (
-        _NUMERIC_DATE_RE.search(normalized) or _WORD_DATE_RE.search(normalized)
-    ):
-        return Spoken(supported=False)
+    monthOnly = _MONTH_ONLY_RE.search(normalized)
+    if monthOnly and not (_NUMERIC_DATE_RE.search(normalized) or _WORD_DATE_RE.search(normalized)):
+        times = _times(normalized)
+        said = times[0] if len(times) == 1 else None
+        return Spoken(time=said, month=_MONTHS_PREPOSITIONAL[monthOnly[1]])
     local = now.astimezone(ZoneInfo(tz))
     days, problem = _days(normalized, local)
     if problem is not None:
@@ -222,6 +223,12 @@ def normalize(text: str) -> str:
     index = 0
     while index < len(words):
         word = words[index].strip(",!?;")
+        following = words[index + 1].strip(",!?;") if index + 1 < len(words) else ""
+        if word == "после" and following == "завтра":
+            # «после завтра» раздельно (так пишут и так распознаёт речь) = «послезавтра»
+            result.append("послезавтра")
+            index += 2
+            continue
         if word in _TENS:
             value = _TENS[word]
             if index + 1 < len(words) and words[index + 1].strip(",!?;") in _UNITS:
@@ -263,7 +270,7 @@ def _days(text: str, local: datetime) -> tuple[list[date], Problem | None]:
         if day < today:
             return [], Problem(f"Дата {written} уже прошла. На какой день поставить?")
         if monthOnly and day.month not in monthOnly:
-            month = _monthLabel(monthOnly[0])
+            month = monthLabel(monthOnly[0])
             question = f"Уточни дату: в {month} или {humanDate(day)}?"
             return [], Problem(question, [f"в {month}", humanDate(day)])
         found.append(day)
@@ -288,7 +295,7 @@ def _relativeDays(text: str, local: datetime) -> list[date]:
     if re.search(r"\bпослезавтра\b", text):
         found.append(today + timedelta(days=2))
     elif re.search(r"\bзавтра\b", text):
-        found.append(today if local.hour < NIGHT_ENDS_HOUR else today + timedelta(days=1))
+        found.append(today + timedelta(days=1))
     if _NEXT_DAY_RE.search(text):
         found.append(today + timedelta(days=1))
     for match in _IN_DAYS_RE.finditer(text):
@@ -381,7 +388,7 @@ def humanDate(day: date, today: date | None = None) -> str:
     return label
 
 
-def _monthLabel(month: int) -> str:
+def monthLabel(month: int) -> str:
     return next(name for name, number in _MONTHS_PREPOSITIONAL.items() if number == month)
 
 

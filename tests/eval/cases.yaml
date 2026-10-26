@@ -408,14 +408,15 @@ cases:
         - name: create_task
           args: { kind: reminder, remind_at: "2026-10-26T00:10:00+03:00" }
 
-  - id: night_tomorrow_is_coming_day
+  - id: night_tomorrow_is_next_date
     group: midnight
+    # ночью «завтра» — следующая календарная дата (в 01:20 пн «завтра» = вт)
     now: "2026-10-26T01:20:00+03:00"
     text: напомни завтра в 9 утра отправить письмо
     expect:
       calls:
         - name: create_task
-          args: { kind: reminder, remind_at: "2026-10-26T09:00:00+03:00" }
+          args: { kind: reminder, remind_at: "2026-10-27T09:00:00+03:00" }
 
   - id: day_after_tomorrow_reminder
     group: relative_day

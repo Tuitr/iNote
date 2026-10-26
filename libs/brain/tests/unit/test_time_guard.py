@@ -6,7 +6,7 @@ from typing import Final
 from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject
-from brain.time_guard import Ask, guardTime, timeNotApplied
+from brain.time_guard import Ask, guardTime, partChoice, timeNotApplied
 from contracts.agent_side import ItemBrief, ToolResult, TurnInput, UserSettings
 
 TZ: Final = "Europe/Moscow"
@@ -15,13 +15,18 @@ ITEM_ID: Final = uuid.UUID("1f2e3d4c-0000-4000-8000-000000000001")
 
 
 def turn(
-    text: str, pending: JsonObject | None = None, focus: list[ItemBrief] | None = None
+    text: str,
+    pending: JsonObject | None = None,
+    focus: list[ItemBrief] | None = None,
+    history: list[tuple[str, str]] | None = None,
+    now: datetime = NIGHT,
 ) -> TurnInput:
     return TurnInput.model_validate(
         {
             "text": text,
             "inputType": "voice",
-            "now": NIGHT,
+            "now": now,
+            "history": [{"role": r, "text": t, "at": now} for r, t in history or []],
             "tz": TZ,
             "settings": UserSettings(tz=TZ),
             "pending": pending,
@@ -218,3 +223,91 @@ def test_reminderBothFields() -> None:
     )
     args = called(guardTime(call, turn("Без десяти три дня, исправь", focus=focus)))
     assert args == {"id": str(ITEM_ID), "remind_at": moment}
+
+
+# Второй документ (пн 26.10.2026, около 03:00)
+LATE: Final = datetime(2026, 10, 26, 2, 50, tzinfo=ZoneInfo(TZ))
+DENTIST = ItemBrief(
+    id=ITEM_ID,
+    kind="event",
+    title="Встреча с зубмастером",
+    startsAt=datetime(2026, 10, 26, 15, 0, tzinfo=ZoneInfo(TZ)),
+)
+
+
+# 1. «нет давай на завтра» после создания — перенос этой встречи на вт 15:00, а не новая запись
+def test_correctionMovesFocusedItem() -> None:
+    call = event(starts_at="2026-10-27T15:00:00+03:00")
+    args = called(guardTime(call, turn("нет давай на завтра", focus=[DENTIST], now=LATE)))
+    assert args == {"id": str(ITEM_ID), "starts_at": "2026-10-27T15:00:00+03:00"}
+    # модель не дала время — время записи
+    bare = called(guardTime(event(), turn("нет, давай на завтра", focus=[DENTIST], now=LATE)))
+    assert bare == {"id": str(ITEM_ID), "starts_at": "2026-10-27T15:00:00+03:00"}
+
+
+# 3. «перенеси эту встречу на завтра» в 02:53 — вторник (ночного «завтра = сегодня» больше нет)
+def test_moveToTomorrowAtNight() -> None:
+    call = FunctionCall(
+        "update_item", {"id": str(ITEM_ID), "starts_at": "2026-10-26T15:00:00+03:00"}
+    )
+    args = called(
+        guardTime(call, turn("перенеси эту встречу на завтра", focus=[DENTIST], now=LATE))
+    )
+    assert args["starts_at"] == "2026-10-27T15:00:00+03:00"
+
+
+# 4. Модель спросила «утро или вечер» текстом; ответ «утро» — день и час из прошлой реплики
+def test_partAnswerUsesDialog() -> None:
+    history = [
+        ("user", "встреча с президентом сегодня в 3"),
+        ("assistant", "«в 3» — непонятно, утро или вечер. Уточните, пожалуйста."),
+    ]
+    call = FunctionCall(
+        "create_event", {"title": "Встреча с президентом", "starts_at": "2026-10-26T15:00:00+03:00"}
+    )
+    args = called(guardTime(call, turn("утро", history=history, now=LATE)))
+    assert args["starts_at"] == "2026-10-26T03:00:00+03:00"
+
+
+# 4. Ответ словом на наш вопрос «Утра или вечера?» — как нажатие кнопки
+def test_partChoice() -> None:
+    pending: JsonObject = {"kind": "call", "question": "Утра или вечера: 03:00 или 15:00?"}
+    assert partChoice(turn("утро", pending)) == 0
+    assert partChoice(turn("вечера", pending)) == 1
+    assert partChoice(turn("в 3", pending)) is None
+
+
+# 5. «ближе к 12 ночи» без дня в 02:58 — сегодня 23:50, а не завтра
+def test_approximateTimeWithoutDayIsToday() -> None:
+    call = reminder(title="почистить зубы", remind_at="2026-10-27T23:50:00+03:00")
+    args = called(
+        guardTime(call, turn("поставь мне ближе к 12 ночи напоминание почистить зубы", now=LATE))
+    )
+    assert args["remind_at"] == "2026-10-26T23:50:00+03:00"
+
+
+# 6. «после завтра» раздельно — среда
+def test_splitDayAfterTomorrow() -> None:
+    call = event(title="День рождения у Богдана", starts_at="2026-10-26T18:00:00+03:00")
+    args = called(guardTime(call, turn("после завтра в 18 00 у богдана день рождения", now=LATE)))
+    assert args["starts_at"] == "2026-10-28T18:00:00+03:00"
+
+
+# 7. Ответ «01.05» на «Такой даты нет…» — дата из ответа, без вопроса
+def test_dateAnswer() -> None:
+    pending: JsonObject = {
+        "kind": "ask",
+        "question": "Такой даты нет: «01.13». Какую дату ты имел в виду?",
+        "request": "Мне нужно 01.13 съездить домой, напомни в обед",
+    }
+    call = reminder(title="Съездить домой", remind_at="2026-10-26T13:00:00+03:00")
+    args = called(guardTime(call, turn("01.05", pending, now=LATE)))
+    assert args["remind_at"] == "2027-05-01T13:00:00+03:00"
+
+
+# 8. «в мае» без числа — спросить число, а не «без срока»
+def test_monthWithoutDayAsks() -> None:
+    call = FunctionCall("create_task", {"title": "поездка на горы", "kind": "task"})
+    ask = asked(guardTime(call, turn("в мае конечно ты че", now=LATE)))
+    assert ask.question == "Какого числа в мае?"
+    assert ask.pending["request"] == "в мае конечно ты че"

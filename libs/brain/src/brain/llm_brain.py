@@ -22,11 +22,14 @@ from zoneinfo import ZoneInfo
 
 from brain.llm import FunctionCall, JsonObject, LlmClient, LlmError, LlmMessage, LlmReply
 from brain.prompt import ASK_USER, NOTHING, PROMPT_VERSION, buildSystemPrompt
+from brain.spoken_time import parseSpoken
 from brain.time_guard import (
     ASK_REMIND_TIME,
+    REQUEST_KEY,
     TIME_OPTIONS,
     Ask,
     guardTime,
+    partChoice,
     savedDay,
     timeNotApplied,
 )
@@ -205,6 +208,15 @@ class LlmBrain:
             state = _Turn(messages=[], knownIds=set(), model=self._model)
             confirmed = _YES_RE.match(turn.text.strip()) is not None
             outcome = await _deleteMany(pending, confirmed, tools, state, started)
+            _logTurn(outcome, state)
+            return outcome
+        if (choice := partChoice(turn)) is not None:
+            # «утро» словом на «Утра или вечера?» — как нажатие кнопки
+            return await self.resume(turn, str(choice), tools)
+        if (problem := parseSpoken(turn.text, turn.now, turn.tz).problem) is not None:
+            # нет такой даты или противоречие: спросить сразу, модель отвечала невпопад
+            state = _Turn(messages=[], knownIds=set(), model=self._model)
+            outcome = _askProblem(problem.question, problem.options, turn, state, started)
             _logTurn(outcome, state)
             return outcome
         specs = _visibleTools(turn.text, await tools.listTools())
@@ -484,6 +496,15 @@ def _guarded(call: FunctionCall, turn: TurnInput) -> FunctionCall:
     return call if isinstance(guarded, Ask) else guarded
 
 
+# Примечание: вопрос о дате до модели; просьба — в pending, ответ датой её дополнит
+def _askProblem(
+    question: str, options: list[str], turn: TurnInput, state: _Turn, started: float
+) -> TurnResult:
+    request = (turn.pending or {}).get(REQUEST_KEY) or turn.text
+    pending: JsonObject = {"kind": "ask", "question": question, REQUEST_KEY: request}
+    return _askGuard(Ask(question, options, ["starts_at"], pending), turn, state, started)
+
+
 # Примечание: вопрос из time_guard вместо вызова: варианты-кнопки и pending для ответа
 def _askGuard(ask: Ask, turn: TurnInput, state: _Turn, started: float) -> TurnResult:
     clarify = Clarify(missing=ask.missing, options=ask.options, pending=ask.pending)
@@ -635,7 +656,13 @@ def _pendingText(pending: JsonObject | None) -> str:
         args = json.dumps(pending.get("args") or {}, ensure_ascii=False)
         return f"вызов {pending.get('tool')} с аргументами {args}, не хватает ответа пользователя"
     question = pending.get("question")
-    return f"задан вопрос «{question}»" if isinstance(question, str) and question else NOTHING
+    if not isinstance(question, str) or not question:
+        return NOTHING
+    request = pending.get(REQUEST_KEY)
+    if isinstance(request, str) and request:
+        # ответ («01.05», «утро») дополняет эту просьбу: создать запись, а не разбирать заново
+        return f"задан вопрос «{question}» к просьбе «{request}»; ответ дополняет её"
+    return f"задан вопрос «{question}»"
 
 
 # Примечание: модели — summary инструмента; при ошибке — код и текст, чтобы она исправилась
