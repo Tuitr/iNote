@@ -52,7 +52,7 @@ max_app (мини-приложение) → api (только чтение) → 
 ## Документация
 
 - Техническая: [docs/architecture.md](docs/architecture.md) — контракты J1–J8, роли A–E, деплой.
-- Продуктовая: [productDock/README.md](productDock/README.md).
+- Продуктовая: [product/README.md](product/README.md).
 - Стандарты, ключи Redis, решения: [docs/standards.md](docs/standards.md),
   [docs/redis-keys.md](docs/redis-keys.md), [docs/decisions.md](docs/decisions.md).
 
